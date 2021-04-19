@@ -3,9 +3,9 @@ from twilio.rest import Client
 
 
 class Notifier:
-    def __init__(self, account_id, auth_token, sending_number):
+    def __init__(self, account_sid, auth_token, sending_number):
         super().__init__()
-        self.account_id = account_id
+        self.account_sid = account_sid
         self.auth_token = auth_token
         self.sending_number = sending_number
 
