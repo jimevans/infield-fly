@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 from file_converter import Converter
@@ -43,6 +44,14 @@ parser.set_defaults(convert_video = False,
                     dry_run = False,
                     notify = False)
 args = parser.parse_args()
+
+settings_file_path = os.path.join(os.path.realpath(__file__), "settings.json")
+if os.path.exists(settings_file_path):
+    settings_file = open(settings_file_path)
+    settings = json.load(settings_file)
+    for name in settings:
+        os.environ[name] = settings[name]
+    settings_file.close()
 
 mapper = FileMapper(args.data_file)
 file_map = mapper.map_files(args.source, args.destination)
