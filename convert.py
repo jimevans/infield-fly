@@ -45,12 +45,14 @@ parser.set_defaults(convert_video = False,
                     notify = False)
 args = parser.parse_args()
 
-settings_file_path = os.path.join(os.path.realpath(__file__), "settings.json")
+settings_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "settings.json")
 if os.path.exists(settings_file_path):
+    print("Importing settings.json")
     settings_file = open(settings_file_path)
     settings = json.load(settings_file)
     for name in settings:
         os.environ[name] = settings[name]
+
     settings_file.close()
 
 mapper = FileMapper(args.data_file)
