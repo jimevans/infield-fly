@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from converter import Converter
+from file_converter import Converter
 from file_mapper import FileMapper
 from notifier import Notifier
 
