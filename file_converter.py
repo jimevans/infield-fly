@@ -10,7 +10,6 @@ class Converter:
         super().__init__()
         self.ffmpeg_location = ffmpeg_location
 
-
     def _get_ffmpeg_tool_location(self, tool_name = "ffmpeg"):
         tool_location = tool_name
         if self.ffmpeg_location is not None:
@@ -18,7 +17,6 @@ class Converter:
         if platform.system() == "Windows":
             tool_location += ".exe"
         return tool_location
-
 
     def convert_file(self, input_file, output_file, dry_run = False,
                      convert_video = False, convert_audio = True,

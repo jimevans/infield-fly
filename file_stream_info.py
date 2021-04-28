@@ -8,7 +8,6 @@ class FileStreamInfo:
     UNDEFINED_STREAM_CODEC = ""
     UNDEFINED_CHANNEL_COUNT = -1
 
-
     def __init__(self, 
                  video_stream_index = UNDEFINED_STREAM_INDEX,
                  video_stream_codec = UNDEFINED_STREAM_CODEC,
@@ -30,7 +29,6 @@ class FileStreamInfo:
         self.forced_subtitle_stream_index = forced_subtitle_stream_index
         self.forced_subtitle_stream_codec = forced_subtitle_stream_codec
 
-
     @staticmethod
     def _probe_file(input_file, ffprobe_location):
         ffprobe_args = []
@@ -49,7 +47,6 @@ class FileStreamInfo:
                            stderr=subprocess.PIPE)
         json_output = p.stdout
         return json.loads(json_output)
-
 
     @classmethod
     def read_stream_info(cls, input_file, ffprobe_location = "ffprobe"):
@@ -94,26 +91,21 @@ class FileStreamInfo:
                    forced_subtitle_stream_index = forced_subtitle_stream_index,
                    forced_subtitle_stream_codec = forced_subtitle_stream_codec)
 
-
     @property
     def has_video_stream(self):
         return self.video_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
 
-    
     @property
     def has_audio_stream(self):
         return self.audio_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
-
 
     @property
     def has_subtitle_stream(self):
         return self.subtitle_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
 
-
     @property
     def has_forced_subtitle_stream(self):
         return self.forced_subtitle_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
-
 
     def show(self):
         print("Stream Info:")
@@ -148,17 +140,14 @@ class FileStreamInfo:
             if "tags" in stream_metadata and "language" in stream_metadata["tags"]:
                 self.language = stream_metadata["tags"]["language"]
 
-        
         @property
         def is_video(self):
             return self.codec_type == "video"
 
-        
         @property
         def is_audio(self):
             return self.codec_type == "audio"
 
-        
         @property
         def is_subtitle(self):
             return self.codec_type == "subtitle"

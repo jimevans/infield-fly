@@ -15,7 +15,6 @@ class FileMapper:
         else:
             self.data_file_location = data_file_location
    
-
     def read_episode_name_data(self):
         lines=[]
         with open(self.data_file_location) as file_episodes:
@@ -32,7 +31,6 @@ class FileMapper:
                     exit()
                 episode_names[episode_id.upper()] = episode_name.strip()
         return (show_name, episode_names)
-
 
     def map_files(self, source, destination):
         file_map = []

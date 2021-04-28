@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 
+from config_settings import Configuration
 from file_converter import Converter
 from file_mapper import FileMapper
 from notifier import Notifier
@@ -45,15 +46,7 @@ parser.set_defaults(convert_video = False,
                     notify = False)
 args = parser.parse_args()
 
-settings_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "settings.json")
-if os.path.exists(settings_file_path):
-    print("Importing settings.json")
-    settings_file = open(settings_file_path)
-    settings = json.load(settings_file)
-    for name in settings:
-        os.environ[name] = settings[name]
-
-    settings_file.close()
+config = Configuration()
 
 mapper = FileMapper(args.data_file)
 file_map = mapper.map_files(args.source, args.destination)
@@ -74,9 +67,12 @@ if args.notify:
     if args.dry_run:
         print("Operation complete. Not sending notification on dry run.")
     else:
-        if "TWILIO_SMS_RECIPIENT" not in os.environ:
-            print("TWILIO_SMS_RECIPIENT environment variable not set. Not notirying.")
+        if config.notification is None:
+            print("No config notification settings in settings file. Not notifying.")
+        elif config.notification.receiving_number is None or config.notification.receiving_number == "":
+            print("No recipient number specified in notification settings in settings file. Not notifying.")
         else:
-            notification_receiver = os.environ["TWILIO_SMS_RECIPIENT"]
-            notifier = Notifier.create_default_notifier()
-            notifier.notify(notification_receiver, "Conversion of {} complete.".format(args.source))
+            notification_receiver = config.notification.receiving_number
+            notifier = Notifier.create_default_notifier(config.notification)
+            if notifier is not None:
+                notifier.notify(notification_receiver, "Conversion of {} complete.".format(args.source))
