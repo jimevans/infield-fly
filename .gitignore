@@ -130,4 +130,5 @@ dmypy.json
 
 # infield-fly config files
 settings.json
+.dbcache
 
