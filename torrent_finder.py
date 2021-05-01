@@ -40,14 +40,13 @@ class TorrentDataProvider:
             self.token_expiration = datetime.now() + timedelta(minutes=10)
             print("Token retrieved: {}".format(self.token))
 
-    def get_data(self, params = None):
+    def get_data(self, params=None, throttle_delay_in_seconds=2.0):
         """Gets data from the torrent API, waiting between calls if necessary"""
 
         if self.last_request is not None:
             seconds_since_last_request = (datetime.now() - self.last_request).total_seconds()
-            if seconds_since_last_request < 2.0:
-                print("Too soon for API. Waiting...")
-                sleep(2.0 - seconds_since_last_request)
+            if seconds_since_last_request < throttle_delay_in_seconds:
+                sleep(throttle_delay_in_seconds - seconds_since_last_request)
 
         headers = { "User-Agent": self.user_agent, "Accept": "application/json" }
         response = requests.get(self.base_url, params = params, headers = headers)
@@ -75,13 +74,13 @@ class TorrentDataProvider:
             "app_id": "infield-fly"
         }
 
-        print("Searching for '{}'".format(search_string))
+        print("Searching for '{}' (retry up to {} times)".format(search_string, retry_count))
         search_response = self.get_data(params)
         while "error" in search_response and retry_count > 0:
             print("No results received; waiting and trying again...")
             sleep(3)
             retry_count -= 1
-            search_response = self.get_data(params)
+            search_response = self.get_data(params, throttle_delay_in_seconds=5.0)
 
         if "error" in search_response:
             return []

@@ -12,6 +12,8 @@ parser.add_argument("fromdate", help="Start of date range withn which to search 
 parser.add_argument("todate", nargs="?", default=datetime.now().strftime("%Y-%m-%d"),
                     help="End of date range within which to search for episodes")
 
+parser.add_argument("-r", "--retry-count", type=int, default=4,
+                    help="Number of times to retry to find torrents")
 parser.add_argument("-d", "--directory", help="Directory to which to write magnet links to files")
 parser.add_argument("-x", "--dry-run", action="store_true",
                     help="Perform a dry run, printing data, but do not convert")
@@ -48,7 +50,7 @@ else:
     finder = TorrentDataProvider()
     print("Performing searches")
     for search in searches_to_perform:
-        search_results = finder.search(search)
+        search_results = finder.search(search, retry_count=args.retry_count)
         if len(search_results) == 0:
             print("No results found after retries")
         for search_result in search_results:
