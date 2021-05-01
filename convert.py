@@ -8,42 +8,35 @@ from file_mapper import FileMapper
 from notifier import Notifier
 
 parser = argparse.ArgumentParser()
-parser.add_argument("source", help = "Source directory")
-parser.add_argument("destination", help = "Destination directory")
+parser.add_argument("source", help="Source directory")
+parser.add_argument("destination", help="Destination directory")
 
-parser.add_argument("-f", "--ffmpeg", help = "Location of ffmpeg")
-parser.add_argument("-k", "--keyword", help = "Keyword for series to map episode names")
+parser.add_argument("-f", "--ffmpeg", help="Location of ffmpeg")
+parser.add_argument("-k", "--keyword", help="Keyword for series to map episode names")
 
-video_parser = parser.add_mutually_exclusive_group(required = False)
-video_parser.add_argument("--convert-video", dest = "convert_video",
-                          action = "store_true")
-video_parser.add_argument("--no-convert-video", dest = "convert_video",
-                          action = "store_false")
+video_parser = parser.add_mutually_exclusive_group(required=False)
+video_parser.add_argument("--convert-video", dest="convert_video", action="store_true")
+video_parser.add_argument("--no-convert-video", dest="convert_video", action="store_false")
 
-audio_parser = parser.add_mutually_exclusive_group(required = False)
-audio_parser.add_argument("--convert-audio", dest = "convert_audio",
-                          action = "store_true")
-audio_parser.add_argument("--no-convert-audio", dest = "convert_audio",
-                          action = "store_false")
+audio_parser = parser.add_mutually_exclusive_group(required=False)
+audio_parser.add_argument("--convert-audio", dest="convert_audio", action = "store_true")
+audio_parser.add_argument("--no-convert-audio", dest="convert_audio", action="store_false")
 
-subtitle_parser = parser.add_mutually_exclusive_group(required = False)
-subtitle_parser.add_argument("--convert-subtitles", dest = "convert_subtitles",
-                             action = "store_true")
-subtitle_parser.add_argument("--no-convert-subtitles",
-                             dest = "convert_subtitles",
-                             action = "store_false")
+subtitle_parser = parser.add_mutually_exclusive_group(required=False)
+subtitle_parser.add_argument("--convert-subtitles", dest="convert_subtitles", action="store_true")
+subtitle_parser.add_argument("--no-convert-subtitles", dest="convert_subtitles",
+                             action="store_false")
 
-parser.add_argument("-x", "--dry-run", action = "store_true",
-                    help =
-                        "Perform a dry run, printing data, but do not convert")
-parser.add_argument("-n", "--notify", action = "store_true",
-                    help = "Notify via SMS when job is complete")
+parser.add_argument("-x", "--dry-run", action="store_true",
+                    help="Perform a dry run, printing data, but do not convert")
+parser.add_argument("-n", "--notify", action="store_true",
+                    help="Notify via SMS when job is complete")
 
-parser.set_defaults(convert_video = False,
-                    convert_audio = True,
-                    convert_subtitles = True,
-                    dry_run = False,
-                    notify = False)
+parser.set_defaults(convert_video=False,
+                    convert_audio=True,
+                    convert_subtitles=True,
+                    dry_run=False,
+                    notify=False)
 args = parser.parse_args()
 
 config = Configuration()
@@ -59,10 +52,10 @@ if args.dry_run:
 
 for src_file, dest_file in file_map:
     converter = Converter(src_file, dest_file, args.ffmpeg)
-    converter.convert_file(convert_video = args.convert_video,
-                           convert_audio = args.convert_audio,
-                           convert_subtitles = args.convert_subtitles,
-                           dry_run = args.dry_run)
+    converter.convert_file(convert_video=args.convert_video,
+                           convert_audio=args.convert_audio,
+                           convert_subtitles=args.convert_subtitles,
+                           dry_run=args.dry_run)
 
 if args.notify:
     if args.dry_run:

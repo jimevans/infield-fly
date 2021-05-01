@@ -10,7 +10,7 @@ class FileMapper:
 
     def __init__(self,
                  series_metadata,
-                 file_name_match_regex = r"(.*)s([0-9]+)e([0-9]+)(.*)\.mkv"):
+                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)\.mkv"):
         super().__init__()
         self.file_name_match_regex = file_name_match_regex
         self.series_metadata = series_metadata

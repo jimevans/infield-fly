@@ -9,7 +9,7 @@ class Converter:
 
     """Converts files into the correct format"""
 
-    def __init__(self, input_file, output_file, ffmpeg_location = None):
+    def __init__(self, input_file, output_file, ffmpeg_location=None):
         super().__init__()
         self.ffmpeg_location = ffmpeg_location
         self.input_file = input_file
@@ -17,7 +17,7 @@ class Converter:
         self.file_stream_info = FileStreamInfo.read_stream_info(
             input_file, self._get_ffmpeg_tool_location("ffprobe"))
 
-    def _get_ffmpeg_tool_location(self, tool_name = "ffmpeg"):
+    def _get_ffmpeg_tool_location(self, tool_name="ffmpeg"):
         tool_location = tool_name
         if self.ffmpeg_location is not None:
             tool_location = os.path.join(self.ffmpeg_location, tool_name)
@@ -25,8 +25,8 @@ class Converter:
             tool_location += ".exe"
         return tool_location
 
-    def convert_file(self, dry_run = False, convert_video = False, convert_audio = True,
-                     convert_subtitles = True):
+    def convert_file(self, dry_run=False, convert_video=False, convert_audio=True,
+                     convert_subtitles=True):
         """Converts a single file"""
 
         is_convert_subtitles = convert_subtitles and self.file_stream_info.has_subtitle_stream
@@ -56,7 +56,7 @@ class Converter:
 
         self.convert_forced_subtitles(dry_run)
 
-    def convert_forced_subtitles(self, dry_run = False):
+    def convert_forced_subtitles(self, dry_run=False):
         """Converts forced subtitle track, if any"""
 
         if self.file_stream_info.has_forced_subtitle_stream:

@@ -37,6 +37,6 @@ class Notifier:
 
         client = Client(self.account_sid, self.auth_token)
         message = client.messages.create(
-            body = message_body, from_ = self.sending_number, to = phone_number)
+            body = message_body, from_=self.sending_number, to=phone_number)
 
         return message.sid

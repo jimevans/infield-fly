@@ -54,7 +54,7 @@ class EpisodeDatabase:
                 return self.get_series(tracked_series.series_id)
         return None
 
-    def update_all_tracked_series(self, force_updates = False):
+    def update_all_tracked_series(self, force_updates=False):
         """Updates all tracked series in this episode database"""
 
         for series in self.tracked_series:
@@ -98,7 +98,7 @@ class EpisodeDatabase:
         return os.path.join(os.path.dirname(os.path.realpath(__file__)), ".dbcache")
 
     @classmethod
-    def load_from_cache(cls, metadata_settings = None):
+    def load_from_cache(cls, metadata_settings=None):
         """Creates an episode database from a cache file"""
 
         episode_db = EpisodeDatabase()
@@ -285,7 +285,7 @@ class TVMetadataProvider:
 
         return response.json()
 
-    def search_for_series(self, search_term, status = None):
+    def search_for_series(self, search_term, status=None):
         """Searches for a series using the thetvdb.com API"""
 
         series = []
