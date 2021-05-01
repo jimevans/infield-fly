@@ -27,7 +27,7 @@ class NotificationSettings:
 
     """Settings object containing settings for using SMS notification with Infield Fly"""
 
-    def __init__(self, raw_settings = None):
+    def __init__(self, raw_settings=None):
         super().__init__()
         self.sid = ""
         self.auth_token = ""
@@ -48,7 +48,7 @@ class MetadataSettings:
 
     """Settings object containing settings for retrieving episode meta with Infield Fly"""
 
-    def __init__(self, raw_settings = None):
+    def __init__(self, raw_settings=None):
         super().__init__()
         self.user_name = ""
         self.user_key = ""
@@ -79,11 +79,12 @@ class TrackedSeries:
 
     """Represents a tracked series"""
 
-    def __init__(self, series_id, description, keywords):
+    def __init__(self, series_id, description, keywords, stored_searches):
         super().__init__()
         self.series_id = series_id
         self.description = description
         self.keywords = keywords
+        self.stored_searches = stored_searches
 
     @classmethod
     def from_dictionary(cls, keyword, series_dict):
@@ -100,4 +101,20 @@ class TrackedSeries:
             for additional_keyword in series_dict["keywords"]:
                 keywords.append(additional_keyword.lower())
 
-        return TrackedSeries(series_id, description, keywords)
+        searches = []
+        enable_torrent_search = (series_dict["enable_torrent_search"]
+                                 if "enable_torrent_search" in series_dict
+                                 else False)
+        if enable_torrent_search:
+            primary_search_term = (series_dict["primary_search_term"]
+                                   if "primary_search_term" in series_dict
+                                   else keyword)
+            if "additional_search_term_sets" in series_dict:
+                for search_term_set in series_dict["additional_search_term_sets"]:
+                    search = [ primary_search_term ]
+                    search.extend(search_term_set)
+                    searches.append(search)
+            else:
+                searches.append([primary_search_term])
+
+        return TrackedSeries(series_id, description, keywords, searches)
