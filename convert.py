@@ -3,8 +3,7 @@
 import argparse
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
-from file_converter import Converter
-from file_mapper import FileMapper
+from file_converter import Converter, FileMapper
 from notifier import Notifier
 
 parser = argparse.ArgumentParser()
