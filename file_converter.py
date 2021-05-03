@@ -339,13 +339,23 @@ class FileMapper:
     """Maps file names to a Plex-friendly format"""
 
     def __init__(self,
-                 series_metadata,
+                 episode_db,
                  file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)\.mkv"):
         super().__init__()
         self.file_name_match_regex = file_name_match_regex
-        self.series_metadata = series_metadata
+        self.episode_db = episode_db
 
-    def map_files(self, source, destination):
+    def find_keyword_match(self, partial_file_name):
+        """Attempts to find a keyword match based on the partial file name"""
+
+        for tracked_series in self.episode_db.get_all_tracked_series():
+            for keyword in tracked_series.keywords:
+                if keyword.lower() in partial_file_name.lower():
+                    return keyword
+
+        return None
+
+    def map_files(self, source, destination, keyword=None):
         """Maps a file given a source and destination, handling individual files and directories"""
 
         file_map = []
@@ -359,7 +369,10 @@ class FileMapper:
             for input_file in file_list:
                 match = re.match(self.file_name_match_regex, input_file, re.IGNORECASE)
                 if match is not None:
-                    episode_metadata = self.series_metadata.get_episode(
+                    if keyword is None:
+                        keyword = self.find_keyword_match(match.group(1))
+                    series_metadata = self.episode_db.get_tracked_series_by_keyword(keyword)
+                    episode_metadata = series_metadata.get_episode(
                         int(match.group(2)), int(match.group(3)))
                     if episode_metadata is not None:
                         converted_file_name = "{}.mp4".format(episode_metadata.plex_title)

@@ -42,8 +42,8 @@ config = Configuration()
 episode_db = EpisodeDatabase.load_from_cache(config.metadata)
 series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
 
-mapper = FileMapper(series_metadata)
-file_map = mapper.map_files(args.source, args.destination)
+mapper = FileMapper(episode_db)
+file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
 if args.dry_run:
     for src_file, dest_file in file_map:

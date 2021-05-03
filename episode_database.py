@@ -54,6 +54,11 @@ class EpisodeDatabase:
                 return self.get_series(tracked_series.series_id)
         return None
 
+    def get_all_tracked_series(self):
+        """Gets all tracked series in this episode database"""
+        
+        return self.tracked_series
+
     def update_all_tracked_series(self, force_updates=False):
         """Updates all tracked series in this episode database"""
 
