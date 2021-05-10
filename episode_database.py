@@ -333,9 +333,6 @@ class TVMetadataProvider:
                 if episode_info.airdate is None and episode_info.season_number > 0:
                     episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
 
-                if episode_info.airdate is None and episode_info.season_number > 0:
-                    print("no air date for {}".format(episode_info.plex_title))
-
                 series_info.add_episode(episode_info)
 
             page_index += 1
