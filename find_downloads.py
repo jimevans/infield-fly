@@ -12,6 +12,9 @@ parser.add_argument("fromdate", help="Start of date range withn which to search 
 parser.add_argument("todate", nargs="?", default=datetime.now().strftime("%Y-%m-%d"),
                     help="End of date range within which to search for episodes")
 
+parser.add_argument("-u", "--update-metadata", dest="update_metadata", action="store_true",
+                    help="Update metadata cache from online sources")
+
 parser.add_argument("-r", "--retry-count", type=int, default=4,
                     help="Number of times to retry to find torrents")
 parser.add_argument("-d", "--directory", help="Directory to which to write magnet links to files")
@@ -26,6 +29,10 @@ config = Configuration()
 found_episodes = []
 searches_to_perform = []
 episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+if args.update_metadata:
+    episode_db.update_all_tracked_series()
+    episode_db.save_to_cache()
+
 for tracked_series in config.metadata.tracked_series:
     series = episode_db.get_series(tracked_series.series_id)
     series_episodes_since_last_search = series.get_episodes_by_airdate(from_date, to_date)
