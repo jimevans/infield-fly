@@ -205,8 +205,9 @@ class EpisodeInfo:
 
     """The metadata for an episode"""
 
-    def __init__(self, series_title, title, season_number, episode_number, airdate):
+    def __init__(self, episode_id, series_title, title, season_number, episode_number, airdate):
         super().__init__()
+        self.episode_id = episode_id
         self.series_title = series_title
         self.season_number = season_number
         self.episode_number = episode_number
@@ -217,6 +218,7 @@ class EpisodeInfo:
         """Serializes this episode metadata to a JSON format"""
 
         return {
+            "id": self.episode_id,
             "seasonNumber": self.season_number,
             "number": self.episode_number,
             "name": self.title,
@@ -227,6 +229,7 @@ class EpisodeInfo:
     def from_dictionary(cls, series_title, episode_dict):
         """Creates an EpisodeInfo object from a dictionary, usually created from a JSON object."""
 
+        episode_id = episode_dict["id"] if "id" in episode_dict else None
         episode_title = episode_dict["name"]
         season_number = episode_dict["seasonNumber"]
         episode_number = episode_dict["number"]
@@ -234,7 +237,7 @@ class EpisodeInfo:
                   if "aired" in episode_dict and episode_dict["aired"] is not None
                   else None)
 
-        return cls(series_title, episode_title, season_number, episode_number, airdate)
+        return cls(episode_id, series_title, episode_title, season_number, episode_number, airdate)
 
     @property
     def plex_title(self):
@@ -327,6 +330,12 @@ class TVMetadataProvider:
         while len(data["episodes"]) > 0:
             for episode_object in data["episodes"]:
                 episode_info = EpisodeInfo.from_dictionary(series_info.title, episode_object)
+                if episode_info.airdate is None and episode_info.season_number > 0:
+                    episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
+
+                if episode_info.airdate is None and episode_info.season_number > 0:
+                    print("no air date for {}".format(episode_info.plex_title))
+
                 series_info.add_episode(episode_info)
 
             page_index += 1
@@ -335,3 +344,17 @@ class TVMetadataProvider:
             data = result["data"]
 
         return series_info
+
+    def get_episode_airdate(self, episode_id):
+        """Retrieves metadata for an episode and gets its air date using the thetvdb.com API"""
+
+        relative_url = "episodes/{}".format(episode_id)
+        result = self.get_data(relative_url)
+        data = result["data"]
+        if data is None:
+            return None
+
+        airdate = (datetime.strptime(data["aired"], "%Y-%m-%d")
+                  if "aired" in data and data["aired"] is not None
+                  else None)
+        return airdate
