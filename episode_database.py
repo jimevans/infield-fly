@@ -78,7 +78,10 @@ class EpisodeDatabase:
     def update_series(self, series_id):
         """Updates the metadata for a series in this episode database"""
 
-        series_info = self.metadata_provider.get_series(series_id)
+        # We use get_series_extended() here, which is extremely chatty, due to bugs
+        # in the metadata provider API. Once the bugs are fixed, we can revert back
+        # to using get_series().
+        series_info = self.metadata_provider.get_series_extended(series_id)
         self.add_series(series_info)
         return series_info
 
@@ -342,6 +345,61 @@ class TVMetadataProvider:
 
         return series_info
 
+    def get_series_extended(self, series_id):
+        """
+        Retrieves metadata for a series and its episodes using the thetvdb.com API, but this
+        method uses a far more chatty protocol than get_series(), which should be preferred
+        """
+
+        relative_url = "series/{}/extended".format(series_id)
+        page_index = 0
+        params = { "page": page_index }
+        result = self.get_data(relative_url, params)
+        data = result["data"]
+        if data is None:
+            return None
+
+        series_info = SeriesInfo.from_dictionary(data)
+        season_ids = []
+        seasons = []
+        for raw_season in data["seasons"]:
+            if raw_season["type"]["id"] == 1 and raw_season["id"] not in season_ids:
+                season_ids.append(raw_season["id"])
+                seasons.append(raw_season)
+
+        season_count = len(seasons)
+        current_season = 0
+        self.update_progress_bar(current_season, season_count, prefix="Get seasons:")
+        episode_ids = []
+        episodes = []
+        for season in seasons:
+            season_url = "seasons/{}/extended".format(season["id"])
+            current_season += 1
+            self.update_progress_bar(current_season, season_count, prefix="Get seasons:")
+            season_result = self.get_data(season_url)
+            season_data = season_result["data"]
+            for episode_object in season_data["episodes"]:
+                if episode_object["id"] not in episode_ids:
+                    episode_ids.append(episode_object["id"])
+                    episodes.append(episode_object)
+        self.clear_progress_bar()
+
+        episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
+        episode_count = len(episodes)
+        current_episode = 0
+        self.update_progress_bar(current_episode, episode_count, prefix="Get episodes:")
+        for episode in episodes:
+            episode_info = EpisodeInfo.from_dictionary(series_info.title, episode)
+            current_episode += 1
+            self.update_progress_bar(current_episode, episode_count, prefix="Get episodes:")
+            if episode_info.airdate is None and episode_info.season_number > 0:
+                episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
+
+            series_info.add_episode(episode_info)
+        self.clear_progress_bar()
+
+        return series_info
+
     def get_episode_airdate(self, episode_id):
         """Retrieves metadata for an episode and gets its air date using the thetvdb.com API"""
 
@@ -355,3 +413,14 @@ class TVMetadataProvider:
                   if "aired" in data and data["aired"] is not None
                   else None)
         return airdate
+
+    def update_progress_bar(self, increment_value, total_value, prefix="", suffix="", decimals=1, length=100, fill="█", printEnd="\r"):
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (increment_value / float(total_value)))
+        bar_length = length - len(prefix) - len(percent) - len(suffix) - 6
+        filledLength = int(bar_length * increment_value // total_value)
+        bar = fill * filledLength + '-' * (bar_length - filledLength)
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+
+    def clear_progress_bar(self, length=100):
+        clear = " " * length
+        print(f'\r{clear}', end = "\r")
