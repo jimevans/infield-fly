@@ -133,7 +133,9 @@ class Converter:
                 ffmpeg_args.append("-b:a:1")
                 ffmpeg_args.append("640k")
                 ffmpeg_args.append("-ac:a:1")
-                ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream_channel_count))
+                ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream_channel_count
+                                               if self.file_stream_info.audio_stream_channel_count < 7
+                                               else 6))
         else:
             ffmpeg_args.append("copy")
 
