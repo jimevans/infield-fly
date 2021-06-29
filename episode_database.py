@@ -78,10 +78,7 @@ class EpisodeDatabase:
     def update_series(self, series_id):
         """Updates the metadata for a series in this episode database"""
 
-        # We use get_series_extended() here, which is extremely chatty, due to bugs
-        # in the metadata provider API. Once the bugs are fixed, we can revert back
-        # to using get_series().
-        series_info = self.metadata_provider.get_series_extended(series_id)
+        series_info = self.metadata_provider.get_series(series_id)
         self.add_series(series_info)
         return series_info
 
