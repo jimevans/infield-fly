@@ -111,13 +111,17 @@ class Converter:
         ffmpeg_args.append("default")
         ffmpeg_args.append("-c:a:0")
         if is_convert_audio:
-            ffmpeg_args.append("aac")
-            ffmpeg_args.append("-b:a:0")
-            ffmpeg_args.append("160k")
-            ffmpeg_args.append("-ac:a:0")
-            ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream_channel_count
-                                           if self.file_stream_info.audio_stream_channel_count < 2
-                                           else 2))
+            if (self.file_stream_info.audio_stream_codec == "aac"
+                    and self.file_stream_info.audio_stream_channel_count <= 2):
+                ffmpeg_args.append("copy")
+            else:
+                ffmpeg_args.append("aac")
+                ffmpeg_args.append("-b:a:0")
+                ffmpeg_args.append("160k")
+                ffmpeg_args.append("-ac:a:0")
+                ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream_channel_count
+                                            if self.file_stream_info.audio_stream_channel_count < 2
+                                            else 2))
             ffmpeg_args.append("-map")
             ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream_index))
             ffmpeg_args.append("-metadata:s:a:1")
