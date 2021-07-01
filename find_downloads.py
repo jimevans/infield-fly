@@ -33,6 +33,8 @@ if args.update_metadata:
     episode_db.update_all_tracked_series()
     episode_db.save_to_cache()
 
+print("Searching for downloads between {} and {}".format(
+    from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d")))
 for tracked_series in config.metadata.tracked_series:
     series = episode_db.get_series(tracked_series.series_id)
     series_episodes_since_last_search = series.get_episodes_by_airdate(from_date, to_date)
