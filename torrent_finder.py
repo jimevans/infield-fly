@@ -1,6 +1,7 @@
 """Module for retrieving torrent file data"""
 
 import platform
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from time import sleep
 import requests
@@ -86,30 +87,21 @@ class TorrentDataProvider:
             return []
 
         torrent_results = []
-        for torrent_result in search_response["torrent_results"]:
-            torrent_results.append(TorrentResult.from_dictionary(torrent_result))
+        for torrent_dict in search_response["torrent_results"]:
+            tvdb_id = (int(torrent_dict["episode_info"]["tvdb"])
+                       if "episode_info" in torrent_dict and "tvdb" in torrent_dict["episode_info"]
+                       else None)
+            torrent_results.append(
+                TorrentResult(torrent_dict["title"], torrent_dict["download"], tvdb_id))
 
         return torrent_results
 
 
+@dataclass
 class TorrentResult:
 
     """Describes a torrent search result"""
 
-    def __init__(self, title, magnet_link, tvdb_id):
-        super().__init__()
-        self.title = title
-        self.magnet_link = magnet_link
-        self.tvdb_id = tvdb_id
-
-    @classmethod
-    def from_dictionary(cls, torrent_dict):
-        """Creates a TorrentResult from a dictionary, usually from a JSON object"""
-
-        title = torrent_dict["title"]
-        magnet_link = torrent_dict["download"]
-        tvdb_id = None
-        if "episode_info" in torrent_dict and "tvdb" in torrent_dict["episode_info"]:
-            tvdb_id = int(torrent_dict["episode_info"]["tvdb"])
-
-        return TorrentResult(title, magnet_link, tvdb_id)
+    title: str
+    magnet_link: str
+    tvdb_id: int = None
