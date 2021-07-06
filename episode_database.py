@@ -56,7 +56,7 @@ class EpisodeDatabase:
 
     def get_all_tracked_series(self):
         """Gets all tracked series in this episode database"""
-        
+
         return self.tracked_series
 
     def update_all_tracked_series(self, force_updates=False):
@@ -327,18 +327,25 @@ class TVMetadataProvider:
             return None
 
         series_info = SeriesInfo.from_dictionary(data["series"])
+        episodes = []
         while len(data["episodes"]) > 0:
-            for episode_object in data["episodes"]:
-                episode_info = EpisodeInfo.from_dictionary(series_info.title, episode_object)
-                if episode_info.airdate is None and episode_info.season_number > 0:
-                    episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
-
-                series_info.add_episode(episode_info)
-
+            episodes.extend(data["episodes"])
             page_index += 1
             params["page"] = page_index
             result = self.get_data(relative_url, params)
             data = result["data"]
+
+        episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
+        progress_bar = ProgressBar(len(episodes), length=80, prefix="Process episodes:")
+        for episode_object in episodes:
+            progress_bar.increment()
+            episode_info = EpisodeInfo.from_dictionary(series_info.title, episode_object)
+            if episode_info.airdate is None and episode_info.season_number > 0:
+                episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
+
+            series_info.add_episode(episode_info)
+
+        progress_bar.clear()
 
         return series_info
 
@@ -364,36 +371,30 @@ class TVMetadataProvider:
                 season_ids.append(raw_season["id"])
                 seasons.append(raw_season)
 
-        season_count = len(seasons)
-        current_season = 0
-        self.update_progress_bar(current_season, season_count, prefix="Get seasons:")
+        progress_bar = ProgressBar(len(seasons), prefix="Get seasons:")
         episode_ids = []
         episodes = []
         for season in seasons:
             season_url = "seasons/{}/extended".format(season["id"])
-            current_season += 1
-            self.update_progress_bar(current_season, season_count, prefix="Get seasons:")
+            progress_bar.increment()
             season_result = self.get_data(season_url)
             season_data = season_result["data"]
             for episode_object in season_data["episodes"]:
                 if episode_object["id"] not in episode_ids:
                     episode_ids.append(episode_object["id"])
                     episodes.append(episode_object)
-        self.clear_progress_bar()
+        progress_bar.clear()
 
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
-        episode_count = len(episodes)
-        current_episode = 0
-        self.update_progress_bar(current_episode, episode_count, prefix="Get episodes:")
+        progress_bar = ProgressBar(len(episodes), prefix="Get episodes:")
         for episode in episodes:
             episode_info = EpisodeInfo.from_dictionary(series_info.title, episode)
-            current_episode += 1
-            self.update_progress_bar(current_episode, episode_count, prefix="Get episodes:")
+            progress_bar.increment()
             if episode_info.airdate is None and episode_info.season_number > 0:
                 episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
 
             series_info.add_episode(episode_info)
-        self.clear_progress_bar()
+        progress_bar.clear()
 
         return series_info
 
@@ -411,13 +412,51 @@ class TVMetadataProvider:
                   else None)
         return airdate
 
-    def update_progress_bar(self, increment_value, total_value, prefix="", suffix="", decimals=1, length=100, fill="█", printEnd="\r"):
-        percent = ("{0:." + str(decimals) + "f}").format(100 * (increment_value / float(total_value)))
-        bar_length = length - len(prefix) - len(percent) - len(suffix) - 6
-        filledLength = int(bar_length * increment_value // total_value)
-        bar = fill * filledLength + '-' * (bar_length - filledLength)
-        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
 
-    def clear_progress_bar(self, length=100):
-        clear = " " * length
-        print(f'\r{clear}', end = "\r")
+class ProgressBar:
+
+    """Prints a progress bar in the console"""
+
+    def __init__(self,
+                 total_value,
+                 increment_value=1,
+                 prefix="",
+                 suffix="",
+                 decimals=1,
+                 length=100,
+                 fill="█",
+                 print_end="\r"):
+        self.current_value = 0
+        self.increment_value = increment_value
+        self.total_value = total_value
+        self.prefix = prefix
+        self.suffix = suffix
+        self.decimals = decimals
+        self.length = length
+        self.fill_character = fill
+        self.print_end = print_end
+        self._update_display()
+
+    def increment(self):
+        """Increments the progress bar and displays the result"""
+
+        self.current_value += self.increment_value
+        self._update_display()
+
+    def clear(self):
+        """Clears the progress bar"""
+
+        clear = " " * self.length
+        print("\r{}".format(clear), end="\r")
+
+    def _update_display(self):
+        """Updates the display of the progress bar"""
+
+        percent_value = 100 * (self.current_value / float(self.total_value))
+        percent_format = "{{0:>{}.{}f}}".format(4 + self.decimals, self.decimals)
+        percent = percent_format.format(percent_value)
+        bar_length = self.length - len(self.prefix) - len(percent) - len(self.suffix) - 6
+        filled_length = int(bar_length * self.current_value // self.total_value)
+        bar = self.fill_character * filled_length + '-' * (bar_length - filled_length)
+        print("\r{} |{}| {}% {}".format(self.prefix, bar, percent, self.suffix),
+              end=self.print_end)
