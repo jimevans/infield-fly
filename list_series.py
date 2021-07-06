@@ -5,7 +5,8 @@ from config_settings import Configuration
 from episode_database import EpisodeDatabase
 
 parser = argparse.ArgumentParser()
-parser.add_argument("keyword", help="Keyword to select the series to display from the episode database")
+parser.add_argument("keyword",
+                    help="Keyword to select the series to display from the episode database")
 
 args = parser.parse_args()
 

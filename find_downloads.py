@@ -2,9 +2,9 @@
 
 import argparse
 import os
-from config_settings import Configuration
 from datetime import datetime
-from episode_database import EpisodeDatabase, SeriesInfo, EpisodeInfo
+from config_settings import Configuration
+from episode_database import EpisodeDatabase
 from torrent_finder import TorrentDataProvider
 
 parser = argparse.ArgumentParser()
@@ -41,10 +41,9 @@ for tracked_series in config.metadata.tracked_series:
     for series_episode in series_episodes_since_last_search:
         found_episodes.append(series_episode)
         for stored_search in tracked_series.stored_searches:
-            search_string = " ".join(stored_search)
-            search_string += " s{:02d}e{:02d}".format(
-                series_episode.season_number, series_episode.episode_number)
-            searches_to_perform.append(search_string)
+            stored_search.append("s{:02d}e{:02d}".format(
+                series_episode.season_number, series_episode.episode_number))
+            searches_to_perform.append(" ".join(stored_search))
 
 print("Episodes found:")
 for episode in found_episodes:

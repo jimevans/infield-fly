@@ -205,14 +205,14 @@ class EpisodeInfo:
 
     """The metadata for an episode"""
 
-    def __init__(self, episode_id, series_title, title, season_number, episode_number, airdate):
+    def __init__(self, episode_id, series_title, **kwargs):
         super().__init__()
         self.episode_id = episode_id
         self.series_title = series_title
-        self.season_number = season_number
-        self.episode_number = episode_number
-        self.title = title
-        self.airdate = airdate
+        self.season_number = kwargs["season_number"] if "season_number" in kwargs else 0
+        self.episode_number = kwargs["episode_number"] if "episode_number" in kwargs else 0
+        self.title = kwargs["title"] if "title" in kwargs else ""
+        self.airdate = kwargs["airdate"] if "airdate" in kwargs else None
 
     def to_json(self):
         """Serializes this episode metadata to a JSON format"""
@@ -237,7 +237,12 @@ class EpisodeInfo:
                   if "aired" in episode_dict and episode_dict["aired"] is not None
                   else None)
 
-        return cls(episode_id, series_title, episode_title, season_number, episode_number, airdate)
+        return cls(episode_id,
+                   series_title,
+                   title=episode_title,
+                   season_number=season_number,
+                   episode_number=episode_number,
+                   airdate=airdate)
 
     @property
     def plex_title(self):
@@ -334,8 +339,8 @@ class TVMetadataProvider:
             params["page"] = page_index
             result = self.get_data(relative_url, params)
             data = result["data"]
-
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
+
         progress_bar = ProgressBar(len(episodes), length=80, prefix="Process episodes:")
         for episode_object in episodes:
             progress_bar.increment()
@@ -364,28 +369,8 @@ class TVMetadataProvider:
             return None
 
         series_info = SeriesInfo.from_dictionary(data)
-        season_ids = []
-        seasons = []
-        for raw_season in data["seasons"]:
-            if raw_season["type"]["id"] == 1 and raw_season["id"] not in season_ids:
-                season_ids.append(raw_season["id"])
-                seasons.append(raw_season)
+        episodes = self._get_episodes_extended(data)
 
-        progress_bar = ProgressBar(len(seasons), prefix="Get seasons:")
-        episode_ids = []
-        episodes = []
-        for season in seasons:
-            season_url = "seasons/{}/extended".format(season["id"])
-            progress_bar.increment()
-            season_result = self.get_data(season_url)
-            season_data = season_result["data"]
-            for episode_object in season_data["episodes"]:
-                if episode_object["id"] not in episode_ids:
-                    episode_ids.append(episode_object["id"])
-                    episodes.append(episode_object)
-        progress_bar.clear()
-
-        episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
         progress_bar = ProgressBar(len(episodes), prefix="Get episodes:")
         for episode in episodes:
             episode_info = EpisodeInfo.from_dictionary(series_info.title, episode)
@@ -412,30 +397,87 @@ class TVMetadataProvider:
                   else None)
         return airdate
 
+    def _get_episodes_extended(self, data):
+        season_ids = []
+        seasons = []
+        for raw_season in data["seasons"]:
+            if raw_season["type"]["id"] == 1 and raw_season["id"] not in season_ids:
+                season_ids.append(raw_season["id"])
+                seasons.append(raw_season)
+
+        progress_bar = ProgressBar(len(seasons), prefix="Get seasons:")
+        episode_ids = []
+        episodes = []
+        for season in seasons:
+            season_url = "seasons/{}/extended".format(season["id"])
+            progress_bar.increment()
+            season_result = self.get_data(season_url)
+            season_data = season_result["data"]
+            for episode_object in season_data["episodes"]:
+                if episode_object["id"] not in episode_ids:
+                    episode_ids.append(episode_object["id"])
+                    episodes.append(episode_object)
+        progress_bar.clear()
+
+        episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
+        return episodes
+
 
 class ProgressBar:
 
     """Prints a progress bar in the console"""
 
-    def __init__(self,
-                 total_value,
-                 increment_value=1,
-                 prefix="",
-                 suffix="",
-                 decimals=1,
-                 length=100,
-                 fill="█",
-                 print_end="\r"):
+    def __init__(self, total_value, **kwargs):
         self.current_value = 0
-        self.increment_value = increment_value
         self.total_value = total_value
-        self.prefix = prefix
-        self.suffix = suffix
-        self.decimals = decimals
-        self.length = length
-        self.fill_character = fill
-        self.print_end = print_end
+        self.format_settings = {}
+        self.increment_value = kwargs["increment_value"] if "increment_value" in kwargs else 1
+        self.format_settings["prefix"] = kwargs["prefix"] if "prefix" in kwargs else ""
+        self.format_settings["suffix"] = kwargs["suffix"] if "suffix" in kwargs else ""
+        self.format_settings["decimals"] = kwargs["decimals"] if "decimals" in kwargs else 1
+        self.format_settings["length"] = kwargs["length"] if "length" in kwargs else 100
+        self.format_settings["fill_character"] = kwargs["fill"] if "fill" in kwargs else "█"
+        self.format_settings["print_end"] = kwargs["print_end"] if "print_end" in kwargs else "\r"
         self._update_display()
+
+    @property
+    def prefix(self):
+        """Gets the prefix printed at the beginning the progress bar"""
+
+        return self.format_settings["prefix"]
+
+    @property
+    def suffix(self):
+        """Gets the suffix printed at the end of the progress bar"""
+
+        return self.format_settings["suffix"]
+
+    @property
+    def decimals(self):
+        """
+        Gets the number of decimal points to use in printing the percentage complete
+        in the progress bar
+        """
+
+        return self.format_settings["decimals"]
+
+    @property
+    def length(self):
+        """Gets the total line length of the progress bar"""
+
+        return self.format_settings["length"]
+
+    @property
+    def fill_character(self):
+        """Gets the character to use to fill the progress of the progress bar"""
+
+        return self.format_settings["fill_character"]
+
+    @property
+    def print_end(self):
+        """Gets the character to be used to print at the end of a progress bar line update"""
+
+        return self.format_settings["print_end"]
 
     def increment(self):
         """Increments the progress bar and displays the result"""
@@ -457,6 +499,6 @@ class ProgressBar:
         percent = percent_format.format(percent_value)
         bar_length = self.length - len(self.prefix) - len(percent) - len(self.suffix) - 6
         filled_length = int(bar_length * self.current_value // self.total_value)
-        bar = self.fill_character * filled_length + '-' * (bar_length - filled_length)
-        print("\r{} |{}| {}% {}".format(self.prefix, bar, percent, self.suffix),
+        bar_text = self.fill_character * filled_length + '-' * (bar_length - filled_length)
+        print("\r{} |{}| {}% {}".format(self.prefix, bar_text, percent, self.suffix),
               end=self.print_end)
