@@ -32,9 +32,9 @@ class Converter:
         """Converts a single file"""
 
         is_convert_subtitles = convert_subtitles and self.file_stream_info.has_subtitle_stream
-        is_convert_audio = (convert_audio and
-                            self.file_stream_info.has_audio_stream and
-                            self.file_stream_info.audio_stream_codec != "aac")
+        is_convert_audio = (convert_audio
+                           and self.file_stream_info.has_audio_stream
+                           and self.file_stream_info.audio_stream.codec != "aac")
 
         ffmpeg_args = []
         ffmpeg_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
@@ -71,7 +71,7 @@ class Converter:
             forced_subs_args.append(self.input_file)
             forced_subs_args.append("-map")
             forced_subs_args.append("0:{}".format(
-                self.file_stream_info.forced_subtitle_stream_index))
+                self.file_stream_info.forced_subtitle_stream.index))
             forced_subs_args.append(forced_subs_file)
             if dry_run:
                 print("Forced subtitle conversion arguments:")
@@ -84,7 +84,7 @@ class Converter:
 
         ffmpeg_args = []
         ffmpeg_args.append("-map")
-        ffmpeg_args.append("0:{}".format(self.file_stream_info.video_stream_index))
+        ffmpeg_args.append("0:{}".format(self.file_stream_info.video_stream.index))
         ffmpeg_args.append("-c:v")
         if is_convert_video:
             ffmpeg_args.append("libx264")
@@ -104,33 +104,33 @@ class Converter:
 
         ffmpeg_args = []
         ffmpeg_args.append("-map")
-        ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream_index))
+        ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream.index))
         ffmpeg_args.append("-metadata:s:a:0")
         ffmpeg_args.append("language=eng")
         ffmpeg_args.append("-disposition:a:0")
         ffmpeg_args.append("default")
         ffmpeg_args.append("-c:a:0")
         if is_convert_audio:
-            if (self.file_stream_info.audio_stream_codec == "aac"
-                    and self.file_stream_info.audio_stream_channel_count <= 2):
+            if (self.file_stream_info.audio_stream.codec == "aac"
+                    and self.file_stream_info.audio_stream.channel_count <= 2):
                 ffmpeg_args.append("copy")
             else:
                 ffmpeg_args.append("aac")
                 ffmpeg_args.append("-b:a:0")
                 ffmpeg_args.append("160k")
                 ffmpeg_args.append("-ac:a:0")
-                ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream_channel_count
-                                            if self.file_stream_info.audio_stream_channel_count < 2
+                ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream.channel_count
+                                            if self.file_stream_info.audio_stream.channel_count < 2
                                             else 2))
             ffmpeg_args.append("-map")
-            ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream_index))
+            ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream.index))
             ffmpeg_args.append("-metadata:s:a:1")
             ffmpeg_args.append("language=eng")
             ffmpeg_args.append("-disposition:a:1")
             ffmpeg_args.append("0")
             ffmpeg_args.append("-c:a:1")
-            if (self.file_stream_info.audio_stream_codec == "ac3"
-                    or self.file_stream_info.audio_stream_codec == "eac3"):
+            if (self.file_stream_info.audio_stream.codec == "ac3"
+                    or self.file_stream_info.audio_stream.codec == "eac3"):
                 ffmpeg_args.append("copy")
             else:
                 ffmpeg_args.append("ac3")
@@ -138,8 +138,8 @@ class Converter:
                 ffmpeg_args.append("640k")
                 ffmpeg_args.append("-ac:a:1")
                 ffmpeg_args.append("{}".format(
-                    self.file_stream_info.audio_stream_channel_count
-                    if self.file_stream_info.audio_stream_channel_count < 7
+                    self.file_stream_info.audio_stream.channel_count
+                    if self.file_stream_info.audio_stream.channel_count < 7
                     else 6))
         else:
             ffmpeg_args.append("copy")
@@ -152,13 +152,16 @@ class Converter:
         ffmpeg_args = []
         if is_convert_subtitles:
             ffmpeg_args.append("-map")
-            ffmpeg_args.append("0:{}".format(self.file_stream_info.subtitle_stream_index))
-            ffmpeg_args.append("-c:s")
-            ffmpeg_args.append("mov_text")
+            ffmpeg_args.append("0:{}".format(self.file_stream_info.subtitle_stream.index))
             ffmpeg_args.append("-metadata:s:s:0")
             ffmpeg_args.append("language=eng")
             ffmpeg_args.append("-disposition:s:0")
             ffmpeg_args.append("default")
+            ffmpeg_args.append("-c:s")
+            if self.file_stream_info.subtitle_stream.codec == "mov_text":
+                ffmpeg_args.append("copy")
+            else:
+                ffmpeg_args.append("mov_text")
 
         return ffmpeg_args
 
@@ -167,30 +170,12 @@ class FileStreamInfo:
 
     """Represents the file stream information of a media file"""
 
-    UNDEFINED_STREAM_INDEX = -1
-    UNDEFINED_STREAM_CODEC = ""
-    UNDEFINED_CHANNEL_COUNT = -1
-
-    def __init__(self,
-                 video_stream_index = UNDEFINED_STREAM_INDEX,
-                 video_stream_codec = UNDEFINED_STREAM_CODEC,
-                 audio_stream_index = UNDEFINED_STREAM_INDEX,
-                 audio_stream_codec = UNDEFINED_STREAM_CODEC,
-                 audio_stream_channel_count = UNDEFINED_CHANNEL_COUNT,
-                 subtitle_stream_index = UNDEFINED_STREAM_INDEX,
-                 subtitle_stream_codec = UNDEFINED_STREAM_CODEC,
-                 forced_subtitle_stream_index = UNDEFINED_STREAM_INDEX,
-                 forced_subtitle_stream_codec = UNDEFINED_STREAM_CODEC):
+    def __init__(self, streams):
         super().__init__()
-        self.video_stream_index = video_stream_index
-        self.video_stream_codec = video_stream_codec
-        self.audio_stream_index = audio_stream_index
-        self.audio_stream_codec = audio_stream_codec
-        self.audio_stream_channel_count = audio_stream_channel_count
-        self.subtitle_stream_index = subtitle_stream_index
-        self.subtitle_stream_codec = subtitle_stream_codec
-        self.forced_subtitle_stream_index = forced_subtitle_stream_index
-        self.forced_subtitle_stream_codec = forced_subtitle_stream_codec
+        self.video_stream = streams["video"]
+        self.audio_stream = streams["audio"]
+        self.subtitle_stream = streams["subtitle"]
+        self.forced_subtitle_stream = streams["forced_subtitle"]
 
     @staticmethod
     def _probe_file(input_file, ffprobe_location):
@@ -216,85 +201,69 @@ class FileStreamInfo:
     def read_stream_info(cls, input_file, ffprobe_location = "ffprobe"):
         """Reads the stream information from a file and creates a FileStreamInfo object"""
 
+        streams = {
+            "video": None,
+            "audio": None,
+            "subtitle": None,
+            "forced_subtitle": None
+        }
         metadata = FileStreamInfo._probe_file(input_file, ffprobe_location)
-        video_stream_index = FileStreamInfo.UNDEFINED_STREAM_INDEX
-        video_stream_codec = FileStreamInfo.UNDEFINED_STREAM_CODEC
-        audio_stream_index = FileStreamInfo.UNDEFINED_STREAM_INDEX
-        audio_stream_codec = FileStreamInfo.UNDEFINED_STREAM_CODEC
-        audio_stream_channel_count = FileStreamInfo.UNDEFINED_CHANNEL_COUNT
-        subtitle_stream_index = FileStreamInfo.UNDEFINED_STREAM_INDEX
-        subtitle_stream_codec = FileStreamInfo.UNDEFINED_STREAM_CODEC
-        forced_subtitle_stream_index = FileStreamInfo.UNDEFINED_STREAM_INDEX
-        forced_subtitle_stream_codec = FileStreamInfo.UNDEFINED_STREAM_CODEC
         for stream_metadata in metadata["streams"]:
             stream = FileStreamInfo.StreamInfo(stream_metadata)
-            if stream.is_video and video_stream_index == FileStreamInfo.UNDEFINED_STREAM_INDEX:
-                video_stream_index = stream.index
-                video_stream_codec = stream.codec_name
+            if stream.is_video and streams["video"] is None:
+                streams["video"] = stream
 
             if stream.is_audio:
-                if (stream.is_default
-                        or (stream.language == "eng"
-                            and audio_stream_index == FileStreamInfo.UNDEFINED_CHANNEL_COUNT)):
-                    audio_stream_index = stream.index
-                    audio_stream_codec = stream.codec_name
-                    audio_stream_channel_count = stream.channel_count
+                if (stream.is_default or (stream.language == "eng" and streams["audio"] is None)):
+                    streams["audio"] = stream
 
-            if stream.is_subtitle and stream.codec_name == "subrip" and stream.language == "eng":
+            if (stream.is_subtitle
+                    and (stream.codec == "subrip" or stream.codec == "mov_text")
+                    and stream.language == "eng"):
                 if stream.is_forced:
-                    if forced_subtitle_stream_index == FileStreamInfo.UNDEFINED_STREAM_INDEX:
-                        forced_subtitle_stream_index = stream.index
-                        forced_subtitle_stream_codec = stream.codec_name
-                elif subtitle_stream_index == FileStreamInfo.UNDEFINED_STREAM_INDEX:
-                    subtitle_stream_index = stream.index
-                    subtitle_stream_codec = stream.codec_name
+                    if streams["forced_subtitle"] is None:
+                        streams["forced_subtitle"] = stream
+                elif streams["subtitle"] is None:
+                    streams["subtitle"] = stream
 
-        return cls(video_stream_index = video_stream_index,
-                   video_stream_codec = video_stream_codec,
-                   audio_stream_index = audio_stream_index,
-                   audio_stream_codec = audio_stream_codec,
-                   audio_stream_channel_count = audio_stream_channel_count,
-                   subtitle_stream_index = subtitle_stream_index,
-                   subtitle_stream_codec = subtitle_stream_codec,
-                   forced_subtitle_stream_index = forced_subtitle_stream_index,
-                   forced_subtitle_stream_codec = forced_subtitle_stream_codec)
+        return cls(streams)
 
     @property
     def has_video_stream(self):
         """Gets a value indicating whether the file has a video stream"""
 
-        return self.video_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
+        return self.video_stream is not None
 
     @property
     def has_audio_stream(self):
         """Gets a value indicating whether the file has an audio stream"""
 
-        return self.audio_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
+        return self.audio_stream is not None
 
     @property
     def has_subtitle_stream(self):
         """Gets a value indicating whether the file has a subtitle stream"""
 
-        return self.subtitle_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
+        return self.subtitle_stream is not None
 
     @property
     def has_forced_subtitle_stream(self):
         """Gets a value indicating whether the file has a forced subtitle stream"""
 
-        return self.forced_subtitle_stream_index != FileStreamInfo.UNDEFINED_STREAM_INDEX
+        return self.forced_subtitle_stream is not None
 
     def show(self):
         """Displays the file stream information"""
 
         print("Stream Info:")
         print("video stream: index={}, codec={}".format(
-            self.video_stream_index, self.video_stream_codec))
+            self.video_stream.index, self.video_stream.codec))
         print("audio stream: index={}, codec={}, channels={}".format(
-            self.audio_stream_index, self.audio_stream_codec, self.audio_stream_channel_count))
+            self.audio_stream.index, self.audio_stream.codec, self.audio_stream.channel_count))
         print("subtitle stream: index={}, codec={}".format(
-            self.subtitle_stream_index, self.subtitle_stream_codec))
+            self.subtitle_stream.index, self.subtitle_stream.codec))
         print("forced subtitle stream: index={}, codec={}".format(
-            self.forced_subtitle_stream_index, self.forced_subtitle_stream_codec))
+            self.forced_subtitle_stream.index, self.forced_subtitle_stream.codec))
 
 
     class StreamInfo:
@@ -304,25 +273,24 @@ class FileStreamInfo:
         def __init__(self, stream_metadata):
             super().__init__()
             self.index = stream_metadata["index"]
+            self.codec = stream_metadata["codec_name"]
             self.codec_type = stream_metadata["codec_type"]
-            self.codec_name = stream_metadata["codec_name"]
 
-            self.is_forced = False
-            self.is_default = False
-            if "disposition" in stream_metadata:
-                disposition = stream_metadata["disposition"]
-                if "default" in disposition and disposition["default"] == 1:
-                    self.is_default = True
-                if "forced" in disposition and disposition["forced"] == 1:
-                    self.is_forced = True
+            self.is_default = ("disposition" in stream_metadata
+                              and "default" in stream_metadata["disposition"]
+                              and stream_metadata["disposition"]["default"] == 1)
 
-            self.channel_count = FileStreamInfo.UNDEFINED_CHANNEL_COUNT
-            if "channels" in stream_metadata:
-                self.channel_count = stream_metadata["channels"]
+            self.is_forced = ("disposition" in stream_metadata
+                             and "forced" in stream_metadata["disposition"]
+                             and stream_metadata["disposition"]["forced"] == 1)
 
-            self.language = ""
-            if "tags" in stream_metadata and "language" in stream_metadata["tags"]:
-                self.language = stream_metadata["tags"]["language"]
+            self.channel_count = (stream_metadata["channels"]
+                                 if "channels" in stream_metadata
+                                 else -1)
+
+            self.language = (stream_metadata["tags"]["language"]
+                            if "tags" in stream_metadata and "language" in stream_metadata["tags"]
+                            else "")
 
         @property
         def is_video(self):
@@ -349,7 +317,7 @@ class FileMapper:
 
     def __init__(self,
                  episode_db,
-                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)\.mkv"):
+                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)"):
         super().__init__()
         self.file_name_match_regex = file_name_match_regex
         self.episode_db = episode_db
@@ -388,11 +356,10 @@ class FileMapper:
                         file_map.append((os.path.join(src_dir, input_file),
                                          os.path.join(dest_dir, converted_file_name)))
         else:
-            dest_file = destination
             if os.path.isdir(destination):
-                source_file_name = os.path.basename(source)
-                source_file_base, _ = os.path.splitext(source_file_name)
-                dest_file = os.path.join(destination, source_file_base + ".mp4")
-            file_map.append((source, dest_file))
+                source_file_base, _ = os.path.splitext(os.path.basename(source))
+                file_map.append((source, os.path.join(destination, source_file_base + ".mp4")))
+            else:
+                file_map.append((source, destination))
 
         return file_map
