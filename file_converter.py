@@ -33,8 +33,7 @@ class Converter:
 
         is_convert_subtitles = convert_subtitles and self.file_stream_info.has_subtitle_stream
         is_convert_audio = (convert_audio
-                           and self.file_stream_info.has_audio_stream
-                           and self.file_stream_info.audio_stream.codec != "aac")
+                           and self.file_stream_info.has_audio_stream)
 
         ffmpeg_args = []
         ffmpeg_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
