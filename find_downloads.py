@@ -40,14 +40,18 @@ for tracked_series in config.metadata.tracked_series:
     series_episodes_since_last_search = series.get_episodes_by_airdate(from_date, to_date)
     for series_episode in series_episodes_since_last_search:
         found_episodes.append(series_episode)
+        episode_search_id = "s{:02d}e{:02d}".format(
+            series_episode.season_number, series_episode.episode_number)
         for stored_search in tracked_series.stored_searches:
-            stored_search.append("s{:02d}e{:02d}".format(
-                series_episode.season_number, series_episode.episode_number))
-            searches_to_perform.append(" ".join(stored_search))
+            searches_to_perform.append("{} {}".format(
+                " ".join(stored_search),
+                "s{:02d}e{:02d}".format(
+                    series_episode.season_number, series_episode.episode_number)
+            ))
 
 print("Episodes found:")
 for episode in found_episodes:
-    print(episode.plex_title)
+    print("{} (airdate {:%Y-%m-%d})".format(episode.plex_title, episode.airdate))
 
 print("")
 if args.dry_run:
