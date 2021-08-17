@@ -88,7 +88,7 @@ class Converter:
         if is_convert_video:
             ffmpeg_args.append("libx264")
             ffmpeg_args.append("-vf")
-            ffmpeg_args.append("scale=-1:1024")
+            ffmpeg_args.append("scale=-1:1080")
             ffmpeg_args.append("-crf")
             ffmpeg_args.append("17")
             ffmpeg_args.append("-preset")
