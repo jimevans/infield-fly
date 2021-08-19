@@ -25,6 +25,9 @@ class Configuration:
                 if "metadata" in settings:
                     self.settings["metadata"] = MetadataSettings(settings["metadata"])
 
+                if "conversion" in settings:
+                    self.settings["conversion"] = ConversionSettings(settings["conversion"])
+
     @property
     def notification(self):
         """Gets the settings for sending notifications"""
@@ -36,6 +39,33 @@ class Configuration:
         """Gets the settings for retrieving TV episode metadata"""
 
         return self.settings["metadata"]
+
+    @property
+    def conversion(self):
+        """Gets the settings for conversion"""
+
+        return self.settings["conversion"]
+
+
+class ConversionSettings:
+
+    """Settings object containing settings for conversiion of files"""
+
+    def __init__(self, raw_settings):
+        super().__init__()
+        self.settings = raw_settings
+
+    @property
+    def string_substitutions(self):
+        """Gets the set of string substitution for file names during conversions"""
+
+        return self._get_setting("substitutions")
+
+    def _get_setting(self, setting_name):
+        return (self.settings[setting_name]
+               if self.settings is not None and setting_name in self.settings
+               else "")
+
 
 class NotificationSettings:
 

@@ -6,6 +6,12 @@ from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
 from notifier import Notifier
 
+def replace_strings(input, substitutions):
+    output = input
+    for replacement in substitutions:
+        output = output.replace(replacement, substitutions[replacement])
+    return output
+
 parser = argparse.ArgumentParser()
 parser.add_argument("source", help="Source directory")
 parser.add_argument("destination", help="Destination directory")
@@ -47,10 +53,12 @@ file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
 if args.dry_run:
     for src_file, dest_file in file_map:
-        print("Convert {} -> {}".format(src_file, dest_file))
+        converted_dest_file = replace_strings(dest_file, config.conversion.string_substitutions)
+        print("Convert {} -> {}".format(src_file, converted_dest_file))
 
 for src_file, dest_file in file_map:
-    converter = Converter(src_file, dest_file, args.ffmpeg)
+    converted_dest_file = replace_strings(dest_file, config.conversion.string_substitutions)
+    converter = Converter(src_file, converted_dest_file, args.ffmpeg)
     converter.convert_file(convert_video=args.convert_video,
                            convert_audio=args.convert_audio,
                            convert_subtitles=args.convert_subtitles,
