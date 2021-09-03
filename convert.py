@@ -47,7 +47,7 @@ args = parser.parse_args()
 config = Configuration()
 episode_db = EpisodeDatabase.load_from_cache(config.metadata)
 series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
-if series_metadata is None:
+if args.keyword is not None and series_metadata is None:
     print("Keyword '{}' was not found in the database".format(args.keyword))
 else:
     mapper = FileMapper(episode_db)
