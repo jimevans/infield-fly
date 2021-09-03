@@ -47,36 +47,38 @@ args = parser.parse_args()
 config = Configuration()
 episode_db = EpisodeDatabase.load_from_cache(config.metadata)
 series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
+if series_metadata is None:
+    print("Keyword '{}' was not found in the database".format(args.keyword))
+else:
+    mapper = FileMapper(episode_db)
+    file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
-mapper = FileMapper(episode_db)
-file_map = mapper.map_files(args.source, args.destination, args.keyword)
+    if args.dry_run:
+        for src_file, dest_file in file_map:
+            converted_dest_file = replace_strings(dest_file, config.conversion.string_substitutions)
+            print("Convert {} -> {}".format(src_file, converted_dest_file))
 
-if args.dry_run:
     for src_file, dest_file in file_map:
         converted_dest_file = replace_strings(dest_file, config.conversion.string_substitutions)
-        print("Convert {} -> {}".format(src_file, converted_dest_file))
+        converter = Converter(src_file, converted_dest_file, args.ffmpeg)
+        converter.convert_file(convert_video=args.convert_video,
+                            convert_audio=args.convert_audio,
+                            convert_subtitles=args.convert_subtitles,
+                            dry_run=args.dry_run)
 
-for src_file, dest_file in file_map:
-    converted_dest_file = replace_strings(dest_file, config.conversion.string_substitutions)
-    converter = Converter(src_file, converted_dest_file, args.ffmpeg)
-    converter.convert_file(convert_video=args.convert_video,
-                           convert_audio=args.convert_audio,
-                           convert_subtitles=args.convert_subtitles,
-                           dry_run=args.dry_run)
-
-if args.notify:
-    if args.dry_run:
-        print("Operation complete. Not sending notification on dry run.")
-    else:
-        if config.notification is None:
-            print("No config notification settings in settings file. Not notifying.")
-        elif (config.notification.receiving_number is None
-              or config.notification.receiving_number == ""):
-            print("No recipient number specified in notification settings in settings file. "
-                  "Not notifying.")
+    if args.notify:
+        if args.dry_run:
+            print("Operation complete. Not sending notification on dry run.")
         else:
-            notification_receiver = config.notification.receiving_number
-            notifier = Notifier.create_default_notifier(config.notification)
-            if notifier is not None:
-                notifier.notify(notification_receiver,
-                                "Conversion of {} complete.".format(args.source))
+            if config.notification is None:
+                print("No config notification settings in settings file. Not notifying.")
+            elif (config.notification.receiving_number is None
+                or config.notification.receiving_number == ""):
+                print("No recipient number specified in notification settings in settings file. "
+                    "Not notifying.")
+            else:
+                notification_receiver = config.notification.receiving_number
+                notifier = Notifier.create_default_notifier(config.notification)
+                if notifier is not None:
+                    notifier.notify(notification_receiver,
+                                    "Conversion of {} complete.".format(args.source))

@@ -13,7 +13,10 @@ args = parser.parse_args()
 config = Configuration()
 episode_db = EpisodeDatabase.load_from_cache(config.metadata)
 series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
-for episode in series_metadata.episodes:
-    airdate = "not aired" if episode.airdate is None else episode.airdate.strftime("%Y-%m-%d")
-    print("s{:02d}e{:02d} (aired: {}) - {}".format(
-        episode.season_number, episode.episode_number, airdate, episode.title))
+if series_metadata is None:
+    print("Keyword '{}' was not found in the database".format(args.keyword))
+else:
+    for episode in series_metadata.episodes:
+        airdate = "not aired" if episode.airdate is None else episode.airdate.strftime("%Y-%m-%d")
+        print("s{:02d}e{:02d} (aired: {}) - {}".format(
+            episode.season_number, episode.episode_number, airdate, episode.title))
