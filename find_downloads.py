@@ -2,15 +2,19 @@
 
 import argparse
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from torrent_finder import TorrentDataProvider
 
 parser = argparse.ArgumentParser()
-parser.add_argument("fromdate", help="Start of date range withn which to search for episodes")
+parser.add_argument("fromdate", nargs="?",
+                    default=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
+                    help="Start of date range within which to search for episodes " +
+                    "(defaults to previous day)")
 parser.add_argument("todate", nargs="?", default=datetime.now().strftime("%Y-%m-%d"),
-                    help="End of date range within which to search for episodes")
+                    help="End of date range within which to search for episodes " +
+                    "(defaults to current day)")
 
 parser.add_argument("-u", "--update-metadata", dest="update_metadata", action="store_true",
                     help="Update metadata cache from online sources")
@@ -67,7 +71,7 @@ else:
             print("No results found after retries")
         for search_result in search_results:
             if args.directory is not None and os.path.isdir(args.directory):
-                magnet_file_path = os.path.join(args.directory,search_result.title + ".magnet")
+                magnet_file_path = os.path.join(args.directory, search_result.title + ".magnet")
                 print("Writing magnet link to {}".format(magnet_file_path))
                 with open(magnet_file_path, "w") as magnet_file:
                     magnet_file.write(search_result.magnet_link)
