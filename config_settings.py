@@ -197,7 +197,7 @@ class MetadataSettings:
                     else:
                         searches.append([primary_search_term])
                 self.tracked_series.append(
-                    TrackedSeries(series_id, description, keywords, searches))
+                    TrackedSeries(series_id, description, series_keyword, keywords, searches))
 
 
 @dataclass
@@ -207,5 +207,6 @@ class TrackedSeries:
 
     series_id: str
     description: str
+    main_keyword: str
     keywords: List[str]
     stored_searches: List[str]
