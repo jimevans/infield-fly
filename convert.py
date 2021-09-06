@@ -8,15 +8,15 @@ from notifier import Notifier
 
 def replace_strings(input, substitutions):
     output = input
-    for replacement in substitutions:
-        output = output.replace(replacement, substitutions[replacement])
+    if substitutions is not None:
+        for replacement in substitutions:
+            output = output.replace(replacement, substitutions[replacement])
     return output
 
 parser = argparse.ArgumentParser()
 parser.add_argument("source", help="Source directory")
 parser.add_argument("destination", help="Destination directory")
 
-parser.add_argument("-f", "--ffmpeg", help="Location of ffmpeg")
 parser.add_argument("-k", "--keyword", help="Keyword for series to map episode names")
 
 video_parser = parser.add_mutually_exclusive_group(required=False)
@@ -60,7 +60,7 @@ else:
 
     for src_file, dest_file in file_map:
         converted_dest_file = replace_strings(dest_file, config.conversion.string_substitutions)
-        converter = Converter(src_file, converted_dest_file, args.ffmpeg)
+        converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_location)
         converter.convert_file(convert_video=args.convert_video,
                             convert_audio=args.convert_audio,
                             convert_subtitles=args.convert_subtitles,

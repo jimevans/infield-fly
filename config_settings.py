@@ -61,10 +61,16 @@ class ConversionSettings:
 
         return self._get_setting("substitutions")
 
+    @property
+    def ffmpeg_location(self):
+        """Gets the location of ffmpeg tools"""
+
+        return self._get_setting("ffmpeg_location")
+
     def _get_setting(self, setting_name):
         return (self.settings[setting_name]
                if self.settings is not None and setting_name in self.settings
-               else "")
+               else None)
 
 
 class NotificationSettings:
