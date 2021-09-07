@@ -67,6 +67,24 @@ class ConversionSettings:
 
         return self._get_setting("ffmpeg_location")
 
+    @property
+    def magnet_directory(self):
+        """Gets the path of the directory to which to write magnet files"""
+
+        return self._get_setting("magnet_directory")
+
+    @property
+    def staging_directory(self):
+        """Gets the path of the directory into which converted files are to be written"""
+
+        return self._get_setting("staging_directory")
+
+    @property
+    def final_directory(self):
+        """Gets the path of the directory where final, converted files will be written"""
+
+        return self._get_setting("final_directory")
+
     def _get_setting(self, setting_name):
         return (self.settings[setting_name]
                if self.settings is not None and setting_name in self.settings
