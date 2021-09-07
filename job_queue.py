@@ -88,7 +88,7 @@ class JobQueue:
                         job_to_add.status = "searching"
                         self.add_job(job_to_add)
 
-        magnet_directory = config.conversion.magnet_directory
+        staging_directory = config.conversion.staging_directory
         finder = TorrentDataProvider()
         for job in self.jobs:
             if job.status == "searching":
@@ -100,14 +100,19 @@ class JobQueue:
                         job.status = "adding"
                         job.magnet_link = search_result.magnet_link
                         job.name = search_result.title
-                        if magnet_directory is not None and os.path.isdir(magnet_directory):
-                            magnet_file_path = os.path.join(magnet_directory, search_result.title + ".magnet")
+                        if staging_directory is not None and os.path.isdir(staging_directory):
+                            magnet_file_path = os.path.join(staging_directory, search_result.title + ".magnet")
                             print("Writing magnet link to {}".format(magnet_file_path))
                             with open(magnet_file_path, "w") as magnet_file:
                                 magnet_file.write(search_result.magnet_link)
                                 magnet_file.flush()
 
         self.save_to_cache()
+        magnet_directory = config.conversion.magnet_directory
+        if magnet_directory is not None and os.path.isdir(magnet_directory):
+            for file in os.listdir(staging_directory):
+                if file.endswith(".magnet"):
+                    os.rename(file, os.path.join(magnet_directory, os.path.basename(file)))
 
     def save_to_cache(self):
         """Writes this job queue to a cache file"""
