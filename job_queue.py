@@ -110,9 +110,10 @@ class JobQueue:
         self.save_to_cache()
         magnet_directory = config.conversion.magnet_directory
         if magnet_directory is not None and os.path.isdir(magnet_directory):
-            for file in os.listdir(staging_directory):
-                if file.endswith(".magnet"):
-                    os.rename(file, os.path.join(magnet_directory, os.path.basename(file)))
+            for magnet_file_name in os.listdir(staging_directory):
+                if magnet_file_name.endswith(".magnet"):
+                    os.rename(os.path.join(staging_directory, magnet_file_name),
+                              os.path.join(magnet_directory, magnet_file_name))
 
     def save_to_cache(self):
         """Writes this job queue to a cache file"""
