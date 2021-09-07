@@ -141,7 +141,7 @@ class JobQueue:
             "jobs": self.jobs
         }
 
-    def _replace_strings(input, substitutions):
+    def _replace_strings(self, input, substitutions):
         output = input
         if substitutions is not None:
             for replacement in substitutions:
