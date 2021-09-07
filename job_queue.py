@@ -57,7 +57,7 @@ class JobQueue:
                     converted_dest_file = self._replace_strings(
                         dest_file, 
                         config.conversion.string_substitutions)
-                    converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_locaation)
+                    converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_location)
                     converter.convert_file(
                         convert_video=False, convert_audio=True, convert_subtitles=True)
                     self.remove_job(job)
