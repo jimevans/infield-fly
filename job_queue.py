@@ -52,7 +52,7 @@ class JobQueue:
             if episode_db.get_tracked_series_by_keyword(job.keyword) is not None:
                 mapper = FileMapper(episode_db)
                 file_map = mapper.map_files(
-                    os.path.join(job.download_directory, job.name) + os.path.sep,
+                    os.path.join(job.download_directory, job.name),
                     staging_directory,
                     job.keyword)
                 for src_file, dest_file in file_map:
