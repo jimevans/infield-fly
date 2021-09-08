@@ -63,7 +63,7 @@ class JobQueue:
                     converter.convert_file(
                         convert_video=False, convert_audio=True, convert_subtitles=True)
                     job.status = "completed"
-                    if datetime.now().strftime("%Y-%m-%d") == job.added:
+                    if datetime.now().strftime("%Y-%m-%d") != job.added:
                         self.remove_job(job)
                     os.rename(converted_dest_file, os.path.join(final_directory, os.path.basename(converted_dest_file)))
 
