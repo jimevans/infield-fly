@@ -27,11 +27,13 @@ class JobQueue:
 
     def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
         for job in self.jobs:
-            if job.status == "adding" and job.name == torrent_name:
+            if job.status == "adding" and job.title == torrent_name:
                 job.torrent_hash = torrent_hash
                 job.download_directory = torrent_directory
+                job.name = torrent_name
                 job.status = "downloading"
             elif job.status == "downloading" and job.torrent_hash == torrent_hash:
+                job.name = torrent_name
                 job.status = "converting"
 
         self.save_to_cache()
@@ -50,7 +52,7 @@ class JobQueue:
             if episode_db.get_tracked_series_by_keyword(job.keyword) is not None:
                 mapper = FileMapper(episode_db)
                 file_map = mapper.map_files(
-                    os.path.join(job.download_directory, job.name),
+                    os.path.join(job.download_directory, job.name) + os.path.sep,
                     staging_directory,
                     job.keyword)
                 for src_file, dest_file in file_map:
@@ -102,7 +104,7 @@ class JobQueue:
                     for search_result in search_results:
                         job.status = "adding"
                         job.magnet_link = search_result.magnet_link
-                        job.name = search_result.title
+                        job.title = search_result.title
                         if staging_directory is not None and os.path.isdir(staging_directory):
                             magnet_file_path = os.path.join(staging_directory, search_result.title + ".magnet")
                             print("Writing magnet link to {}".format(magnet_file_path))
@@ -207,6 +209,14 @@ class Job:
     @magnet_link.setter
     def magnet_link(self, value):
         self.dictionary["magnet_link"] = value
+
+    @property
+    def title(self):
+        return self.dictionary["title"] if "title" in self.dictionary else None
+
+    @title.setter
+    def title(self, value):
+        self.dictionary["title"] = value
 
     @property
     def name(self):
