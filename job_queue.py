@@ -18,13 +18,6 @@ class JobQueue:
     def remove_job(self, job):
         self.jobs.remove(job)
 
-    def reset_jobs(self):
-        for job in self.jobs:
-            if job.status == "waiting":
-                job.status == "searching"
-
-        self.save_to_cache()
-
     def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
         for job in self.jobs:
             if job.status == "adding" and job.title == torrent_name:
