@@ -62,7 +62,9 @@ class JobQueue:
                     converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_location)
                     converter.convert_file(
                         convert_video=False, convert_audio=True, convert_subtitles=True)
-                    self.remove_job(job)
+                    job.status = "completed"
+                    if datetime.now().strftime("%Y-%m-%d") == job.added:
+                        self.remove_job(job)
                     os.rename(converted_dest_file, os.path.join(final_directory, os.path.basename(converted_dest_file)))
 
         self.save_to_cache()
@@ -90,6 +92,7 @@ class JobQueue:
                         job_to_add = Job({})
                         job_to_add.keyword = tracked_series.main_keyword
                         job_to_add.query = search_string
+                        job_to_add.added = datetime.now().strftime("%Y-%m-%d")
                         job_to_add.status = "searching"
                         self.add_job(job_to_add)
 
@@ -185,6 +188,14 @@ class Job:
     @keyword.setter
     def keyword(self, value):
         self.dictionary["keyword"] = value
+
+    @property
+    def added(self):
+        return self.dictionary["added"] if "added" in self.dictionary else None
+
+    @added.setter
+    def added(self, value):
+        self.dictionary["added"] = value
 
     @property
     def query(self):
