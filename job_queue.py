@@ -70,6 +70,10 @@ class JobQueue:
         self.save_to_cache()
 
     def perform_searches(self, airdate):
+        completed_job_list = [x for x in self.jobs if x.status == "completed" and x.added != airdate.strftime("%Y-%m-%d")]
+        for job in completed_job_list:
+            self.remove_job(job)
+
         for job in self.jobs:
             if job.status == "waiting":
                 job.status = "searching"
