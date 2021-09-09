@@ -147,7 +147,6 @@ class JobQueue:
 
     def is_existing_job(self, keyword, search_string):
         for job in self.jobs:
-            print("existing job: keyword={}, search={}".format(job.keyword, job.query))
             if job.keyword == keyword and job.query == search_string:
                 return True
 
