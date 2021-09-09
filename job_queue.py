@@ -194,7 +194,8 @@ class Job:
         self.dictionary = job_dict
         if "status" not in self.dictionary:
             self.dictionary["status"] = "waiting"
-        self.dictionary["id"] = str(uuid.uuid1())
+        if "id" not in self.dictionary:
+            self.dictionary["id"] = str(uuid.uuid1())
 
     @property
     def id(self):
