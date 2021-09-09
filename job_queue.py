@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import os
 import fasteners
+import uuid
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
@@ -20,6 +21,16 @@ class JobQueue:
 
     def remove_job(self, job):
         self.jobs.remove(job)
+
+    def get_job_by_id(self, id):
+        for job in self.jobs:
+            if job.id == id:
+                return job
+
+        return None
+
+    def get_jobs(self):
+        return self.jobs
 
     def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
         with self.lock:
@@ -142,7 +153,6 @@ class JobQueue:
 
         return False
 
-
     def to_json(self):
         """Serializes this job queue to a JSON format"""
 
@@ -184,6 +194,11 @@ class Job:
         self.dictionary = job_dict
         if "status" not in self.dictionary:
             self.dictionary["status"] = "waiting"
+        self.dictionary["id"] = str(uuid.uuid1())
+
+    @property
+    def id(self):
+        return self.dictionary["id"]
 
     @property
     def keyword(self):
