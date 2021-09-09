@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import os
+import fasteners
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
@@ -10,6 +11,8 @@ class JobQueue:
 
     def __init__(self):
         super().__init__()
+        self.lock = fasteners.InterProcessLock(
+            os.path.join(os.path.dirname(self.cache_file_path), ".queuelock"))
         self.jobs = []
 
     def add_job(self, job):
@@ -19,17 +22,18 @@ class JobQueue:
         self.jobs.remove(job)
 
     def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
-        for job in self.jobs:
-            if job.status == "adding" and job.title == torrent_name:
-                job.torrent_hash = torrent_hash
-                job.download_directory = torrent_directory
-                job.name = torrent_name
-                job.status = "downloading"
-            elif job.status == "downloading" and job.torrent_hash == torrent_hash:
-                job.name = torrent_name
-                job.status = "converting"
+        with self.lock:
+            for job in self.jobs:
+                if job.status == "adding" and job.title == torrent_name:
+                    job.torrent_hash = torrent_hash
+                    job.download_directory = torrent_directory
+                    job.name = torrent_name
+                    job.status = "downloading"
+                elif job.status == "downloading" and job.torrent_hash == torrent_hash:
+                    job.name = torrent_name
+                    job.status = "converting"
 
-        self.save_to_cache()
+            self.save_to_cache()
 
     def perform_conversions(self):
         config = Configuration()
@@ -40,27 +44,28 @@ class JobQueue:
                            if config.conversion.final_directory is not None
                            else "completed")
         episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-        converting_job_list = [x for x in self.jobs if x.status == "converting"]
-        for job in converting_job_list:
-            if episode_db.get_tracked_series_by_keyword(job.keyword) is not None:
-                mapper = FileMapper(episode_db)
-                file_map = mapper.map_files(
-                    os.path.join(job.download_directory, job.name) + os.sep,
-                    staging_directory,
-                    job.keyword)
-                for src_file, dest_file in file_map:
-                    converted_dest_file = self._replace_strings(
-                        dest_file, 
-                        config.conversion.string_substitutions)
-                    converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_location)
-                    converter.convert_file(
-                        convert_video=False, convert_audio=True, convert_subtitles=True)
-                    job.status = "completed"
-                    if datetime.now().strftime("%Y-%m-%d") != job.added:
-                        self.remove_job(job)
-                    os.rename(converted_dest_file, os.path.join(final_directory, os.path.basename(converted_dest_file)))
+        with self.lock:
+            converting_job_list = [x for x in self.jobs if x.status == "converting"]
+            for job in converting_job_list:
+                if episode_db.get_tracked_series_by_keyword(job.keyword) is not None:
+                    mapper = FileMapper(episode_db)
+                    file_map = mapper.map_files(
+                        os.path.join(job.download_directory, job.name) + os.sep,
+                        staging_directory,
+                        job.keyword)
+                    for src_file, dest_file in file_map:
+                        converted_dest_file = self._replace_strings(
+                            dest_file, 
+                            config.conversion.string_substitutions)
+                        converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_location)
+                        converter.convert_file(
+                            convert_video=False, convert_audio=True, convert_subtitles=True)
+                        job.status = "completed"
+                        if datetime.now().strftime("%Y-%m-%d") != job.added:
+                            self.remove_job(job)
+                        os.rename(converted_dest_file, os.path.join(final_directory, os.path.basename(converted_dest_file)))
 
-        self.save_to_cache()
+            self.save_to_cache()
 
     def perform_searches(self, airdate):
         completed_job_list = [x for x in self.jobs if x.status == "completed" and x.added != airdate.strftime("%Y-%m-%d")]
@@ -74,45 +79,47 @@ class JobQueue:
         config = Configuration()
         found_episodes = []
         episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-        for tracked_series in config.metadata.tracked_series:
-            series = episode_db.get_series(tracked_series.series_id)
-            series_episodes_since_last_search = series.get_episodes_by_airdate(
-                airdate, airdate)
-            for series_episode in series_episodes_since_last_search:
-                found_episodes.append(series_episode)
-                for stored_search in tracked_series.stored_searches:
-                    search_string = "{} {}".format(
-                            " ".join(stored_search),
-                            "s{:02d}e{:02d}".format(
-                                series_episode.season_number, series_episode.episode_number))
-                    if not self.is_existing_job(tracked_series.main_keyword, search_string):
-                        job_to_add = Job({})
-                        job_to_add.keyword = tracked_series.main_keyword
-                        job_to_add.query = search_string
-                        job_to_add.added = datetime.now().strftime("%Y-%m-%d")
-                        job_to_add.status = "searching"
-                        self.add_job(job_to_add)
+        with self.lock:
+            for tracked_series in config.metadata.tracked_series:
+                series = episode_db.get_series(tracked_series.series_id)
+                series_episodes_since_last_search = series.get_episodes_by_airdate(
+                    airdate, airdate)
+                for series_episode in series_episodes_since_last_search:
+                    found_episodes.append(series_episode)
+                    for stored_search in tracked_series.stored_searches:
+                        search_string = "{} {}".format(
+                                " ".join(stored_search),
+                                "s{:02d}e{:02d}".format(
+                                    series_episode.season_number, series_episode.episode_number))
+                        if not self.is_existing_job(tracked_series.main_keyword, search_string):
+                            job_to_add = Job({})
+                            job_to_add.keyword = tracked_series.main_keyword
+                            job_to_add.query = search_string
+                            job_to_add.added = datetime.now().strftime("%Y-%m-%d")
+                            job_to_add.status = "searching"
+                            self.add_job(job_to_add)
 
-        staging_directory = config.conversion.staging_directory
-        finder = TorrentDataProvider()
-        for job in self.jobs:
-            if job.status == "searching":
-                search_results = finder.search(job.query, retry_count=4)
-                if len(search_results) == 0:
-                    job.status = "waiting"
-                else:
-                    for search_result in search_results:
-                        job.status = "adding"
-                        job.magnet_link = search_result.magnet_link
-                        job.title = search_result.title
-                        if staging_directory is not None and os.path.isdir(staging_directory):
-                            magnet_file_path = os.path.join(staging_directory, search_result.title + ".magnet")
-                            print("Writing magnet link to {}".format(magnet_file_path))
-                            with open(magnet_file_path, "w") as magnet_file:
-                                magnet_file.write(search_result.magnet_link)
-                                magnet_file.flush()
+            staging_directory = config.conversion.staging_directory
+            finder = TorrentDataProvider()
+            for job in self.jobs:
+                if job.status == "searching":
+                    search_results = finder.search(job.query, retry_count=4)
+                    if len(search_results) == 0:
+                        job.status = "waiting"
+                    else:
+                        for search_result in search_results:
+                            job.status = "adding"
+                            job.magnet_link = search_result.magnet_link
+                            job.title = search_result.title
+                            if staging_directory is not None and os.path.isdir(staging_directory):
+                                magnet_file_path = os.path.join(staging_directory, search_result.title + ".magnet")
+                                print("Writing magnet link to {}".format(magnet_file_path))
+                                with open(magnet_file_path, "w") as magnet_file:
+                                    magnet_file.write(search_result.magnet_link)
+                                    magnet_file.flush()
 
-        self.save_to_cache()
+            self.save_to_cache()
+
         magnet_directory = config.conversion.magnet_directory
         if magnet_directory is not None and os.path.isdir(magnet_directory):
             for magnet_file_name in os.listdir(staging_directory):
