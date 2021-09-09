@@ -230,7 +230,7 @@ elif args.command == "jobs":
     if args.job_command == "list":
         jobs = job_queue.get_jobs()
         for job in jobs:
-            print("{} {} {}".format(job.id, job.keyword, job.query))
+            print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
     elif args.job_command == "update":
         job = job_queue.get_job_by_id(args.id)
         job.status = args.status
