@@ -236,12 +236,7 @@ elif args.command == "jobs":
         for job in jobs:
             print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
     elif args.job_command == "add":
-        job = Job({})
-        job.keyword = args.keyword
-        job.query = args.search_term
-        job.added = datetime.now().strftime("%Y-%m-%d")
-        job.status = "waiting"
-        job_queue.add_job(job)
+        job_queue.create_job(args.keyword, args.search_term)
     elif args.job_command == "update":
         job = job_queue.get_job_by_id(args.id)
         job.status = args.status
