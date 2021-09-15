@@ -1,7 +1,7 @@
 """Main module for converting files"""
 
 import argparse
-from job_queue import JobQueue
+from job_queue import JobQueue, Job
 import os
 from datetime import datetime, timedelta
 from config_settings import Configuration
@@ -197,9 +197,13 @@ update_subparser.add_argument("-f", "--force-updates", action="store_true", defa
 
 jobs_subparser = subparsers.add_parser("jobs")
 job_command_parsers = jobs_subparser.add_subparsers(dest="job_command", required=True,
-                                                   help="Jobs subcommand")
+                                                    help="Jobs subcommand")
 
 job_list_parser = job_command_parsers.add_parser("list", help="List all jobs")
+
+job_add_parser = job_command_parsers.add_parser("add", help="Add a new job")
+job_add_parser.add_argument("keyword", help="Keyword for the job")
+job_add_parser.add_argument("search_term", help="Search term for the job")
 
 job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
 job_update_parser.add_argument("id", help="ID of the job to update")
@@ -231,6 +235,13 @@ elif args.command == "jobs":
         jobs = job_queue.get_jobs()
         for job in jobs:
             print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
+    elif args.job_command == "add":
+        job = Job({})
+        job.keyword = args.keyword
+        job.query = args.search_term
+        job.added = datetime.now().strftime("%Y-%m-%d")
+        job.status = "waiting"
+        job_queue.add_job(job)
     elif args.job_command == "update":
         job = job_queue.get_job_by_id(args.id)
         job.status = args.status
