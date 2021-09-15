@@ -132,6 +132,7 @@ dmypy.json
 settings.json
 .dbcache
 .jobqueue
+.jobs/
 .queuelock
 .DS_Store
 

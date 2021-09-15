@@ -218,7 +218,7 @@ args = parser.parse_args()
 
 config = Configuration()
 episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-job_queue = JobQueue.load_from_cache()
+job_queue = JobQueue()
 if args.command == "search":
     find_downloads(args, episode_db)
 elif args.command == "convert":
@@ -232,21 +232,19 @@ elif args.command == "database":
         update_database(args, episode_db)
 elif args.command == "jobs":
     if args.job_command == "list":
-        jobs = job_queue.get_jobs()
+        jobs = job_queue.load_jobs()
         for job in jobs:
             print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
     elif args.job_command == "add":
         job = job_queue.create_job(args.keyword, args.search_term)
-        job_queue.add_job(job)
-        job_queue.save_to_cache()
+        job.save()
     elif args.job_command == "update":
         job = job_queue.get_job_by_id(args.id)
         job.status = args.status
-        job_queue.save_to_cache()
+        job.save()
     elif args.job_command == "remove":
         job = job_queue.get_job_by_id(args.id)
-        job_queue.remove_job(job)
-        job_queue.save_to_cache()
+        job.delete()
     elif args.job_command == "process":
         airdate = datetime.now()
         job_queue.perform_searches(
