@@ -46,6 +46,14 @@ class JobQueue:
 
             self.save_to_cache()
 
+    def create_job(self, keyword, query):
+        job_to_add = Job({})
+        job_to_add.keyword = keyword
+        job_to_add.query = query
+        job_to_add.added = datetime.now().strftime("%Y-%m-%d")
+        job_to_add.status = "searching"
+        self.add_job(job_to_add)
+
     def perform_conversions(self):
         config = Configuration()
         staging_directory = (config.conversion.staging_directory
@@ -103,12 +111,7 @@ class JobQueue:
                                 "s{:02d}e{:02d}".format(
                                     series_episode.season_number, series_episode.episode_number))
                         if not self.is_existing_job(tracked_series.main_keyword, search_string):
-                            job_to_add = Job({})
-                            job_to_add.keyword = tracked_series.main_keyword
-                            job_to_add.query = search_string
-                            job_to_add.added = datetime.now().strftime("%Y-%m-%d")
-                            job_to_add.status = "searching"
-                            self.add_job(job_to_add)
+                            self.create_job(tracked_series.main_keyword, search_string)
 
             staging_directory = config.conversion.staging_directory
             finder = TorrentDataProvider()
