@@ -212,6 +212,8 @@ job_update_parser.add_argument("status", help="Status to which to update the job
 job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
 job_remove_parser.add_argument("id", help="ID of the job to remove")
 
+job_clear_parser = job_command_parsers.add_parser("cleaar", help="Removes all jobs in the queue")
+
 job_process_parser = job_command_parsers.add_parser("process", help="Process current queue")
 
 args = parser.parse_args()
@@ -235,6 +237,10 @@ elif args.command == "jobs":
         jobs = job_queue.load_jobs()
         for job in jobs:
             print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
+    elif args.job_command == "clear":
+        jobs = job_queue.load_jobs()
+        for job in jobs:
+            job.delete()       
     elif args.job_command == "add":
         job = job_queue.create_job(args.keyword, args.search_term)
         job.save()
