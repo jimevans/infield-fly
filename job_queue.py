@@ -127,6 +127,9 @@ class JobQueue:
 
         magnet_directory = config.conversion.magnet_directory
         if magnet_directory is not None and os.path.isdir(magnet_directory):
+            for existing_file in [x for x in os.listdir(magnet_directory) if x.endswith(".invalid")]:
+                os.remove(os.path.join(magnet_directory, existing_file))
+
             for magnet_file_name in os.listdir(staging_directory):
                 if magnet_file_name.endswith(".magnet"):
                     os.rename(os.path.join(staging_directory, magnet_file_name),
