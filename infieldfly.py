@@ -128,131 +128,137 @@ def convert(args, episode_db, string_substitutions=[], ffmpeg_location=None):
                         notifier.notify(notification_receiver,
                                         "Conversion of {} complete.".format(args.source))
 
-parser = argparse.ArgumentParser()
-subparsers = parser.add_subparsers(dest="command", required=True,
-                                   help="Command to use")
+def parse_command_line_args():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True,
+                                    help="Command to use")
 
-convert_subparser = subparsers.add_parser("convert")
-convert_subparser.add_argument("source", help="Source directory")
-convert_subparser.add_argument("destination", help="Destination directory")
+    convert_subparser = subparsers.add_parser("convert")
+    convert_subparser.add_argument("source", help="Source directory")
+    convert_subparser.add_argument("destination", help="Destination directory")
 
-convert_subparser.add_argument("-k", "--keyword", help="Keyword for series to map episode names")
+    convert_subparser.add_argument("-k", "--keyword", help="Keyword for series to map episode names")
 
-video_parser = convert_subparser.add_mutually_exclusive_group(required=False)
-video_parser.add_argument("--convert-video", dest="convert_video", action="store_true")
-video_parser.add_argument("--no-convert-video", dest="convert_video", action="store_false")
+    video_parser = convert_subparser.add_mutually_exclusive_group(required=False)
+    video_parser.add_argument("--convert-video", dest="convert_video", action="store_true")
+    video_parser.add_argument("--no-convert-video", dest="convert_video", action="store_false")
 
-audio_parser = convert_subparser.add_mutually_exclusive_group(required=False)
-audio_parser.add_argument("--convert-audio", dest="convert_audio", action = "store_true")
-audio_parser.add_argument("--no-convert-audio", dest="convert_audio", action="store_false")
+    audio_parser = convert_subparser.add_mutually_exclusive_group(required=False)
+    audio_parser.add_argument("--convert-audio", dest="convert_audio", action = "store_true")
+    audio_parser.add_argument("--no-convert-audio", dest="convert_audio", action="store_false")
 
-subtitle_parser = convert_subparser.add_mutually_exclusive_group(required=False)
-subtitle_parser.add_argument("--convert-subtitles", dest="convert_subtitles", action="store_true")
-subtitle_parser.add_argument("--no-convert-subtitles", dest="convert_subtitles",
-                             action="store_false")
+    subtitle_parser = convert_subparser.add_mutually_exclusive_group(required=False)
+    subtitle_parser.add_argument("--convert-subtitles", dest="convert_subtitles", action="store_true")
+    subtitle_parser.add_argument("--no-convert-subtitles", dest="convert_subtitles",
+                                action="store_false")
 
-convert_subparser.add_argument("-x", "--dry-run", action="store_true",
-                    help="Perform a dry run, printing data, but do not convert")
-convert_subparser.add_argument("-n", "--notify", action="store_true",
-                    help="Notify via SMS when job is complete")
+    convert_subparser.add_argument("-x", "--dry-run", action="store_true",
+                        help="Perform a dry run, printing data, but do not convert")
+    convert_subparser.add_argument("-n", "--notify", action="store_true",
+                        help="Notify via SMS when job is complete")
 
-convert_subparser.set_defaults(convert_video=False,
-                               convert_audio=True,
-                               convert_subtitles=True,
-                               dry_run=False,
-                               notify=False)
+    convert_subparser.set_defaults(convert_video=False,
+                                convert_audio=True,
+                                convert_subtitles=True,
+                                dry_run=False,
+                                notify=False)
 
-search_subparser = subparsers.add_parser("search")
-search_subparser.add_argument("fromdate", nargs="?",
-                              default=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
-                              help="Start of date range within which to search for episodes " +
-                              "(defaults to previous day)")
-search_subparser.add_argument("todate", nargs="?", default=datetime.now().strftime("%Y-%m-%d"),
-                              help="End of date range within which to search for episodes " +
-                              "(defaults to current day)")
+    search_subparser = subparsers.add_parser("search")
+    search_subparser.add_argument("fromdate", nargs="?",
+                                default=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
+                                help="Start of date range within which to search for episodes " +
+                                "(defaults to previous day)")
+    search_subparser.add_argument("todate", nargs="?", default=datetime.now().strftime("%Y-%m-%d"),
+                                help="End of date range within which to search for episodes " +
+                                "(defaults to current day)")
 
-search_subparser.add_argument("-u", "--update-metadata", dest="update_metadata",
-                              action="store_true", help="Update metadata cache from online sources")
+    search_subparser.add_argument("-u", "--update-metadata", dest="update_metadata",
+                                action="store_true", help="Update metadata cache from online sources")
 
-search_subparser.add_argument("-r", "--retry-count", type=int, default=4,
-                              help="Number of times to retry to find torrents")
-search_subparser.add_argument("-d", "--directory",
-                              help="Directory to which to write magnet links to files")
-search_subparser.add_argument("-x", "--dry-run", action="store_true",
-                              help="Perform a dry run, printing data, but do not convert")
+    search_subparser.add_argument("-r", "--retry-count", type=int, default=4,
+                                help="Number of times to retry to find torrents")
+    search_subparser.add_argument("-d", "--directory",
+                                help="Directory to which to write magnet links to files")
+    search_subparser.add_argument("-x", "--dry-run", action="store_true",
+                                help="Perform a dry run, printing data, but do not convert")
 
-db_subparser = subparsers.add_parser("database")
-db_command_parsers = db_subparser.add_subparsers(dest="db_command", required=True,
-                                                 help="Database subcommand")
+    db_subparser = subparsers.add_parser("database")
+    db_command_parsers = db_subparser.add_subparsers(dest="db_command", required=True,
+                                                    help="Database subcommand")
 
-list_subparser = db_command_parsers.add_parser("list")
-list_subparser.add_argument("keyword",
-                            help="Keyword to select the series to display from the episode " + 
-                            "database")
+    list_subparser = db_command_parsers.add_parser("list")
+    list_subparser.add_argument("keyword",
+                                help="Keyword to select the series to display from the episode " + 
+                                "database")
 
-update_subparser = db_command_parsers.add_parser("update")
-update_subparser.add_argument("-f", "--force-updates", action="store_true", default=False,
-                              help="Forces updates of metadata of all tracked series, " +
-                              "including ended ones")
+    update_subparser = db_command_parsers.add_parser("update")
+    update_subparser.add_argument("-f", "--force-updates", action="store_true", default=False,
+                                help="Forces updates of metadata of all tracked series, " +
+                                "including ended ones")
 
-jobs_subparser = subparsers.add_parser("jobs")
-job_command_parsers = jobs_subparser.add_subparsers(dest="job_command", required=True,
-                                                    help="Jobs subcommand")
+    jobs_subparser = subparsers.add_parser("jobs")
+    job_command_parsers = jobs_subparser.add_subparsers(dest="job_command", required=True,
+                                                        help="Jobs subcommand")
 
-job_list_parser = job_command_parsers.add_parser("list", help="List all jobs")
+    job_command_parsers.add_parser("list", help="List all jobs")
 
-job_add_parser = job_command_parsers.add_parser("add", help="Add a new job")
-job_add_parser.add_argument("keyword", help="Keyword for the job")
-job_add_parser.add_argument("search_term", help="Search term for the job")
+    job_add_parser = job_command_parsers.add_parser("add", help="Add a new job")
+    job_add_parser.add_argument("keyword", help="Keyword for the job")
+    job_add_parser.add_argument("search_term", help="Search term for the job")
 
-job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
-job_update_parser.add_argument("id", help="ID of the job to update")
-job_update_parser.add_argument("status", help="Status to which to update the job")
+    job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
+    job_update_parser.add_argument("id", help="ID of the job to update")
+    job_update_parser.add_argument("status", help="Status to which to update the job")
 
-job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
-job_remove_parser.add_argument("id", help="ID of the job to remove")
+    job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
+    job_remove_parser.add_argument("id", help="ID of the job to remove")
 
-job_clear_parser = job_command_parsers.add_parser("clear", help="Removes all jobs in the queue")
+    job_command_parsers.add_parser("clear", help="Removes all jobs in the queue")
 
-job_process_parser = job_command_parsers.add_parser("process", help="Process current queue")
+    job_command_parsers.add_parser("process", help="Process current queue")
 
-args = parser.parse_args()
+    return parser.parse_args()
 
-config = Configuration()
-episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-job_queue = JobQueue()
-if args.command == "search":
-    find_downloads(args, episode_db)
-elif args.command == "convert":
-    convert(args, episode_db,
-            string_substitutions=config.conversion.string_substitutions,
-            ffmpeg_location=config.conversion.ffmpeg_location)
-elif args.command == "database":
-    if args.db_command == "list":
-        list_series(args, episode_db)
-    elif args.db_command == "update":
-        update_database(args, episode_db)
-elif args.command == "jobs":
-    if args.job_command == "list":
-        jobs = job_queue.load_jobs()
-        for job in jobs:
-            print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
-    elif args.job_command == "clear":
-        jobs = job_queue.load_jobs()
-        for job in jobs:
-            job.delete()       
-    elif args.job_command == "add":
-        job = job_queue.create_job(args.keyword, args.search_term)
-        job.save()
-    elif args.job_command == "update":
-        job = job_queue.get_job_by_id(args.id)
-        job.status = args.status
-        job.save()
-    elif args.job_command == "remove":
-        job = job_queue.get_job_by_id(args.id)
-        job.delete()
-    elif args.job_command == "process":
-        airdate = datetime.now()
-        job_queue.perform_searches(
-            datetime(month=airdate.month, day=airdate.day, year=airdate.year))
-        job_queue.perform_conversions()
+def main():
+    args = parse_command_line_args()
+    config = Configuration()
+    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+    job_queue = JobQueue()
+    if args.command == "search":
+        find_downloads(args, episode_db)
+    elif args.command == "convert":
+        convert(args, episode_db,
+                string_substitutions=config.conversion.string_substitutions,
+                ffmpeg_location=config.conversion.ffmpeg_location)
+    elif args.command == "database":
+        if args.db_command == "list":
+            list_series(args, episode_db)
+        elif args.db_command == "update":
+            update_database(args, episode_db)
+    elif args.command == "jobs":
+        if args.job_command == "list":
+            jobs = job_queue.load_jobs()
+            for job in jobs:
+                print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
+        elif args.job_command == "clear":
+            jobs = job_queue.load_jobs()
+            for job in jobs:
+                job.delete()       
+        elif args.job_command == "add":
+            job = job_queue.create_job(args.keyword, args.search_term)
+            job.save()
+        elif args.job_command == "update":
+            job = job_queue.get_job_by_id(args.id)
+            job.status = args.status
+            job.save()
+        elif args.job_command == "remove":
+            job = job_queue.get_job_by_id(args.id)
+            job.delete()
+        elif args.job_command == "process":
+            airdate = datetime.now()
+            job_queue.perform_searches(
+                datetime(month=airdate.month, day=airdate.day, year=airdate.year))
+            job_queue.perform_conversions()
+
+if __name__ == "__main__":
+    main()
