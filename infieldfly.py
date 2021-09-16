@@ -239,7 +239,7 @@ def main():
         if args.job_command == "list":
             jobs = job_queue.load_jobs()
             for job in jobs:
-                print("{} {} {} {}".format(job.id, job.status, job.keyword, job.query))
+                print("{} {} {} '{}'".format(job.id, job.status, job.keyword, job.query))
         elif args.job_command == "clear":
             jobs = job_queue.load_jobs()
             for job in jobs:
