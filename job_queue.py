@@ -1,27 +1,36 @@
-from datetime import datetime
+"""Module containing job information for automated processing"""
+
 import json
 import os
-from urllib.parse import urlparse, parse_qs
 import uuid
+from datetime import datetime
+from urllib.parse import urlparse, parse_qs
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
 from torrent_finder import TorrentDataProvider
 
+
 class JobQueue:
 
-    def __init__(self):
-        super().__init__()
+    """Queue of jobs being processed"""
 
-    def get_job_by_id(self, id):
+    def __init__(self):
+        pass
+
+    def get_job_by_id(self, job_id):
+        """Gets a job by its ID, if it exists; otherwise, returns None"""
+
         jobs = self.load_jobs()
         for job in jobs:
-            if job.id == id:
+            if job.job_id == job_id:
                 return job
 
         return None
 
     def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
+        """Updates the status of a currently downloading job"""
+
         jobs = self.load_jobs()
         for job in jobs:
             if job.torrent_hash == torrent_hash:
@@ -30,21 +39,20 @@ class JobQueue:
                     job.name = torrent_name
                     job.status = "downloading"
                     job.save()
-                    break
                 elif job.status == "downloading":
                     job.name = torrent_name
-                    job.status = "pending"        
+                    job.status = "pending"
                     job.save()
-                    break
             elif job.status == "adding" and job.title == torrent_name:
                 job.torrent_hash = torrent_hash
                 job.download_directory = torrent_directory
                 job.name = torrent_name
                 job.status = "downloading"
                 job.save()
-                break
 
     def create_job(self, keyword, query):
+        """Creates a new job using the specified keyword and query string"""
+
         job = Job(self.cache_file_path, {})
         job.keyword = keyword
         job.query = query
@@ -52,6 +60,8 @@ class JobQueue:
         return job
 
     def perform_conversions(self):
+        """Executes all pending conversion jobs, converting files to the proper format"""
+
         jobs = self.load_jobs()
         config = Configuration()
         staging_directory = (config.conversion.staging_directory
@@ -74,19 +84,24 @@ class JobQueue:
                     job.keyword)
                 for src_file, dest_file in file_map:
                     converted_dest_file = self._replace_strings(
-                        dest_file, 
-                        config.conversion.string_substitutions)
-                    converter = Converter(src_file, converted_dest_file, config.conversion.ffmpeg_location)
+                        dest_file, config.conversion.string_substitutions)
+                    converter = Converter(
+                        src_file, converted_dest_file, config.conversion.ffmpeg_location)
                     converter.convert_file(
                         convert_video=False, convert_audio=True, convert_subtitles=True)
                     job.status = "completed"
                     job.save()
                     if datetime.now().strftime("%Y-%m-%d") != job.added:
                         job.delete()
-                    os.rename(converted_dest_file, os.path.join(final_directory, os.path.basename(converted_dest_file)))
+                    os.rename(converted_dest_file,
+                              os.path.join(final_directory, os.path.basename(converted_dest_file)))
 
     def perform_searches(self, airdate):
-        completed_job_list = [x for x in self.load_jobs() if x.status == "completed" and x.added != airdate.strftime("%Y-%m-%d")]
+        """Executes all pending search jobs, searching for available downloads"""
+
+        completed_job_list = [x for x in self.load_jobs() 
+                              if x.status == "completed" 
+                              and x.added != airdate.strftime("%Y-%m-%d")]
         for job in completed_job_list:
             job.delete()
 
@@ -135,7 +150,8 @@ class JobQueue:
                                     break
                         job.save()
                         if staging_directory is not None and os.path.isdir(staging_directory):
-                            magnet_file_path = os.path.join(staging_directory, search_result.title + ".magnet")
+                            magnet_file_path = os.path.join(staging_directory,
+                                                            search_result.title + ".magnet")
                             print("Writing magnet link to {}".format(magnet_file_path))
                             with open(magnet_file_path, "w") as magnet_file:
                                 magnet_file.write(search_result.magnet_link)
@@ -143,7 +159,8 @@ class JobQueue:
 
         magnet_directory = config.conversion.magnet_directory
         if magnet_directory is not None and os.path.isdir(magnet_directory):
-            for existing_file in [x for x in os.listdir(magnet_directory) if x.endswith(".invalid")]:
+            for existing_file in [x for x in os.listdir(magnet_directory)
+                                  if x.endswith(".invalid")]:
                 os.remove(os.path.join(magnet_directory, existing_file))
 
             for magnet_file_name in os.listdir(staging_directory):
@@ -152,21 +169,28 @@ class JobQueue:
                               os.path.join(magnet_directory, magnet_file_name))
 
     def is_existing_job(self, keyword, search_string):
+        """
+        Gets a value indicating whether a job for a specified keyword and search string
+        already exists
+        """
+
         for job in self.load_jobs():
             if job.keyword == keyword and job.query == search_string:
                 return True
 
         return False
 
-    def _replace_strings(self, input, substitutions):
-        output = input
+    def _replace_strings(self, input_value, substitutions):
+        """Replaces strings using the supplied list of substitutions"""
+
+        output_value = input_value
         if substitutions is not None:
             for replacement in substitutions:
-                output = output.replace(replacement, substitutions[replacement])
-        return output
+                output_value = output_value.replace(replacement, substitutions[replacement])
+        return output_value
 
     def load_jobs(self):
-        """Load all job files in the cache directory"""
+        """Loads all job files in the cache directory"""
 
         if not os.path.exists(self.cache_file_path):
             os.makedirs(self.cache_file_path)
@@ -183,7 +207,10 @@ class JobQueue:
 
         return os.path.join(os.path.dirname(os.path.realpath(__file__)), ".jobs")
 
+
 class Job:
+
+    """Object representing a job to be processed"""
 
     def __init__(self, directory, job_dict):
         super().__init__()
@@ -198,14 +225,20 @@ class Job:
 
     @property
     def file_path(self):
-        return os.path.join(self.directory, self.id)
+        """Gets the full path to this job file"""
+
+        return os.path.join(self.directory, self.job_id)
 
     @property
-    def id(self):
+    def job_id(self):
+        """Gets the ID of this job"""
+
         return self.dictionary["id"]
 
     @property
     def keyword(self):
+        """Gets or sets the keyword of the tracked series for this job"""
+
         return self.dictionary["keyword"] if "keyword" in self.dictionary else None
 
     @keyword.setter
@@ -214,6 +247,8 @@ class Job:
 
     @property
     def added(self):
+        """Gets or sets the date on which this job was created"""
+
         return self.dictionary["added"] if "added" in self.dictionary else None
 
     @added.setter
@@ -222,6 +257,8 @@ class Job:
 
     @property
     def query(self):
+        """Gets or sets the string used to search for downloads for this job"""
+
         return self.dictionary["query"] if "query" in self.dictionary else None
 
     @query.setter
@@ -230,6 +267,8 @@ class Job:
 
     @property
     def status(self):
+        """Gets or sets the status for this job"""
+
         return self.dictionary["status"]
 
     @status.setter
@@ -238,6 +277,8 @@ class Job:
 
     @property
     def magnet_link(self):
+        """Gets or sets the magnet link for this job"""
+
         return self.dictionary["magnet_link"] if "magnet_link" in self.dictionary else None
 
     @magnet_link.setter
@@ -246,6 +287,8 @@ class Job:
 
     @property
     def title(self):
+        """Gets or sets the display title for this job"""
+
         return self.dictionary["title"] if "title" in self.dictionary else None
 
     @title.setter
@@ -254,6 +297,8 @@ class Job:
 
     @property
     def name(self):
+        """Gets or sets the download name for this job"""
+
         return self.dictionary["name"] if "name" in self.dictionary else None
 
     @name.setter
@@ -262,6 +307,8 @@ class Job:
 
     @property
     def torrent_hash(self):
+        """Gets the calculated SHA1 hash for the torrent in this job"""
+
         return self.dictionary["torrent_hash"] if "torrent_hash" in self.dictionary else None
 
     @torrent_hash.setter
@@ -270,7 +317,11 @@ class Job:
 
     @property
     def download_directory(self):
-        return self.dictionary["download_directory"] if "download_directory" in self.dictionary else None
+        """Gets the driectory to which the torrent for this job is downloaded"""
+
+        return (self.dictionary["download_directory"]
+                if "download_directory" in self.dictionary
+                else None)
 
     @download_directory.setter
     def download_directory(self, value):
@@ -302,4 +353,3 @@ class Job:
         if os.path.exists(self.directory) and os.path.isdir(self.directory):
             with open(self.file_path, "w") as job_file:
                 json.dump(self.dictionary, job_file, indent=2)
-        

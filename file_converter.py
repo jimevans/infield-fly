@@ -50,6 +50,7 @@ class Converter:
 
         ffmpeg_args.append(self.output_file)
         if dry_run:
+            print("Convert {} -> {}".format(self.input_file, self.output_file))
             print("Conversion arguments:")
             print(ffmpeg_args)
         else:
