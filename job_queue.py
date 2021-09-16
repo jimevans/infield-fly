@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import os
+from urllib.parse import urlparse, parse_qs
 import uuid
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
@@ -23,16 +24,25 @@ class JobQueue:
     def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
         jobs = self.load_jobs()
         for job in jobs:
-            if job.status == "adding" and job.title == torrent_name:
+            if job.torrent_hash == torrent_hash:
+                if job.status == "adding":
+                    job.download_directory = torrent_directory
+                    job.name = torrent_name
+                    job.status = "downloading"
+                    job.save()
+                    break
+                elif job.status == "downloading":
+                    job.name = torrent_name
+                    job.status = "pending"        
+                    job.save()
+                    break
+            elif job.status == "adding" and job.title == torrent_name:
                 job.torrent_hash = torrent_hash
                 job.download_directory = torrent_directory
                 job.name = torrent_name
                 job.status = "downloading"
                 job.save()
-            elif job.status == "downloading" and job.torrent_hash == torrent_hash:
-                job.name = torrent_name
-                job.status = "pending"        
-                job.save()
+                break
 
     def create_job(self, keyword, query):
         job = Job(self.cache_file_path, {})
@@ -117,6 +127,12 @@ class JobQueue:
                         job.status = "adding"
                         job.magnet_link = search_result.magnet_link
                         job.title = search_result.title
+                        magnet_query = parse_qs(urlparse(search_result.magnet_link).query)
+                        if "xt" in magnet_query:
+                            for urn in magnet_query["xt"]:
+                                if urn.startswith("urn:btih:"):
+                                    job.torrent_hash = urn[9:]
+                                    break
                         job.save()
                         if staging_directory is not None and os.path.isdir(staging_directory):
                             magnet_file_path = os.path.join(staging_directory, search_result.title + ".magnet")
@@ -274,6 +290,8 @@ class Job:
         return job
 
     def delete(self):
+        """Deletes the file representing this job"""
+
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
 
