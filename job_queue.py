@@ -4,7 +4,6 @@ import json
 import os
 import uuid
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
@@ -83,8 +82,8 @@ class JobQueue:
                     staging_directory,
                     job.keyword)
                 for src_file, dest_file in file_map:
-                    converted_dest_file = self._replace_strings(
-                        dest_file, config.conversion.string_substitutions)
+                    converted_dest_file = "".join(
+                        config.conversion.string_substitutions.get(c, c) for c in dest_file)
                     converter = Converter(
                         src_file, converted_dest_file, config.conversion.ffmpeg_location)
                     converter.convert_file(
@@ -111,25 +110,8 @@ class JobQueue:
                 job.save()
 
         config = Configuration()
-        found_episodes = []
-        episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-        for tracked_series in config.metadata.tracked_series:
-            series = episode_db.get_series(tracked_series.series_id)
-            series_episodes_since_last_search = series.get_episodes_by_airdate(
-                airdate, airdate)
-            for series_episode in series_episodes_since_last_search:
-                found_episodes.append(series_episode)
-                for stored_search in tracked_series.stored_searches:
-                    search_string = "{} {}".format(
-                            " ".join(stored_search),
-                            "s{:02d}e{:02d}".format(
-                                series_episode.season_number, series_episode.episode_number))
-                    if not self.is_existing_job(tracked_series.main_keyword, search_string):
-                        job = self.create_job(tracked_series.main_keyword, search_string)
-                        job.status = "searching"
-                        job.save()
+        self.create_new_search_jobs(config, airdate)
 
-        staging_directory = config.conversion.staging_directory
         finder = TorrentDataProvider()
         for job in self.load_jobs():
             if job.status == "searching":
@@ -142,20 +124,9 @@ class JobQueue:
                         job.status = "adding"
                         job.magnet_link = search_result.magnet_link
                         job.title = search_result.title
-                        magnet_query = parse_qs(urlparse(search_result.magnet_link).query)
-                        if "xt" in magnet_query:
-                            for urn in magnet_query["xt"]:
-                                if urn.startswith("urn:btih:"):
-                                    job.torrent_hash = urn[9:]
-                                    break
+                        job.torrent_hash = search_result.hash
                         job.save()
-                        if staging_directory is not None and os.path.isdir(staging_directory):
-                            magnet_file_path = os.path.join(staging_directory,
-                                                            search_result.title + ".magnet")
-                            print("Writing magnet link to {}".format(magnet_file_path))
-                            with open(magnet_file_path, "w") as magnet_file:
-                                magnet_file.write(search_result.magnet_link)
-                                magnet_file.flush()
+                        job.write_magnet_file(config.conversion.staging_directory)
 
         magnet_directory = config.conversion.magnet_directory
         if magnet_directory is not None and os.path.isdir(magnet_directory):
@@ -163,10 +134,29 @@ class JobQueue:
                                   if x.endswith(".invalid")]:
                 os.remove(os.path.join(magnet_directory, existing_file))
 
-            for magnet_file_name in os.listdir(staging_directory):
+            for magnet_file_name in os.listdir(config.conversion.staging_directory):
                 if magnet_file_name.endswith(".magnet"):
-                    os.rename(os.path.join(staging_directory, magnet_file_name),
+                    os.rename(os.path.join(config.conversion.staging_directory, magnet_file_name),
                               os.path.join(magnet_directory, magnet_file_name))
+
+    def create_new_search_jobs(self, config, airdate):
+        """Creates new search jobs based on airdate"""
+
+        episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+        for tracked_series in config.metadata.tracked_series:
+            series = episode_db.get_series(tracked_series.series_id)
+            series_episodes_since_last_search = series.get_episodes_by_airdate(
+                airdate, airdate)
+            for series_episode in series_episodes_since_last_search:
+                for stored_search in tracked_series.stored_searches:
+                    search_string = "{} {}".format(
+                            " ".join(stored_search),
+                            "s{:02d}e{:02d}".format(
+                                series_episode.season_number, series_episode.episode_number))
+                    if not self.is_existing_job(tracked_series.main_keyword, search_string):
+                        job = self.create_job(tracked_series.main_keyword, search_string)
+                        job.status = "searching"
+                        job.save()
 
     def is_existing_job(self, keyword, search_string):
         """
@@ -179,15 +169,6 @@ class JobQueue:
                 return True
 
         return False
-
-    def _replace_strings(self, input_value, substitutions):
-        """Replaces strings using the supplied list of substitutions"""
-
-        output_value = input_value
-        if substitutions is not None:
-            for replacement in substitutions:
-                output_value = output_value.replace(replacement, substitutions[replacement])
-        return output_value
 
     def load_jobs(self):
         """Loads all job files in the cache directory"""
@@ -346,10 +327,28 @@ class Job:
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
 
+    def write_magnet_file(self, destination_directory):
+        """Writes a file containing the magnet link for this job"""
+
+        if (self.magnet_link is None or self.title is None):
+            print("Link or file name not set; cannot write magnet file.")
+
+        if destination_directory is not None and os.path.isdir(destination_directory):
+            magnet_file_path = os.path.join(destination_directory, self.title + ".magnet")
+            print("Writing magnet link to {}".format(magnet_file_path))
+            with open(magnet_file_path, "w") as magnet_file:
+                magnet_file.write(self.magnet_link)
+                magnet_file.flush()
+
     def save(self):
         """Writes this job to a file"""
 
-        # TODO: Handle non-existent directory
-        if os.path.exists(self.directory) and os.path.isdir(self.directory):
-            with open(self.file_path, "w") as job_file:
-                json.dump(self.dictionary, job_file, indent=2)
+        if not os.path.exists(self.directory):
+            os.makedirs(self.directory)
+
+        if not os.path.isdir(self.directory):
+            print("Cannot save job; path '{}' exists, but is not a directory.".format(
+                self.directory))
+
+        with open(self.file_path, "w") as job_file:
+            json.dump(self.dictionary, job_file, indent=2)

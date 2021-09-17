@@ -126,6 +126,8 @@ def convert(args):
         for src_file, dest_file in file_map:
             converted_dest_file = replace_strings(dest_file,
                                                   config.conversion.string_substitutions)
+            converted_dest_file = "".join(
+                config.conversion.string_substitutions.get(c, c) for c in dest_file)
             converter = Converter(src_file, converted_dest_file,
                                   config.conversion.ffmpeg_location)
             converter.convert_file(convert_video=args.convert_video,

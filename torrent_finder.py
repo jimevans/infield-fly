@@ -4,6 +4,7 @@ import platform
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from time import sleep
+from urllib.parse import urlparse, parse_qs
 import requests
 
 
@@ -91,8 +92,17 @@ class TorrentDataProvider:
             tvdb_id = (int(torrent_dict["episode_info"]["tvdb"])
                        if "episode_info" in torrent_dict and "tvdb" in torrent_dict["episode_info"]
                        else None)
-            torrent_results.append(
-                TorrentResult(torrent_dict["title"], torrent_dict["download"], tvdb_id))
+
+            magnet_link_query = (parse_qs(urlparse(torrent_dict["download"]).query)
+                                 if "download" in torrent_dict
+                                 else None)
+            urn_list = ([x for x in magnet_link_query["xt"] if x.startswith("urn:btih:")]
+                        if magnet_link_query is not None and "xt" in magnet_link_query
+                        else [])
+            torrent_hash = urn_list[0][9:] if len(urn_list) > 0 else None
+
+            torrent_results.append(TorrentResult(
+                torrent_dict["title"], torrent_dict["download"], torrent_hash, tvdb_id))
 
         return torrent_results
 
@@ -104,4 +114,5 @@ class TorrentResult:
 
     title: str
     magnet_link: str
+    hash: str = None
     tvdb_id: int = None
