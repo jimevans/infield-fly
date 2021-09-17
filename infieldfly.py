@@ -63,9 +63,11 @@ def search_for_torrents(searches_to_perform, search_retry_count, output_director
                 print("Torrent title: {}".format(search_result.title))
                 print("Magnet link: {}".format(search_result.magnet_link))
 
-def find_downloads(args, episode_db, metadata_settings):
+def find_downloads(args):
     """Finds available downloads"""
 
+    config = Configuration()
+    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
     from_date = datetime.strptime(args.fromdate, "%Y-%m-%d")
     to_date = datetime.strptime(args.todate, "%Y-%m-%d")
 
@@ -75,7 +77,7 @@ def find_downloads(args, episode_db, metadata_settings):
 
     print("Searching for downloads between {} and {}".format(
           from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d")))
-    searches_to_perform = get_search_strings(from_date, to_date, episode_db, metadata_settings)
+    searches_to_perform = get_search_strings(from_date, to_date, episode_db, config.metadata)
 
     print("")
     if args.dry_run:
@@ -85,9 +87,11 @@ def find_downloads(args, episode_db, metadata_settings):
     else:
         search_for_torrents(searches_to_perform, args.retry_count, args.directory)
 
-def list_series(args, episode_db):
+def list_series(args):
     """Lists the episodes of a series in the cached dataabase."""
 
+    config = Configuration()
+    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if series_metadata is None:
         print("Keyword '{}' was not found in the database".format(args.keyword))
@@ -99,15 +103,19 @@ def list_series(args, episode_db):
             print("s{:02d}e{:02d} (aired: {}) - {}".format(
                 episode.season_number, episode.episode_number, airdate, episode.title))
 
-def update_database(args, episode_db):
+def update_database(args):
     """Updates the episode metadata in the databasae for tracked series"""
 
+    config = Configuration()
+    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
     episode_db.update_all_tracked_series(force_updates=args.force_updates)
     episode_db.save_to_cache()
 
-def convert(args, episode_db, conversion_settings, notification_settings=None):
+def convert(args):
     """Converts a file using the soecified conversion arguments"""
 
+    config = Configuration()
+    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if args.keyword is not None and series_metadata is None:
         print("Keyword '{}' was not found in the database".format(args.keyword))
@@ -117,9 +125,9 @@ def convert(args, episode_db, conversion_settings, notification_settings=None):
 
         for src_file, dest_file in file_map:
             converted_dest_file = replace_strings(dest_file,
-                                                  conversion_settings.string_substitutions)
+                                                  config.conversion.string_substitutions)
             converter = Converter(src_file, converted_dest_file,
-                                  conversion_settings.ffmpeg_location)
+                                  config.conversion.ffmpeg_location)
             converter.convert_file(convert_video=args.convert_video,
                                    convert_audio=args.convert_audio,
                                    convert_subtitles=args.convert_subtitles,
@@ -129,25 +137,101 @@ def convert(args, episode_db, conversion_settings, notification_settings=None):
             if args.dry_run:
                 print("Operation complete. Not sending notification on dry run.")
             else:
-                if notification_settings is None:
+                if config.notification is None:
                     print("No config notification settings in settings file. Not notifying.")
-                elif (notification_settings.receiving_number is None
-                    or notification_settings.receiving_number == ""):
+                elif (config.notification.receiving_number is None
+                    or config.notification.receiving_number == ""):
                     print("No recipient number specified in notification settings in settings "
                         "file. Not notifying.")
                 else:
-                    notification_receiver = notification_settings.receiving_number
-                    notifier = Notifier.create_default_notifier(notification_settings)
+                    notifier = Notifier.create_default_notifier(config.notification)
                     if notifier is not None:
-                        notifier.notify(notification_receiver,
+                        notifier.notify(config.notification.receiving_number,
                                         "Conversion of {} complete.".format(args.source))
 
-def parse_command_line_args():
-    """Parses command line arguments"""
+def show_job(args):
+    """Deletes a new queued job"""
 
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest="command", required=True,
-                                       help="Command to use")
+    job_queue = JobQueue()
+    job = job_queue.get_job_by_id(args.id)
+    if job is None:
+        print("No existing job with ID '{}'".format(args.id))
+    else:
+        print("ID: {}".format(job.job_id))
+        print("Status: {}".format(job.status))
+        print("Date added: {}".format(job.added))
+        print("Series keyword: {}".format(job.keyword))
+        print("Search string: {}".format(job.query))
+        if job.magnet_link is not None:
+            print("Torrent title: {}".format(job.title))
+            print("Magnet link: {}".format(job.magnet_link))
+        if job.torrent_hash is not None:
+            print("Torrent hash: {}".format(job.torrent_hash))
+        if job.download_directory is not None:
+            print("Torrent directory: {}".format(os.path.join(job.download_directory, job.name)))
+
+def create_job(args):
+    """Creates a new queued job"""
+
+    job_queue = JobQueue()
+    job = job_queue.create_job(args.keyword, args.search_term)
+    job.save()
+
+def delete_job(args):
+    """Deletes a new queued job"""
+
+    job_queue = JobQueue()
+    job = job_queue.get_job_by_id(args.id)
+    if job is None:
+        print("No existing job with ID '{}'".format(args.id))
+    else:
+        job.delete()
+
+def update_job(args):
+    """Updates a new queued job"""
+
+    job_queue = JobQueue()
+    job = job_queue.get_job_by_id(args.id)
+    if job is None:
+        print("No existing job with ID '{}'".format(args.id))
+    else:
+        job.status = args.status
+        job.save()
+
+def list_jobs(args):
+    """Lists all jobs in the job queue"""
+
+    status = args.status
+    job_queue = JobQueue()
+    jobs = job_queue.load_jobs()
+    for job in jobs:
+        if status is None or status == job.status:
+            print("{} {} {} '{}'".format(job.job_id, job.status, job.keyword, job.query))
+
+def clear_jobs(args):
+    """Clears the job queue"""
+
+    status = args.status
+    job_queue = JobQueue()
+    jobs = job_queue.load_jobs()
+    for job in jobs:
+        if status is None or status == job.status:
+            job.delete()
+
+def process_jobs(args):
+    """Executes current jobs in the job queue"""
+
+    job_queue = JobQueue()
+    if not args.skip_search:
+        airdate = datetime.now()
+        job_queue.perform_searches(datetime(month=airdate.month,
+                                            day=airdate.day,
+                                            year=airdate.year))
+    if not args.skip_convert:
+        job_queue.perform_conversions()
+
+def add_convert_subparser(subparsers):
+    """Adds the argument subparser for the 'convert' command"""
 
     convert_subparser = subparsers.add_parser("convert")
     convert_subparser.add_argument("source", help="Source directory")
@@ -176,10 +260,14 @@ def parse_command_line_args():
                                    help="Notify via SMS when job is complete")
 
     convert_subparser.set_defaults(convert_video=False,
-                                convert_audio=True,
-                                convert_subtitles=True,
-                                dry_run=False,
-                                notify=False)
+                                   convert_audio=True,
+                                   convert_subtitles=True,
+                                   dry_run=False,
+                                   notify=False,
+                                   func=convert)
+
+def add_search_subparser(subparsers):
+    """Adds the argument subparser for the 'search' command"""
 
     search_subparser = subparsers.add_parser("search")
     search_subparser.add_argument("fromdate", nargs="?",
@@ -200,6 +288,10 @@ def parse_command_line_args():
                                   help="Directory to which to write magnet links to files")
     search_subparser.add_argument("-x", "--dry-run", action="store_true",
                                   help="Perform a dry run, printing data, but do not convert")
+    search_subparser.set_defaults(func=find_downloads)
+
+def add_database_subparser(subparsers):
+    """Adds the argument subparser for the 'database' command"""
 
     db_subparser = subparsers.add_parser("database")
     db_command_parsers = db_subparser.add_subparsers(dest="db_command", required=True,
@@ -209,75 +301,74 @@ def parse_command_line_args():
     list_subparser.add_argument("keyword",
                                 help="Keyword to select the series to display from the episode " +
                                 "database")
+    list_subparser.set_defaults(func=list_series)
 
     update_subparser = db_command_parsers.add_parser("update")
     update_subparser.add_argument("-f", "--force-updates", action="store_true", default=False,
                                  help="Forces updates of metadata of all tracked series, " +
                                  "including ended ones")
+    update_subparser.set_defaults(func=update_database)
+
+def add_jobs_subparser(subparsers):
+    """Adds the argument subparser for the 'jobs' command"""
 
     jobs_subparser = subparsers.add_parser("jobs")
     job_command_parsers = jobs_subparser.add_subparsers(dest="job_command", required=True,
                                                         help="Jobs subcommand")
 
-    job_command_parsers.add_parser("list", help="List all jobs")
-
     job_add_parser = job_command_parsers.add_parser("add", help="Add a new job")
     job_add_parser.add_argument("keyword", help="Keyword for the job")
     job_add_parser.add_argument("search_term", help="Search term for the job")
+    job_add_parser.set_defaults(func=create_job)
+
+    job_show_parser = job_command_parsers.add_parser("show", help="Show details of a job")
+    job_show_parser.add_argument("id", help="ID of the job to show")
+    job_show_parser.set_defaults(func=show_job)
 
     job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
     job_update_parser.add_argument("id", help="ID of the job to update")
     job_update_parser.add_argument("status", help="Status to which to update the job")
+    job_update_parser.set_defaults(func=update_job)
 
     job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
     job_remove_parser.add_argument("id", help="ID of the job to remove")
+    job_remove_parser.set_defaults(func=delete_job)
 
-    job_command_parsers.add_parser("clear", help="Removes all jobs in the queue")
+    list_jobs_parser = job_command_parsers.add_parser("list", help="List jobs")
+    list_jobs_parser.add_argument("status", nargs="?", default=None,
+                                  help="Filter job list to status")
+    list_jobs_parser.set_defaults(func=list_jobs)
 
-    job_command_parsers.add_parser("process", help="Process current queue")
+    clear_jobs_parser = job_command_parsers.add_parser("clear", help="Remove jobs")
+    clear_jobs_parser.add_argument("status", nargs="?", default=None,
+                                  help="Remove only jobs with status")
+    clear_jobs_parser.set_defaults(func=clear_jobs)
 
-    return parser.parse_args()
+    process_jobs_parser = job_command_parsers.add_parser("process", help="Process current queue")
+    search_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
+    search_parser.add_argument("--skip-search", dest="skip_search", action = "store_true",
+                               help="Skip the search phase of job processing")
+    search_parser.add_argument("--no-skip-search", dest="skip_search", action="store_false",
+                               help="Perform the search phase of job processing")
+    convert_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
+    convert_parser.add_argument("--skip-convert", dest="skip_convert", action = "store_true",
+                                help="Skip the convert phase of job processing")
+    convert_parser.add_argument("--no-skip-convert", dest="skip_convert", action="store_false",
+                                help="Perform the convert phase of job processing")
+    process_jobs_parser.set_defaults(skip_search=False, skip_convert=False, func=process_jobs)
 
 def main():
     """Main entry point"""
 
-    args = parse_command_line_args()
-    config = Configuration()
-    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-    job_queue = JobQueue()
-    if args.command == "search":
-        find_downloads(args, episode_db, config.metadata)
-    elif args.command == "convert":
-        convert(args, episode_db, config.conversion, notification_settings=config.notification)
-    elif args.command == "database":
-        if args.db_command == "list":
-            list_series(args, episode_db)
-        elif args.db_command == "update":
-            update_database(args, episode_db)
-    elif args.command == "jobs":
-        if args.job_command == "list":
-            jobs = job_queue.load_jobs()
-            for job in jobs:
-                print("{} {} {} '{}'".format(job.job_id, job.status, job.keyword, job.query))
-        elif args.job_command == "clear":
-            jobs = job_queue.load_jobs()
-            for job in jobs:
-                job.delete()
-        elif args.job_command == "add":
-            job = job_queue.create_job(args.keyword, args.search_term)
-            job.save()
-        elif args.job_command == "update":
-            job = job_queue.get_job_by_id(args.id)
-            job.status = args.status
-            job.save()
-        elif args.job_command == "remove":
-            job = job_queue.get_job_by_id(args.id)
-            job.delete()
-        elif args.job_command == "process":
-            airdate = datetime.now()
-            job_queue.perform_searches(
-                datetime(month=airdate.month, day=airdate.day, year=airdate.year))
-            job_queue.perform_conversions()
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True,
+                                       help="Command to use")
+    add_convert_subparser(subparsers)
+    add_search_subparser(subparsers)
+    add_database_subparser(subparsers)
+    add_jobs_subparser(subparsers)
+    args = parser.parse_args()
+    args.func(args)
 
 if __name__ == "__main__":
     main()
