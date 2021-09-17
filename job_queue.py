@@ -99,8 +99,8 @@ class JobQueue:
     def perform_searches(self, airdate):
         """Executes all pending search jobs, searching for available downloads"""
 
-        completed_job_list = [x for x in self.load_jobs() 
-                              if x.status == "completed" 
+        completed_job_list = [x for x in self.load_jobs()
+                              if x.status == "completed"
                               and x.added != airdate.strftime("%Y-%m-%d")]
         for job in completed_job_list:
             job.delete()
