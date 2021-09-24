@@ -40,7 +40,7 @@ class JobQueue:
                     job.save()
                 elif job.status == "downloading":
                     job.name = torrent_name
-                    job.status = "pending"
+                    job.status = "completed" if job.download_only else "pending"
                     job.save()
             elif job.status == "adding" and job.title == torrent_name:
                 job.torrent_hash = torrent_hash
@@ -203,6 +203,8 @@ class Job:
             self.dictionary["id"] = str(uuid.uuid1())
         if "added" not in self.dictionary:
             self.dictionary["added"] =  datetime.now().strftime("%Y-%m-%d")
+        if "download_only" not in self.dictionary:
+            self.dictionary["download_only"] = False
 
     @property
     def file_path(self):
@@ -298,7 +300,7 @@ class Job:
 
     @property
     def download_directory(self):
-        """Gets the driectory to which the torrent for this job is downloaded"""
+        """Gets the directory to which the torrent for this job is downloaded"""
 
         return (self.dictionary["download_directory"]
                 if "download_directory" in self.dictionary
@@ -307,6 +309,21 @@ class Job:
     @download_directory.setter
     def download_directory(self, value):
         self.dictionary["download_directory"] = value
+
+    @property
+    def download_only(self):
+        """
+        Gets a value indicating whether this job only downloads the file as opposed to also
+        converting it
+        """
+
+        return (self.dictionary["download_only"]
+                if "download_only" in self.dictionary
+                else False)
+
+    @download_only.setter
+    def download_only(self, value):
+        self.dictionary["download_only"] = value
 
     @classmethod
     def load(cls, directory, file_name):
