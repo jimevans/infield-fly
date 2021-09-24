@@ -222,7 +222,7 @@ class Job:
     def keyword(self):
         """Gets or sets the keyword of the tracked series for this job"""
 
-        return self.dictionary["keyword"] if "keyword" in self.dictionary else None
+        return self.dictionary.get("keyword", None)
 
     @keyword.setter
     def keyword(self, value):
@@ -232,7 +232,7 @@ class Job:
     def added(self):
         """Gets or sets the date on which this job was created"""
 
-        return self.dictionary["added"] if "added" in self.dictionary else None
+        return self.dictionary.get("added", None)
 
     @added.setter
     def added(self, value):
@@ -242,7 +242,7 @@ class Job:
     def query(self):
         """Gets or sets the string used to search for downloads for this job"""
 
-        return self.dictionary["query"] if "query" in self.dictionary else None
+        return self.dictionary.get("query", None)
 
     @query.setter
     def query(self, value):
@@ -262,7 +262,7 @@ class Job:
     def magnet_link(self):
         """Gets or sets the magnet link for this job"""
 
-        return self.dictionary["magnet_link"] if "magnet_link" in self.dictionary else None
+        return self.dictionary.get("magnet_link", None)
 
     @magnet_link.setter
     def magnet_link(self, value):
@@ -272,7 +272,7 @@ class Job:
     def title(self):
         """Gets or sets the display title for this job"""
 
-        return self.dictionary["title"] if "title" in self.dictionary else None
+        return self.dictionary.get("title", None)
 
     @title.setter
     def title(self, value):
@@ -282,7 +282,7 @@ class Job:
     def name(self):
         """Gets or sets the download name for this job"""
 
-        return self.dictionary["name"] if "name" in self.dictionary else None
+        return self.dictionary.get("name", None)
 
     @name.setter
     def name(self, value):
@@ -292,7 +292,7 @@ class Job:
     def torrent_hash(self):
         """Gets the calculated SHA1 hash for the torrent in this job"""
 
-        return self.dictionary["torrent_hash"] if "torrent_hash" in self.dictionary else None
+        return self.dictionary.get("torrent_hash",  None)
 
     @torrent_hash.setter
     def torrent_hash(self, value):
@@ -302,9 +302,7 @@ class Job:
     def download_directory(self):
         """Gets the directory to which the torrent for this job is downloaded"""
 
-        return (self.dictionary["download_directory"]
-                if "download_directory" in self.dictionary
-                else None)
+        return self.dictionary.get("download_directory", None)
 
     @download_directory.setter
     def download_directory(self, value):
@@ -317,9 +315,7 @@ class Job:
         converting it
         """
 
-        return (self.dictionary["download_only"]
-                if "download_only" in self.dictionary
-                else False)
+        return self.dictionary.get("download_only", False)
 
     @download_only.setter
     def download_only(self, value):

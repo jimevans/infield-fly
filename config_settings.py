@@ -11,9 +11,11 @@ class Configuration:
 
     def __init__(self):
         super().__init__()
-        self.settings = {}
-        self.settings["notification"] = None
-        self.settings["metadata"] = None
+        self.settings = {
+            "notification": None,
+            "metadata": None,
+            "converstion": None
+        }
         settings_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                           "settings.json")
         if os.path.exists(settings_file_path):
@@ -53,42 +55,37 @@ class ConversionSettings:
 
     def __init__(self, raw_settings):
         super().__init__()
-        self.settings = raw_settings
+        self.settings = raw_settings if raw_settings is not None else {}
 
     @property
     def string_substitutions(self):
         """Gets the set of string substitution for file names during conversions"""
 
-        return self._get_setting("substitutions")
+        return self.settings.get("substitutions", None)
 
     @property
     def ffmpeg_location(self):
         """Gets the location of ffmpeg tools"""
 
-        return self._get_setting("ffmpeg_location")
+        return self.settings.get("ffmpeg_location", None)
 
     @property
     def magnet_directory(self):
         """Gets the path of the directory to which to write magnet files"""
 
-        return self._get_setting("magnet_directory")
+        return self.settings.get("magnet_directory", None)
 
     @property
     def staging_directory(self):
         """Gets the path of the directory into which converted files are to be written"""
 
-        return self._get_setting("staging_directory")
+        return self.settings.get("staging_directory", None)
 
     @property
     def final_directory(self):
         """Gets the path of the directory where final, converted files will be written"""
 
-        return self._get_setting("final_directory")
-
-    def _get_setting(self, setting_name):
-        return (self.settings[setting_name]
-               if self.settings is not None and setting_name in self.settings
-               else None)
+        return self.settings.get("final_directory", None)
 
 
 class NotificationSettings:
@@ -97,36 +94,31 @@ class NotificationSettings:
 
     def __init__(self, raw_settings=None):
         super().__init__()
-        self.settings = raw_settings
+        self.settings = raw_settings if raw_settings is not None else {}
 
     @property
     def sid(self):
         """Gets the security ID for sending notifications via Trillio"""
 
-        return self._get_setting("sid")
+        return self.settings.get("sid", "")
 
     @property
     def auth_token(self):
         """Gets the authorization token for sending notifications via Trillio"""
 
-        return self._get_setting("auth_token")
+        return self.settings.get("auth_token", "")
 
     @property
     def sending_number(self):
         """Gets the number from which to send notifications via Trillio"""
 
-        return self._get_setting("sending_number")
+        return self.settings.get("sending_number", "")
 
     @property
     def receiving_number(self):
         """Gets the number to which to send notifications via Trillio"""
 
-        return self._get_setting("receiving_number")
-
-    def _get_setting(self, setting_name):
-        return (self.settings[setting_name]
-               if self.settings is not None and setting_name in self.settings
-               else "")
+        return self.settings.get("receiving_number", "")
 
 
 class MetadataSettings:
@@ -138,57 +130,44 @@ class MetadataSettings:
         self.settings = {}
         self.tracked_series = []
         if raw_settings is not None:
-            self.settings["user_name"] = (raw_settings["user_name"]
-                                         if "user_name" in raw_settings
-                                         else "")
-            self.settings["user_key"] = (raw_settings["user_key"]
-                                         if "user_key" in raw_settings
-                                         else "")
-            self.settings["api_key"] = (raw_settings["api_key"]
-                                       if "api_key" in raw_settings
-                                       else "")
-            self.settings["legacy_api_key"] = (raw_settings["legacy_api_key"]
-                                              if "legacy_api_key" in raw_settings
-                                              else "")
-            self.settings["pin"] = (raw_settings["pin"]
-                                   if "pin" in raw_settings
-                                   else "")
+            self.settings["user_name"] = raw_settings.get("user_name", "")
+            self.settings["user_key"] = raw_settings.get("user_key", "")
+            self.settings["api_key"] = raw_settings.get("api_key", "")
+            self.settings["legacy_api_key"] = raw_settings.get("legacy_api_key", "")
+            self.settings["pin"] = raw_settings.get("pin", "")
             self._read_tracked_series(raw_settings)
+        else:
+            self.settings = {}
 
     @property
     def user_name(self):
         """Gets the user name to use for querying for TV episode metadata"""
 
-        return self._get_setting("user_name")
+        return self.settings.get("user_name", "")
 
     @property
     def user_key(self):
         """Gets the user key to use for querying for TV episode metadata"""
 
-        return self._get_setting("user_key")
+        return self.settings.get("user_key", "")
 
     @property
     def api_key(self):
         """Gets the API key to use for querying for TV episode metadata"""
 
-        return self._get_setting("api_key")
+        return self.settings.get("api_key", "")
 
     @property
     def legacy_api_key(self):
         """Gets the legacy API key to use for querying for TV episode metadata"""
 
-        return self._get_setting("legacy_api_key")
+        return self.settings.get("legacy_api_key", "")
 
     @property
     def pin(self):
         """Gets the PIN to use for querying for TV episode metadata"""
 
-        return self._get_setting("pin")
-
-    def _get_setting(self, setting_name):
-        return (self.settings[setting_name]
-               if self.settings is not None and setting_name in self.settings
-               else "")
+        return self.settings.get("pin", "")
 
     def _read_tracked_series(self, raw_settings):
         if "tracked_series" in raw_settings:
@@ -197,7 +176,7 @@ class MetadataSettings:
                 if "id" not in series_dict or series_dict["id"] <= 0:
                     continue
                 series_id = series_dict["id"]
-                description = series_dict["description"] if "description" in series_dict else ""
+                description = series_dict.get("description", "")
                 keywords = []
                 if description != "":
                     keywords.append(series_keyword.lower())
@@ -206,13 +185,9 @@ class MetadataSettings:
                         keywords.append(additional_keyword.lower())
 
                 searches = []
-                enable_torrent_search = (series_dict["enable_torrent_search"]
-                                        if "enable_torrent_search" in series_dict
-                                        else False)
+                enable_torrent_search = series_dict.get("enable_torrent_search", False)
                 if enable_torrent_search:
-                    primary_search_term = (series_dict["primary_search_term"]
-                                          if "primary_search_term" in series_dict
-                                          else series_keyword)
+                    primary_search_term = series_dict.get("primary_search_term", series_keyword)
                     if "additional_search_term_sets" in series_dict:
                         for search_term_set in series_dict["additional_search_term_sets"]:
                             search = [ primary_search_term ]
