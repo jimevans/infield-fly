@@ -58,10 +58,15 @@ class JobQueue:
         job.save()
         return job
 
+    def get_jobs_by_status(self, status):
+        """Gets all jubs with a specific status"""
+        
+        jobs = self.load_jobs()
+        return [x for x in jobs if x.status == status]
+
     def perform_conversions(self):
         """Executes all pending conversion jobs, converting files to the proper format"""
 
-        jobs = self.load_jobs()
         config = Configuration()
         staging_directory = (config.conversion.staging_directory
                              if config.conversion.staging_directory is not None
@@ -70,7 +75,7 @@ class JobQueue:
                            if config.conversion.final_directory is not None
                            else "completed")
         episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-        pending_job_list = [x for x in jobs if x.status == "pending"]
+        pending_job_list = self.get_jobs_by_status("pending")
         for job in pending_job_list:
             job.status = "converting"
             job.save()
@@ -98,35 +103,32 @@ class JobQueue:
     def perform_searches(self, airdate):
         """Executes all pending search jobs, searching for available downloads"""
 
-        completed_job_list = [x for x in self.load_jobs()
-                              if x.status == "completed"
-                              and x.added != airdate.strftime("%Y-%m-%d")]
+        completed_job_list = [x for x in self.get_jobs_by_status("completed")
+                              if x.added != airdate.strftime("%Y-%m-%d")]
         for job in completed_job_list:
             job.delete()
 
-        for job in self.load_jobs():
-            if job.status == "waiting":
-                job.status = "searching"
-                job.save()
+        for job in self.get_jobs_by_status("waiting"):
+            job.status = "searching"
+            job.save()
 
         config = Configuration()
         self.create_new_search_jobs(config, airdate)
 
         finder = TorrentDataProvider()
-        for job in self.load_jobs():
-            if job.status == "searching":
-                search_results = finder.search(job.query, retry_count=4)
-                if len(search_results) == 0:
-                    job.status = "waiting"
+        for job in self.get_jobs_by_status("searching"):
+            search_results = finder.search(job.query, retry_count=4)
+            if len(search_results) == 0:
+                job.status = "waiting"
+                job.save()
+            else:
+                for search_result in search_results:
+                    job.status = "adding"
+                    job.magnet_link = search_result.magnet_link
+                    job.title = search_result.title
+                    job.torrent_hash = search_result.hash
                     job.save()
-                else:
-                    for search_result in search_results:
-                        job.status = "adding"
-                        job.magnet_link = search_result.magnet_link
-                        job.title = search_result.title
-                        job.torrent_hash = search_result.hash
-                        job.save()
-                        job.write_magnet_file(config.conversion.staging_directory)
+                    job.write_magnet_file(config.conversion.staging_directory)
 
         magnet_directory = config.conversion.magnet_directory
         if magnet_directory is not None and os.path.isdir(magnet_directory):
@@ -150,12 +152,13 @@ class JobQueue:
             for series_episode in series_episodes_since_last_search:
                 for stored_search in tracked_series.stored_searches:
                     search_string = "{} {}".format(
-                            " ".join(stored_search),
+                            " ".join(stored_search.search_terms),
                             "s{:02d}e{:02d}".format(
                                 series_episode.season_number, series_episode.episode_number))
                     if not self.is_existing_job(tracked_series.main_keyword, search_string):
                         job = self.create_job(tracked_series.main_keyword, search_string)
                         job.status = "searching"
+                        job.download_only = stored_search.download_only
                         job.save()
 
     def is_existing_job(self, keyword, search_string):

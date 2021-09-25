@@ -188,15 +188,30 @@ class MetadataSettings:
                 enable_torrent_search = series_dict.get("enable_torrent_search", False)
                 if enable_torrent_search:
                     primary_search_term = series_dict.get("primary_search_term", series_keyword)
-                    if "additional_search_term_sets" in series_dict:
-                        for search_term_set in series_dict["additional_search_term_sets"]:
-                            search = [ primary_search_term ]
-                            search.extend(search_term_set)
+                    if "search_configs" in series_dict:
+                        for search_config in series_dict["search_configs"]:
+                            search = SearchConfiguration(
+                                [ primary_search_term ],
+                                search_config.get("download_only", False)
+                            )
+                            search.search_terms.extend(search_config.get("search_terms", []))
                             searches.append(search)
                     else:
-                        searches.append([primary_search_term])
+                        search = SearchConfiguration(
+                            [ primary_search_term ],
+                            False
+                        )
+                        searches.append(search)
                 self.tracked_series.append(
                     TrackedSeries(series_id, description, series_keyword, keywords, searches))
+
+
+@dataclass
+class SearchConfiguration:
+
+    """Represents a search configuration"""
+    search_terms: List[str]
+    download_only: bool
 
 
 @dataclass
@@ -208,4 +223,4 @@ class TrackedSeries:
     description: str
     main_keyword: str
     keywords: List[str]
-    stored_searches: List[str]
+    stored_searches: List[SearchConfiguration]

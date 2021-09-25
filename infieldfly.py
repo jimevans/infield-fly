@@ -31,7 +31,7 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
             found_episodes.append(series_episode)
             for stored_search in tracked_series.stored_searches:
                 searches_to_perform.append("{} {}".format(
-                    " ".join(stored_search),
+                    " ".join(stored_search.search_terms),
                     "s{:02d}e{:02d}".format(
                         series_episode.season_number, series_episode.episode_number)
                 ))
