@@ -100,6 +100,7 @@ class ConversionSettings:
     @property
     def infield_fly_directory(self):
         """Gets the path of the tool installation directory"""
+
         return os.path.dirname(os.path.realpath(__file__))
 
 

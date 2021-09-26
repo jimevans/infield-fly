@@ -40,7 +40,7 @@ class JobQueue:
                     job.save()
                 elif job.status == "downloading":
                     job.name = torrent_name
-                    job.status = "completed" if job.download_only else "pending"
+                    job.status = "completed" if job.is_download_only else "pending"
                     job.save()
             elif job.status == "adding" and job.title == torrent_name:
                 job.torrent_hash = torrent_hash
@@ -68,12 +68,8 @@ class JobQueue:
         """Executes all pending conversion jobs, converting files to the proper format"""
 
         config = Configuration()
-        staging_directory = (config.conversion.staging_directory
-                             if config.conversion.staging_directory is not None
-                             else "staging")
-        final_directory = (config.conversion.final_directory
-                           if config.conversion.final_directory is not None
-                           else "completed")
+        staging_directory = config.conversion.staging_directory
+        final_directory = config.conversion.final_directory
         episode_db = EpisodeDatabase.load_from_cache(config.metadata)
         pending_job_list = self.get_jobs_by_status("pending")
         for job in pending_job_list:
@@ -131,7 +127,7 @@ class JobQueue:
                     job.write_magnet_file(config.conversion.staging_directory)
 
         magnet_directory = config.conversion.magnet_directory
-        if magnet_directory is not None and os.path.isdir(magnet_directory):
+        if os.path.isdir(magnet_directory):
             for existing_file in [x for x in os.listdir(magnet_directory)
                                   if x.endswith(".invalid")]:
                 os.remove(os.path.join(magnet_directory, existing_file))
@@ -158,7 +154,7 @@ class JobQueue:
                     if not self.is_existing_job(tracked_series.main_keyword, search_string):
                         job = self.create_job(tracked_series.main_keyword, search_string)
                         job.status = "searching"
-                        job.download_only = stored_search.download_only
+                        job.is_download_only = stored_search.is_download_only
                         job.save()
 
     def is_existing_job(self, keyword, search_string):
@@ -312,7 +308,7 @@ class Job:
         self.dictionary["download_directory"] = value
 
     @property
-    def download_only(self):
+    def is_download_only(self):
         """
         Gets a value indicating whether this job only downloads the file as opposed to also
         converting it
@@ -320,8 +316,8 @@ class Job:
 
         return self.dictionary.get("download_only", False)
 
-    @download_only.setter
-    def download_only(self, value):
+    @is_download_only.setter
+    def is_download_only(self, value):
         self.dictionary["download_only"] = value
 
     @classmethod
