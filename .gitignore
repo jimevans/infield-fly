@@ -131,8 +131,11 @@ dmypy.json
 # infield-fly config files
 settings.json
 .dbcache
-.jobqueue
 .jobs/
 .queuelock
+magnets/
+staging/
+completed/
+logs/
 .DS_Store
 
