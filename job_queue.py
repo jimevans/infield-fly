@@ -60,7 +60,7 @@ class JobQueue:
 
     def get_jobs_by_status(self, status):
         """Gets all jubs with a specific status"""
-        
+
         jobs = self.load_jobs()
         return [x for x in jobs if x.status == status]
 
