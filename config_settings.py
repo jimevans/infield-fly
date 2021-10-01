@@ -73,19 +73,35 @@ class ConversionSettings:
     def magnet_directory(self):
         """Gets the path of the directory to which to write magnet files"""
 
-        return self.settings.get("magnet_directory", None)
+        return self.settings.get("magnet_directory",
+                                 os.path.join(self.infield_fly_directory, "magnets"))
 
     @property
     def staging_directory(self):
         """Gets the path of the directory into which converted files are to be written"""
 
-        return self.settings.get("staging_directory", None)
+        return self.settings.get("staging_directory",
+                                 os.path.join(self.infield_fly_directory, "staging"))
 
     @property
     def final_directory(self):
         """Gets the path of the directory where final, converted files will be written"""
 
-        return self.settings.get("final_directory", None)
+        return self.settings.get("final_directory",
+                                 os.path.join(self.infield_fly_directory, "completed"))
+
+    @property
+    def log_directory(self):
+        """Gets the path of the directory to which log files are written"""
+
+        return self.settings.get("log_directory",
+                                 os.path.join(self.infield_fly_directory, "logs"))
+
+    @property
+    def infield_fly_directory(self):
+        """Gets the path of the tool installation directory"""
+
+        return os.path.dirname(os.path.realpath(__file__))
 
 
 class NotificationSettings:
@@ -211,7 +227,7 @@ class SearchConfiguration:
 
     """Represents a search configuration"""
     search_terms: List[str]
-    download_only: bool
+    is_download_only: bool
 
 
 @dataclass

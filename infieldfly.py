@@ -171,6 +171,8 @@ def show_job(args):
             print("Torrent hash: {}".format(job.torrent_hash))
         if job.download_directory is not None:
             print("Torrent directory: {}".format(os.path.join(job.download_directory, job.name)))
+        if job.is_download_only is not None:
+            print("Is download-only job: {}".format(job.is_download_only))
 
 def create_job(args):
     """Creates a new queued job"""
@@ -363,6 +365,8 @@ def main():
     """Main entry point"""
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("-u", "--unattended", action="store_true", default=False,
+                        help="Run Infield Fly in unattended mode.")
     subparsers = parser.add_subparsers(dest="command", required=True,
                                        help="Command to use")
     add_convert_subparser(subparsers)
