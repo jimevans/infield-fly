@@ -82,7 +82,7 @@ class JobQueue:
                 match = re.match(
                     r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
                 if match is not None:
-                    src_file = match.group(0)
+                    src_file = os.path.join(src_dir, match.group(0))
                     dest_file = os.path.join(config.conversion.staging_directory,
                                              "{}.mp4".format(job.converted_file_name))
                     converter = Converter(
