@@ -1,9 +1,11 @@
 """Database of episode metadata"""
 
 import json
+import logging
 import os
 import urllib
 from datetime import datetime
+from time import perf_counter
 import requests
 
 class EpisodeDatabase:
@@ -59,26 +61,37 @@ class EpisodeDatabase:
 
         return self.tracked_series
 
-    def update_all_tracked_series(self, force_updates=False):
+    def update_all_tracked_series(self, force_updates=False, is_unattended_mode=False):
         """Updates all tracked series in this episode database"""
+
+        logger = logging.getLogger()
+        if is_unattended_mode:
+            logger.info("Starting database update")
+        start_time = perf_counter()
 
         for series in self.tracked_series:
             series_id = series.series_id
             series_description = series.description
             if series_id not in self.known_series:
-                print("Retrieving initial metadata for {}".format(series_description))
-                self.update_series(series_id)
+                logger.info("Retrieving initial metadata for %s", series_description)
+                self.update_series(series_id, is_unattended_mode)
             elif force_updates or self.known_series[series_id].is_ongoing:
-                print("Updating metadata for {}".format(series_description))
-                self.update_series(series_id)
+                logger.info("Updating metadata for %s", series_description)
+                self.update_series(series_id, is_unattended_mode)
             else:
-                print("Skipping update of {}; series status is '{}'.".format(
-                    series_description, self.known_series[series_id].status))
+                logger.info(
+                    "Skipping update of %s; series status is '%s'.",
+                    series_description,
+                    self.known_series[series_id].status)
 
-    def update_series(self, series_id):
+        end_time = perf_counter()
+        if is_unattended_mode:
+            logger.info("Database update completed in %s seconds", end_time - start_time)
+
+    def update_series(self, series_id, is_unattended_mode=False):
         """Updates the metadata for a series in this episode database"""
 
-        series_info = self.metadata_provider.get_series(series_id)
+        series_info = self.metadata_provider.get_series(series_id, is_unattended_mode)
         self.add_series(series_info)
         return series_info
 
@@ -263,14 +276,16 @@ class TVMetadataProvider:
         self.base_url = "https://api4.thetvdb.com/v4/"
         self.token = None
         self.token_expiry = None
+        self.logger = logging.getLogger()
 
     def authenticate(self):
         """Authenticates the connection to use the thetvdb.com API"""
 
+        self.logger.debug("Authorizing to TV metadata provider")
         authentication_payload = { "apikey": self.api_key, "pin": self.pin }
         response = requests.post(self.base_url + "login", json = authentication_payload)
         if not response.status_code == 200:
-            print("Authorization failed")
+            self.logger.warning("Authorization failed")
             return
         authentication_response_json = response.json()
         self.token = authentication_response_json["data"]["token"]
@@ -292,8 +307,9 @@ class TVMetadataProvider:
 
         response_value = response.json()
         if response.status_code != 200:
-            print("Received error response ({}): {}".format(response.status_code,
-                                                            response_value["message"]))
+            self.logger.warning("Received error response (%s): %s",
+                                response.status_code,
+                                response_value["message"])
             return None
 
         return response.json()
@@ -320,7 +336,7 @@ class TVMetadataProvider:
                         series.append(series_info)
         return series
 
-    def get_series(self, series_id):
+    def get_series(self, series_id, is_unattended_mode=False):
         """Retrieves metadata for a series and its episodes using the thetvdb.com API"""
 
         relative_url = "series/{}/episodes/default".format(series_id)
@@ -341,16 +357,19 @@ class TVMetadataProvider:
             data = result["data"]
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
 
-        progress_bar = ProgressBar(len(episodes), length=80, prefix="Process episodes:")
+        if not is_unattended_mode:
+            progress_bar = ProgressBar(len(episodes), length=80, prefix="Process episodes:")
         for episode_object in episodes:
-            progress_bar.increment()
+            if not is_unattended_mode:
+                progress_bar.increment()
             episode_info = EpisodeInfo.from_dictionary(series_info.title, episode_object)
             if episode_info.airdate is None and episode_info.season_number > 0:
                 episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
 
             series_info.add_episode(episode_info)
 
-        progress_bar.clear()
+        if not is_unattended_mode:
+            progress_bar.clear()
 
         return series_info
 

@@ -1,23 +1,17 @@
 """Main module for converting files"""
 
 import argparse
+import logging
 import os
+import sys
 from datetime import datetime, timedelta
+from logging.handlers import RotatingFileHandler
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
 from job_queue import JobQueue
 from notifier import Notifier
 from torrent_finder import TorrentDataProvider
-
-def replace_strings(input_value, substitutions):
-    """Replaces substring values according to the passed in list of substitutions"""
-
-    output_value = input_value
-    if substitutions is not None:
-        for replacement in substitutions:
-            output_value = output_value.replace(replacement, substitutions[replacement])
-    return output_value
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
     """Gets the set of search strings for all tracked series during the specified date range"""
@@ -108,7 +102,8 @@ def update_database(args):
 
     config = Configuration()
     episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-    episode_db.update_all_tracked_series(force_updates=args.force_updates)
+    episode_db.update_all_tracked_series(force_updates=args.force_updates,
+                                         is_unattended_mode=args.unattended)
     episode_db.save_to_cache()
 
 def convert(args):
@@ -124,8 +119,6 @@ def convert(args):
         file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
         for src_file, dest_file in file_map:
-            converted_dest_file = replace_strings(dest_file,
-                                                  config.conversion.string_substitutions)
             converted_dest_file = "".join(
                 config.conversion.string_substitutions.get(c, c) for c in dest_file)
             converter = Converter(src_file, converted_dest_file,
@@ -179,7 +172,7 @@ def create_job(args):
 
     job_queue = JobQueue()
     job = job_queue.create_job(args.keyword, args.search_term)
-    job.save()
+    job.save(logging.getLogger())
 
 def delete_job(args):
     """Deletes a new queued job"""
@@ -200,7 +193,7 @@ def update_job(args):
         print("No existing job with ID '{}'".format(args.id))
     else:
         job.status = args.status
-        job.save()
+        job.save(logging.getLogger())
 
 def list_jobs(args):
     """Lists all jobs in the job queue"""
@@ -230,9 +223,10 @@ def process_jobs(args):
         airdate = datetime.now()
         job_queue.perform_searches(datetime(month=airdate.month,
                                             day=airdate.day,
-                                            year=airdate.year))
+                                            year=airdate.year),
+                                   args.unattended)
     if not args.skip_convert:
-        job_queue.perform_conversions()
+        job_queue.perform_conversions(args.unattended)
 
 def add_convert_subparser(subparsers):
     """Adds the argument subparser for the 'convert' command"""
@@ -361,6 +355,28 @@ def add_jobs_subparser(subparsers):
                                 help="Perform the convert phase of job processing")
     process_jobs_parser.set_defaults(skip_search=False, skip_convert=False, func=process_jobs)
 
+def setup_logging(args):
+    """Sets up logging for the Infield Fly library"""
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    if args.unattended:
+        config = Configuration()
+        if not os.path.isdir(config.conversion.log_directory):
+            os.makedirs(config.conversion.log_directory)
+        handler = RotatingFileHandler(
+            os.path.join(config.conversion.log_directory, "infieldfly.log"),
+            backupCount=9,
+            maxBytes=1048576)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("[%(asctime)s] %(message)s"))
+    else:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+
+
 def main():
     """Main entry point"""
 
@@ -374,6 +390,7 @@ def main():
     add_database_subparser(subparsers)
     add_jobs_subparser(subparsers)
     args = parser.parse_args()
+    setup_logging(args)
     args.func(args)
 
 if __name__ == "__main__":
