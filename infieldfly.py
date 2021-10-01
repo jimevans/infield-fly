@@ -226,7 +226,7 @@ def process_jobs(args):
                                             year=airdate.year),
                                    args.unattended)
     if not args.skip_convert:
-        job_queue.perform_conversions()
+        job_queue.perform_conversions(args.unattended)
 
 def add_convert_subparser(subparsers):
     """Adds the argument subparser for the 'convert' command"""
