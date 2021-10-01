@@ -129,6 +129,7 @@ class JobQueue:
             search_results = finder.search(
                 job.query, retry_count=4, is_unattended_mode=is_unattended_mode)
             if len(search_results) == 0:
+                self.logger.info("No search results found, setting job back to waiting.")
                 job.status = "waiting"
                 job.save(self.logger)
             else:
