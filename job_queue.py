@@ -122,10 +122,8 @@ class JobQueue:
                 for search_result in search_results:
                     if search_result_counter == 0:
                         added_job = job
-                        print("modifying job {}".format(added_job.job_id))
                     else:
                         added_job = job.copy()
-                        print("modifying copy job {}".format(added_job.job_id))
                         added_job.converted_file_name = "{}.{}".format(
                             added_job.converted_file_name, search_result_counter)
                     added_job.status = "adding"
