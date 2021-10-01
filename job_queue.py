@@ -139,8 +139,8 @@ class JobQueue:
                         self.logger.info(
                             "Search result for query string '%s'. " +
                             "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'",
-                            added_job.query, added_job.job_id, added_job.torrent_hash,
-                            added_job.title, added_job.converted_file_name)
+                            added_job.query, added_job.job_id, search_result.hash,
+                            search_result.title, added_job.converted_file_name)
                     else:
                         added_job = job.copy()
                         added_job.converted_file_name = "{}.{}".format(
