@@ -120,17 +120,20 @@ class JobQueue:
             else:
                 search_result_counter = 0
                 for search_result in search_results:
-                    updated_job = job
-                    updated_job.status = "adding"
-                    updated_job.magnet_link = search_result.magnet_link
-                    updated_job.title = search_result.title
-                    updated_job.torrent_hash = search_result.hash
-                    if search_result_counter > 0:
-                        updated_job = job.copy()
-                        updated_job.converted_file_name = "{}.{}".format(
-                            updated_job.converted_file_name, search_result_counter)
-                    updated_job.save()
-                    updated_job.write_magnet_file(config.conversion.staging_directory)
+                    if search_result_counter == 0:
+                        print("modifying job {}".format(added_job.job_id))
+                        added_job = job
+                    else:
+                        added_job = job.copy()
+                        print("modifying copy job {}".format(added_job.job_id))
+                        added_job.converted_file_name = "{}.{}".format(
+                            added_job.converted_file_name, search_result_counter)
+                    added_job.status = "adding"
+                    added_job.magnet_link = search_result.magnet_link
+                    added_job.title = search_result.title
+                    added_job.torrent_hash = search_result.hash
+                    added_job.save()
+                    added_job.write_magnet_file(config.conversion.staging_directory)
                     search_result_counter += 1
 
         magnet_directory = config.conversion.magnet_directory
@@ -365,7 +368,8 @@ class Job:
 
         job_copy = Job(self.directory, {})
         for name in self.dictionary:
-            job_copy.dictionary[name] = self.dictionary[name]
+            if name != "id":
+                job_copy.dictionary[name] = self.dictionary[name]
 
         return job_copy
 
