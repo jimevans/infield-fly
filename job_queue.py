@@ -155,7 +155,7 @@ class JobQueue:
             config.conversion.magnet_directory, config.conversion.staging_directory)
 
     def _write_magnet_files(self, magnet_directory, staging_directory):
-        self.logger.info("Writing magnet files")
+        self.logger.info("Adding files to download")
         if os.path.isdir(magnet_directory):
             for existing_file in [x for x in os.listdir(magnet_directory)
                                   if x.endswith(".invalid")]:
