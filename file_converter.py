@@ -42,7 +42,8 @@ class Converter:
         ffmpeg_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
         ffmpeg_args.append("-hide_banner")
         if self.is_unattended_mode:
-            ffmpeg_args.append("-loglevel warning")
+            ffmpeg_args.append("-loglevel")
+            ffmpeg_args.append("warning")
             ffmpeg_args.append("-nostats")
         ffmpeg_args.append("-i")
         ffmpeg_args.append(self.input_file)
