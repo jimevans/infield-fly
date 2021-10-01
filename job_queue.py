@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from config_settings import Configuration
@@ -68,33 +69,32 @@ class JobQueue:
         """Executes all pending conversion jobs, converting files to the proper format"""
 
         config = Configuration()
-        staging_directory = config.conversion.staging_directory
         final_directory = config.conversion.final_directory
-        episode_db = EpisodeDatabase.load_from_cache(config.metadata)
         pending_job_list = self.get_jobs_by_status("pending")
         for job in pending_job_list:
             job.status = "converting"
             job.save()
         for job in pending_job_list:
-            if episode_db.get_tracked_series_by_keyword(job.keyword) is not None:
-                mapper = FileMapper(episode_db)
-                file_map = mapper.map_files(
-                    os.path.join(job.download_directory, job.name) + os.sep,
-                    staging_directory,
-                    job.keyword)
-                for src_file, dest_file in file_map:
-                    converted_dest_file = "".join(
-                        config.conversion.string_substitutions.get(c, c) for c in dest_file)
+            src_dir = os.path.join(job.download_directory, job.name)
+            file_list = os.listdir(src_dir)
+            file_list.sort()
+            for input_file in file_list:
+                match = re.match(
+                    r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
+                if match is not None:
+                    src_file = match.group(0)
+                    dest_file = os.path.join(config.conversion.staging_directory,
+                                             "{}.mp4".format(job.converted_file_name))
                     converter = Converter(
-                        src_file, converted_dest_file, config.conversion.ffmpeg_location)
+                        src_file, dest_file, config.conversion.ffmpeg_location)
                     converter.convert_file(
                         convert_video=False, convert_audio=True, convert_subtitles=True)
                     job.status = "completed"
                     job.save()
                     if datetime.now().strftime("%Y-%m-%d") != job.added:
                         job.delete()
-                    os.rename(converted_dest_file,
-                              os.path.join(final_directory, os.path.basename(converted_dest_file)))
+                    os.rename(
+                        dest_file, os.path.join(final_directory, os.path.basename(dest_file)))
 
     def perform_searches(self, airdate):
         """Executes all pending search jobs, searching for available downloads"""
@@ -155,6 +155,10 @@ class JobQueue:
                         job = self.create_job(tracked_series.main_keyword, search_string)
                         job.status = "searching"
                         job.is_download_only = stored_search.is_download_only
+                        if not stored_search.is_download_only:
+                            job.converted_file_name = "".join(
+                                config.conversion.string_substitutions.get(c, c)
+                                for c in series_episode.plex_title).strip()
                         job.save()
 
     def is_existing_job(self, keyword, search_string):
@@ -306,6 +310,16 @@ class Job:
     @download_directory.setter
     def download_directory(self, value):
         self.dictionary["download_directory"] = value
+
+    @property
+    def converted_file_name(self):
+        """Gets the file name of the download once converted"""
+
+        return self.dictionary.get("converted_file_name", None)
+ 
+    @converted_file_name.setter
+    def converted_file_name(self, value):
+        self.dictionary["converted_file_name"] = value
 
     @property
     def is_download_only(self):
