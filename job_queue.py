@@ -118,13 +118,20 @@ class JobQueue:
                 job.status = "waiting"
                 job.save()
             else:
+                search_result_counter = 0
                 for search_result in search_results:
-                    job.status = "adding"
-                    job.magnet_link = search_result.magnet_link
-                    job.title = search_result.title
-                    job.torrent_hash = search_result.hash
-                    job.save()
-                    job.write_magnet_file(config.conversion.staging_directory)
+                    updated_job = job
+                    updated_job.status = "adding"
+                    updated_job.magnet_link = search_result.magnet_link
+                    updated_job.title = search_result.title
+                    updated_job.torrent_hash = search_result.hash
+                    if search_result_counter > 0:
+                        updated_job = job.copy()
+                        updated_job.converted_file_name = "{}.{}".format(
+                            updated_job.converted_file_name, search_result_counter)
+                    updated_job.save()
+                    updated_job.write_magnet_file(config.conversion.staging_directory)
+                    search_result_counter += 1
 
         magnet_directory = config.conversion.magnet_directory
         if os.path.isdir(magnet_directory):
@@ -200,10 +207,10 @@ class Job:
         super().__init__()
         self.directory = directory
         self.dictionary = job_dict
-        if "status" not in self.dictionary:
-            self.dictionary["status"] = "waiting"
         if "id" not in self.dictionary:
             self.dictionary["id"] = str(uuid.uuid1())
+        if "status" not in self.dictionary:
+            self.dictionary["status"] = "waiting"
         if "added" not in self.dictionary:
             self.dictionary["added"] =  datetime.now().strftime("%Y-%m-%d")
         if "download_only" not in self.dictionary:
@@ -352,6 +359,15 @@ class Job:
 
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
+
+    def copy(self):
+        """Creates a copy of this job with a new ID"""
+
+        job_copy = Job(self.directory, {})
+        for name in self.dictionary:
+            job_copy.dictionary[name] = self.dictionary[name]
+
+        return job_copy
 
     def write_magnet_file(self, destination_directory):
         """Writes a file containing the magnet link for this job"""
