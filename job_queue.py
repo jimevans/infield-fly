@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
-from file_converter import Converter, FileMapper
+from file_converter import Converter
 from torrent_finder import TorrentDataProvider
 
 
@@ -324,7 +324,7 @@ class Job:
         """Gets the file name of the download once converted"""
 
         return self.dictionary.get("converted_file_name", None)
- 
+
     @converted_file_name.setter
     def converted_file_name(self, value):
         self.dictionary["converted_file_name"] = value
