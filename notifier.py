@@ -1,5 +1,6 @@
 """Provides objects to provide SMS notification when conversions are complete"""
 
+import logging
 from twilio.rest import Client
 
 
@@ -16,15 +17,16 @@ class Notifier:
     def create_default_notifier(cls, notification_settings):
         """Creates a notifier using the specified notification settings"""
 
+        logger = logging.getLogger()
         if notification_settings.sid is None or notification_settings.sid == "":
-            print("Twilio account SID not set. Not notifying.")
+            logger.warning("Twilio account SID not set. Not notifying.")
             return None
         if notification_settings.auth_token is None or notification_settings.auth_token == "":
-            print("Twilio auth token not set. Not notifying.")
+            logger.warning("Twilio auth token not set. Not notifying.")
             return None
         if (notification_settings.sending_number is None
                 or notification_settings.sending_number == ""):
-            print("Twilio SMS sending number not set. Not notifying.")
+            logger.warning("Twilio SMS sending number not set. Not notifying.")
             return None
 
         account_sid = notification_settings.sid

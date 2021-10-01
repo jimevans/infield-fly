@@ -1,5 +1,6 @@
 """Module for retrieving torrent file data"""
 
+import logging
 import platform
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -18,6 +19,7 @@ class TorrentDataProvider:
         self.token = None
         self.token_expiration = None
         self.last_request = None
+        self.logger = logging.getLogger()
 
     @property
     def user_agent(self):
@@ -34,13 +36,13 @@ class TorrentDataProvider:
 
         params = { "get_token": "get_token", "app_id": "infield-fly" }
         token_response = self.get_data(params)
-        print("Geting API token")
+        self.logger.info("Geting API token")
         if "error" in token_response:
-            print("Error retrieving token")
+            self.logger.warning("Error retrieving token")
         else:
             self.token = token_response["token"]
             self.token_expiration = datetime.now() + timedelta(minutes=10)
-            print("Token retrieved: {}".format(self.token))
+            self.logger.info("Token retrieved: %s", self.token)
 
     def get_data(self, params=None, throttle_delay_in_seconds=2.0):
         """Gets data from the torrent API, waiting between calls if necessary"""
@@ -59,7 +61,7 @@ class TorrentDataProvider:
 
         return response.json()
 
-    def search(self, search_string, retry_count=4):
+    def search(self, search_string, retry_count=4, is_unattended_mode=False):
         """
         Searches for a string using the torrent API, retrying up to the specified
         number of times
@@ -76,10 +78,11 @@ class TorrentDataProvider:
             "app_id": "infield-fly"
         }
 
-        print("Searching for '{}' (retry up to {} times)".format(search_string, retry_count))
+        self.logger.info("Searching for '%s' (retry up to %s times)", search_string, retry_count)
         search_response = self.get_data(params)
         while "error" in search_response and retry_count > 0:
-            print("No results received; waiting and trying again...")
+            if not is_unattended_mode:
+                self.logger.info("No results received; waiting and trying again...")
             sleep(3)
             retry_count -= 1
             search_response = self.get_data(params, throttle_delay_in_seconds=5.0)

@@ -1,10 +1,12 @@
 """Module containing job information for automated processing"""
 
 import json
+import logging
 import os
 import re
 import uuid
 from datetime import datetime
+from time import perf_counter
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter
@@ -16,7 +18,7 @@ class JobQueue:
     """Queue of jobs being processed"""
 
     def __init__(self):
-        pass
+        self.logger = logging.getLogger()
 
     def get_job_by_id(self, job_id):
         """Gets a job by its ID, if it exists; otherwise, returns None"""
@@ -38,17 +40,17 @@ class JobQueue:
                     job.download_directory = torrent_directory
                     job.name = torrent_name
                     job.status = "downloading"
-                    job.save()
+                    job.save(self.logger)
                 elif job.status == "downloading":
                     job.name = torrent_name
                     job.status = "completed" if job.is_download_only else "pending"
-                    job.save()
+                    job.save(self.logger)
             elif job.status == "adding" and job.title == torrent_name:
                 job.torrent_hash = torrent_hash
                 job.download_directory = torrent_directory
                 job.name = torrent_name
                 job.status = "downloading"
-                job.save()
+                job.save(self.logger)
 
     def create_job(self, keyword, query):
         """Creates a new job using the specified keyword and query string"""
@@ -56,7 +58,7 @@ class JobQueue:
         job = Job(self.cache_file_path, {})
         job.keyword = keyword
         job.query = query
-        job.save()
+        job.save(self.logger)
         return job
 
     def get_jobs_by_status(self, status):
@@ -65,7 +67,7 @@ class JobQueue:
         jobs = self.load_jobs()
         return [x for x in jobs if x.status == status]
 
-    def perform_conversions(self):
+    def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
 
         config = Configuration()
@@ -73,7 +75,7 @@ class JobQueue:
         pending_job_list = self.get_jobs_by_status("pending")
         for job in pending_job_list:
             job.status = "converting"
-            job.save()
+            job.save(self.logger)
         for job in pending_job_list:
             src_dir = os.path.join(job.download_directory, job.name)
             file_list = os.listdir(src_dir)
@@ -86,17 +88,25 @@ class JobQueue:
                     dest_file = os.path.join(config.conversion.staging_directory,
                                              "{}.mp4".format(job.converted_file_name))
                     converter = Converter(
-                        src_file, dest_file, config.conversion.ffmpeg_location)
+                        src_file, dest_file, config.conversion.ffmpeg_location, is_unattended_mode)
+                    if is_unattended_mode:
+                        self.logger.info("Starting conversion")
+                    start_time = perf_counter()
                     converter.convert_file(
                         convert_video=False, convert_audio=True, convert_subtitles=True)
+                    end_time = perf_counter()
+                    if is_unattended_mode:
+                        self.logger.info(
+                            "Conversion completed in %s seconds", end_time - start_time)
+
                     job.status = "completed"
-                    job.save()
+                    job.save(self.logger)
                     if datetime.now().strftime("%Y-%m-%d") != job.added:
                         job.delete()
                     os.rename(
                         dest_file, os.path.join(final_directory, os.path.basename(dest_file)))
 
-    def perform_searches(self, airdate):
+    def perform_searches(self, airdate, is_unattended_mode=False):
         """Executes all pending search jobs, searching for available downloads"""
 
         completed_job_list = [x for x in self.get_jobs_by_status("completed")
@@ -106,17 +116,21 @@ class JobQueue:
 
         for job in self.get_jobs_by_status("waiting"):
             job.status = "searching"
-            job.save()
+            job.save(self.logger)
 
         config = Configuration()
         self.create_new_search_jobs(config, airdate)
 
         finder = TorrentDataProvider()
+        if is_unattended_mode:
+            self.logger.info("Starting search")
+        start_time = perf_counter()
         for job in self.get_jobs_by_status("searching"):
-            search_results = finder.search(job.query, retry_count=4)
+            search_results = finder.search(
+                job.query, retry_count=4, is_unattended_mode=is_unattended_mode)
             if len(search_results) == 0:
                 job.status = "waiting"
-                job.save()
+                job.save(self.logger)
             else:
                 search_result_counter = 0
                 for search_result in search_results:
@@ -130,19 +144,26 @@ class JobQueue:
                     added_job.magnet_link = search_result.magnet_link
                     added_job.title = search_result.title
                     added_job.torrent_hash = search_result.hash
-                    added_job.save()
-                    added_job.write_magnet_file(config.conversion.staging_directory)
+                    added_job.save(self.logger)
+                    added_job.write_magnet_file(config.conversion.staging_directory, self.logger)
                     search_result_counter += 1
+        end_time=perf_counter()
+        if is_unattended_mode:
+            self.logger.info("Search completed in %s seconds", end_time - start_time)
 
-        magnet_directory = config.conversion.magnet_directory
+        self._write_magnet_files(
+            config.conversion.magnet_directory, config.conversion.staging_directory)
+
+    def _write_magnet_files(self, magnet_directory, staging_directory):
+        self.logger.info("Writing magnet files")
         if os.path.isdir(magnet_directory):
             for existing_file in [x for x in os.listdir(magnet_directory)
                                   if x.endswith(".invalid")]:
                 os.remove(os.path.join(magnet_directory, existing_file))
 
-            for magnet_file_name in os.listdir(config.conversion.staging_directory):
+            for magnet_file_name in os.listdir(staging_directory):
                 if magnet_file_name.endswith(".magnet"):
-                    os.rename(os.path.join(config.conversion.staging_directory, magnet_file_name),
+                    os.rename(os.path.join(staging_directory, magnet_file_name),
                               os.path.join(magnet_directory, magnet_file_name))
 
     def create_new_search_jobs(self, config, airdate):
@@ -167,7 +188,7 @@ class JobQueue:
                             job.converted_file_name = "".join(
                                 config.conversion.string_substitutions.get(c, c)
                                 for c in series_episode.plex_title).strip()
-                        job.save()
+                        job.save(self.logger)
 
     def is_existing_job(self, keyword, search_string):
         """
@@ -371,28 +392,28 @@ class Job:
 
         return job_copy
 
-    def write_magnet_file(self, destination_directory):
+    def write_magnet_file(self, destination_directory, logger):
         """Writes a file containing the magnet link for this job"""
 
         if (self.magnet_link is None or self.title is None):
-            print("Link or file name not set; cannot write magnet file.")
+            logger.warning("Link or file name not set; cannot write magnet file.")
 
         if destination_directory is not None and os.path.isdir(destination_directory):
             magnet_file_path = os.path.join(destination_directory, self.title + ".magnet")
-            print("Writing magnet link to {}".format(magnet_file_path))
+            logger.info("Writing magnet link to %s", magnet_file_path)
             with open(magnet_file_path, "w") as magnet_file:
                 magnet_file.write(self.magnet_link)
                 magnet_file.flush()
 
-    def save(self):
+    def save(self, logger):
         """Writes this job to a file"""
 
         if not os.path.exists(self.directory):
             os.makedirs(self.directory)
 
         if not os.path.isdir(self.directory):
-            print("Cannot save job; path '{}' exists, but is not a directory.".format(
-                self.directory))
+            logger.warning(
+                "Cannot save job; path '%s' exists, but is not a directory.", self.directory)
 
         with open(self.file_path, "w") as job_file:
             json.dump(self.dictionary, job_file, indent=2)

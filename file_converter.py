@@ -1,6 +1,7 @@
 """Module for converting files into correct format"""
 
 import json
+import logging
 import os
 import platform
 import re
@@ -11,13 +12,15 @@ class Converter:
 
     """Converts files into the correct format"""
 
-    def __init__(self, input_file, output_file, ffmpeg_location=None):
+    def __init__(self, input_file, output_file, ffmpeg_location=None, is_unattended_mode=False):
         super().__init__()
         self.ffmpeg_location = ffmpeg_location
         self.input_file = input_file
         self.output_file = output_file
         self.file_stream_info = FileStreamInfo.read_stream_info(
             input_file, self._get_ffmpeg_tool_location("ffprobe"))
+        self.is_unattended_mode = is_unattended_mode
+        self.logger = logging.getLogger()
 
     def _get_ffmpeg_tool_location(self, tool_name="ffmpeg"):
         tool_location = tool_name
@@ -38,6 +41,9 @@ class Converter:
         ffmpeg_args = []
         ffmpeg_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
         ffmpeg_args.append("-hide_banner")
+        if self.is_unattended_mode:
+            ffmpeg_args.append("-loglevel warning")
+            ffmpeg_args.append("-nostats")
         ffmpeg_args.append("-i")
         ffmpeg_args.append(self.input_file)
         ffmpeg_args.append("-map_metadata")
@@ -49,10 +55,9 @@ class Converter:
         ffmpeg_args.extend(self.get_subtitle_conversion_args(is_convert_subtitles))
 
         ffmpeg_args.append(self.output_file)
+        self.logger.info("Convert %s -> %s", self.input_file, self.output_file)
         if dry_run:
-            print("Convert {} -> {}".format(self.input_file, self.output_file))
-            print("Conversion arguments:")
-            print(ffmpeg_args)
+            self.logger.info("Conversion arguments:\n%s", ffmpeg_args)
         else:
             subprocess.run(ffmpeg_args, check=True)
 
@@ -74,8 +79,7 @@ class Converter:
                 self.file_stream_info.forced_subtitle_stream.index))
             forced_subs_args.append(forced_subs_file)
             if dry_run:
-                print("Forced subtitle conversion arguments:")
-                print(forced_subs_args)
+                self.logger.info("Forced subtitle conversion arguments:\n%s", forced_subs_args)
             else:
                 subprocess.run(forced_subs_args, check=True)
 
