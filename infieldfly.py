@@ -193,7 +193,7 @@ def update_job(args):
         print("No existing job with ID '{}'".format(args.id))
     else:
         job.status = args.status
-        job.save()
+        job.save(logging.getLogger())
 
 def list_jobs(args):
     """Lists all jobs in the job queue"""
