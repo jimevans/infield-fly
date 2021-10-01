@@ -121,8 +121,8 @@ class JobQueue:
                 search_result_counter = 0
                 for search_result in search_results:
                     if search_result_counter == 0:
-                        print("modifying job {}".format(added_job.job_id))
                         added_job = job
+                        print("modifying job {}".format(added_job.job_id))
                     else:
                         added_job = job.copy()
                         print("modifying copy job {}".format(added_job.job_id))
