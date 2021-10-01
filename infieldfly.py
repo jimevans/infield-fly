@@ -369,7 +369,7 @@ def setup_logging(args):
             backupCount=9,
             maxBytes=1048576)
         handler.setLevel(logging.INFO)
-        handler.setFormatter(logging.Formatter("[%(asctime)s] %(message)s"))
+        handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s - %(message)s"))
     else:
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.INFO)

@@ -136,10 +136,20 @@ class JobQueue:
                 for search_result in search_results:
                     if search_result_counter == 0:
                         added_job = job
+                        self.logger.info(
+                            "Search result for query string '%s'. " +
+                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'",
+                            added_job.query, added_job.job_id, added_job.torrent_hash,
+                            added_job.title, added_job.converted_file_name)
                     else:
                         added_job = job.copy()
                         added_job.converted_file_name = "{}.{}".format(
                             added_job.converted_file_name, search_result_counter)
+                        self.logger.warning(
+                            "Multiple search results for query string '%s' found: " +
+                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'",
+                            added_job.query, added_job.job_id, search_result.hash,
+                            search_result.title, added_job.converted_file_name)
                     added_job.status = "adding"
                     added_job.magnet_link = search_result.magnet_link
                     added_job.title = search_result.title
