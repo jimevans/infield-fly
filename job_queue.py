@@ -183,7 +183,6 @@ class JobQueue:
                              config.conversion.deluge_port,
                              config.conversion.deluge_user_name,
                              config.conversion.deluge_password) as client:
-            client.connect()
             for job in self.get_jobs_by_status("adding"):
                 torrent_id = client.core.add_torrent_magnet(job.magnet_link, {})
                 torrent = client.core.get_torrent_status(
@@ -194,8 +193,6 @@ class JobQueue:
                 job.status = "downloading"
                 job.save(self.logger)
 
-            client.disconnect()
-
     def update_downloaded_torrents(self, config):
         """Updates downloaded torrents to the Deluse client"""
 
@@ -203,15 +200,12 @@ class JobQueue:
                              config.conversion.deluge_port,
                              config.conversion.deluge_user_name,
                              config.conversion.deluge_password) as client:
-            client.connect()
             for job in self.get_jobs_by_status("downloading"):
                 torrent = client.core.get_torrent_status(
                     job.torrent_hash, ["name", "download_location", "is_finished"])
                 if torrent.get("is_finished".encode(), False):
                     job.status = "pending"
                     job.save(self.logger)
-
-            client.disconnect()
 
     def create_new_search_jobs(self, config, airdate):
         """Creates new search jobs based on airdate"""
