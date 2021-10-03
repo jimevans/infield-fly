@@ -181,7 +181,8 @@ class JobQueue:
 
         job_list = self.get_jobs_by_status("adding")
         if len(job_list) > 0:
-            self.logger.info("Adding jobs to Deluge instance on %s", config.conversion.deluge_host)
+            self.logger.info("Adding downloads to Deluge instance on %s",
+                             config.conversion.deluge_host)
             with DelugeRPCClient(config.conversion.deluge_host,
                                 config.conversion.deluge_port,
                                 config.conversion.deluge_user_name,
@@ -203,7 +204,8 @@ class JobQueue:
 
         job_list = self.get_jobs_by_status("downloading")
         if len(job_list) > 0:
-            self.logger.info("Updating jobs on Deluge instance at %s", config.conversion.deluge_host)
+            self.logger.info("Marking completed downloads on Deluge instance at %s",
+                             config.conversion.deluge_host)
             with DelugeRPCClient(config.conversion.deluge_host,
                                 config.conversion.deluge_port,
                                 config.conversion.deluge_user_name,
