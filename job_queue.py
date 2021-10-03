@@ -204,6 +204,7 @@ class JobQueue:
                 torrent = client.core.get_torrent_status(
                     job.torrent_hash, ["name", "download_location", "is_finished"])
                 if torrent.get("is_finished".encode(), False):
+                    job.name = torrent["name".encode()].decode()
                     job.status = "pending"
                     job.save(self.logger)
 
