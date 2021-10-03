@@ -179,6 +179,7 @@ class JobQueue:
     def add_torrents(self, config):
         """Adds found torrents to the Deluse client"""
 
+        self.logger.info("Adding jobs to Deluge instance on %s", config.conversion.deluge_host)
         with DelugeRPCClient(config.conversion.deluge_host,
                              config.conversion.deluge_port,
                              config.conversion.deluge_user_name,
@@ -196,6 +197,7 @@ class JobQueue:
     def update_downloaded_torrents(self, config):
         """Updates downloaded torrents to the Deluse client"""
 
+        self.logger.info("Updating jobs on Deluge instance at %s", config.conversion.deluge_host)
         with DelugeRPCClient(config.conversion.deluge_host,
                              config.conversion.deluge_port,
                              config.conversion.deluge_user_name,
