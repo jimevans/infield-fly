@@ -7,6 +7,7 @@ import re
 import uuid
 from datetime import datetime
 from time import perf_counter
+from deluge_client import DelugeRPCClient
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter
@@ -82,6 +83,7 @@ class JobQueue:
         """Executes all pending conversion jobs, converting files to the proper format"""
 
         config = Configuration()
+        self.update_downloaded_torrents(config)
         final_directory = config.conversion.final_directory
         pending_job_list = self.get_jobs_by_status("pending")
         for job in pending_job_list:
@@ -167,14 +169,53 @@ class JobQueue:
                     added_job.title = search_result.title
                     added_job.torrent_hash = search_result.hash
                     added_job.save(self.logger)
-                    added_job.write_magnet_file(config.conversion.staging_directory, self.logger)
+                    #added_job.write_magnet_file(config.conversion.staging_directory, self.logger)
                     search_result_counter += 1
         end_time=perf_counter()
         if is_unattended_mode:
             self.logger.info("Search completed in %s seconds", end_time - start_time)
 
-        self._write_magnet_files(
-            config.conversion.magnet_directory, config.conversion.staging_directory)
+        self.add_torrents(config)
+
+        #self._write_magnet_files(
+        #    config.conversion.magnet_directory, config.conversion.staging_directory)
+
+    def add_torrents(self, config):
+        """Adds found torrents to the Deluse client"""
+
+        with DelugeRPCClient(config.conversion.deluge_host,
+                             config.conversion.deluge_port,
+                             config.conversion.deluge_user_name,
+                             config.conversion.password) as client:
+            client.connect()
+            for job in self.get_jobs_by_status("adding"):
+                torrent_id = client.core.add_torrent_magnet(job.magnet_link, {})
+                torrent = client.core.get_torrent_status(
+                    torrent_id.decode(), ["name", "download_location", "is_finished"])
+                job.torrent_hash = torrent_id.decode()
+                job.download_directory = torrent["download_location".encode()]
+                job.name = torrent["name".encode()]
+                job.status = "downloading"
+                job.save(self.logger)
+
+            client.disconnect()
+
+    def update_downloaded_torrents(self, config):
+        """Updates downloaded torrents to the Deluse client"""
+
+        with DelugeRPCClient(config.conversion.deluge_host,
+                             config.conversion.deluge_port,
+                             config.conversion.deluge_user_name,
+                             config.conversion.password) as client:
+            client.connect()
+            for job in self.get_jobs_by_status("downloading"):
+                torrent = client.core.get_torrent_status(
+                    job.torrent_hash, ["name", "download_location", "is_finished"])
+                if torrent.get("is_finished".encode(), False):
+                    job.status = "pending"
+                    job.save(self.logger)
+
+            client.disconnect()
 
     def _write_magnet_files(self, magnet_directory, staging_directory):
         if os.path.isdir(magnet_directory):
