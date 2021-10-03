@@ -58,6 +58,17 @@ class JobQueue:
         job = Job(self.cache_file_path, {})
         job.keyword = keyword
         job.query = query
+        match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", query, re.IGNORECASE)
+        if match is not None:
+            config = Configuration()
+            episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+            series = episode_db.get_tracked_series_by_keyword(keyword)
+            if series is not None:
+                episode = series.get_episode(int(match.group(2)), int(match.group(3)))
+                if episode is not None:
+                    job.converted_file_name = "".join(
+                                    config.conversion.string_substitutions.get(c, c)
+                                    for c in episode.plex_title).strip()
         job.save(self.logger)
         return job
 
