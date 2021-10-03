@@ -188,8 +188,8 @@ class JobQueue:
                 torrent = client.core.get_torrent_status(
                     torrent_id.decode(), ["name", "download_location", "is_finished"])
                 job.torrent_hash = torrent_id.decode()
-                job.download_directory = torrent["download_location".encode()]
-                job.name = torrent["name".encode()]
+                job.download_directory = torrent["download_location".encode()].decode()
+                job.name = torrent["name".encode()].decode()
                 job.status = "downloading"
                 job.save(self.logger)
 
