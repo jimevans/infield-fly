@@ -182,7 +182,7 @@ class JobQueue:
         with DelugeRPCClient(config.conversion.deluge_host,
                              config.conversion.deluge_port,
                              config.conversion.deluge_user_name,
-                             config.conversion.password) as client:
+                             config.conversion.deluge_password) as client:
             client.connect()
             for job in self.get_jobs_by_status("adding"):
                 torrent_id = client.core.add_torrent_magnet(job.magnet_link, {})
@@ -202,7 +202,7 @@ class JobQueue:
         with DelugeRPCClient(config.conversion.deluge_host,
                              config.conversion.deluge_port,
                              config.conversion.deluge_user_name,
-                             config.conversion.password) as client:
+                             config.conversion.deluge_password) as client:
             client.connect()
             for job in self.get_jobs_by_status("downloading"):
                 torrent = client.core.get_torrent_status(
