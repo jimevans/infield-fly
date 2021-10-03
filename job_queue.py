@@ -179,36 +179,44 @@ class JobQueue:
     def add_torrents(self, config):
         """Adds found torrents to the Deluse client"""
 
-        self.logger.info("Adding jobs to Deluge instance on %s", config.conversion.deluge_host)
-        with DelugeRPCClient(config.conversion.deluge_host,
-                             config.conversion.deluge_port,
-                             config.conversion.deluge_user_name,
-                             config.conversion.deluge_password) as client:
-            for job in self.get_jobs_by_status("adding"):
-                torrent_id = client.core.add_torrent_magnet(job.magnet_link, {})
-                torrent = client.core.get_torrent_status(
-                    torrent_id.decode(), ["name", "download_location", "is_finished"])
-                job.torrent_hash = torrent_id.decode()
-                job.download_directory = torrent["download_location".encode()].decode()
-                job.name = torrent["name".encode()].decode()
-                job.status = "downloading"
-                job.save(self.logger)
+        job_list = self.get_jobs_by_status("adding")
+        if len(job_list) > 0:
+            self.logger.info("Adding jobs to Deluge instance on %s", config.conversion.deluge_host)
+            with DelugeRPCClient(config.conversion.deluge_host,
+                                config.conversion.deluge_port,
+                                config.conversion.deluge_user_name,
+                                config.conversion.deluge_password) as client:
+                for job in job_list:
+                    torrent_id = client.core.add_torrent_magnet(job.magnet_link, {})
+                    torrent = client.core.get_torrent_status(
+                        torrent_id.decode(), ["name", "download_location", "is_finished"])
+                    job.torrent_hash = torrent_id.decode()
+                    job.download_directory = torrent["download_location".encode()].decode()
+                    job.name = torrent["name".encode()].decode()
+                    job.status = "downloading"
+                    job.save(self.logger)
+        else:
+            self.logger.info("No search results to add during job processing")
 
     def update_downloaded_torrents(self, config):
         """Updates downloaded torrents to the Deluse client"""
 
-        self.logger.info("Updating jobs on Deluge instance at %s", config.conversion.deluge_host)
-        with DelugeRPCClient(config.conversion.deluge_host,
-                             config.conversion.deluge_port,
-                             config.conversion.deluge_user_name,
-                             config.conversion.deluge_password) as client:
-            for job in self.get_jobs_by_status("downloading"):
-                torrent = client.core.get_torrent_status(
-                    job.torrent_hash, ["name", "download_location", "is_finished"])
-                if torrent.get("is_finished".encode(), False):
-                    job.name = torrent["name".encode()].decode()
-                    job.status = "pending"
-                    job.save(self.logger)
+        job_list = self.get_jobs_by_status("downloading")
+        if len(job_list) > 0:
+            self.logger.info("Updating jobs on Deluge instance at %s", config.conversion.deluge_host)
+            with DelugeRPCClient(config.conversion.deluge_host,
+                                config.conversion.deluge_port,
+                                config.conversion.deluge_user_name,
+                                config.conversion.deluge_password) as client:
+                for job in job_list:
+                    torrent = client.core.get_torrent_status(
+                        job.torrent_hash, ["name", "download_location", "is_finished"])
+                    if torrent.get("is_finished".encode(), False):
+                        job.name = torrent["name".encode()].decode()
+                        job.status = "pending"
+                        job.save(self.logger)
+        else:
+            self.logger.info("No files to convert during job processing")
 
     def create_new_search_jobs(self, config, airdate):
         """Creates new search jobs based on airdate"""
