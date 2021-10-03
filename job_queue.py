@@ -169,16 +169,12 @@ class JobQueue:
                     added_job.title = search_result.title
                     added_job.torrent_hash = search_result.hash
                     added_job.save(self.logger)
-                    #added_job.write_magnet_file(config.conversion.staging_directory, self.logger)
                     search_result_counter += 1
         end_time=perf_counter()
         if is_unattended_mode:
             self.logger.info("Search completed in %s seconds", end_time - start_time)
 
         self.add_torrents(config)
-
-        #self._write_magnet_files(
-        #    config.conversion.magnet_directory, config.conversion.staging_directory)
 
     def add_torrents(self, config):
         """Adds found torrents to the Deluse client"""
@@ -216,18 +212,6 @@ class JobQueue:
                     job.save(self.logger)
 
             client.disconnect()
-
-    def _write_magnet_files(self, magnet_directory, staging_directory):
-        if os.path.isdir(magnet_directory):
-            for existing_file in [x for x in os.listdir(magnet_directory)
-                                  if x.endswith(".invalid")]:
-                os.remove(os.path.join(magnet_directory, existing_file))
-
-            for magnet_file_name in os.listdir(staging_directory):
-                self.logger.info("Adding %s to download", magnet_file_name)
-                if magnet_file_name.endswith(".magnet"):
-                    os.rename(os.path.join(staging_directory, magnet_file_name),
-                              os.path.join(magnet_directory, magnet_file_name))
 
     def create_new_search_jobs(self, config, airdate):
         """Creates new search jobs based on airdate"""
