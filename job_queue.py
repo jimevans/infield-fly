@@ -81,9 +81,12 @@ class JobQueue:
     def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
 
-        self.query_torrents_status()
         final_directory = self.config.conversion.final_directory
         pending_job_list = self.get_jobs_by_status("pending")
+        if len(pending_job_list) == 0:
+            self.logger.info("No files to convert during job processing")
+            return
+
         for job in pending_job_list:
             job.status = "converting"
             job.save(self.logger)
@@ -133,11 +136,16 @@ class JobQueue:
 
         self.create_new_search_jobs(airdate)
 
+        search_jobs_list = self.get_jobs_by_status("searching")
+        if len(search_jobs_list) == 0:
+            self.logger.info("No queries to search during job processing")
+            return
+
         finder = TorrentDataProvider()
         if is_unattended_mode:
             self.logger.info("Starting search")
         start_time = perf_counter()
-        for job in self.get_jobs_by_status("searching"):
+        for job in search_jobs_list:
             search_results = finder.search(
                 job.query, retry_count=4, is_unattended_mode=is_unattended_mode)
             if len(search_results) == 0:
@@ -173,56 +181,56 @@ class JobQueue:
         if is_unattended_mode:
             self.logger.info("Search completed in %s seconds", end_time - start_time)
 
-        self.add_torrents()
-
     def add_torrents(self):
         """Adds found torrents to the Deluse client"""
 
         job_list = self.get_jobs_by_status("adding")
-        if len(job_list) > 0:
-            self.logger.info("Adding downloads to Deluge instance on %s",
-                             self.config.conversion.deluge_host)
-            with DelugeRPCClient(self.config.conversion.deluge_host,
-                                 self.config.conversion.deluge_port,
-                                 self.config.conversion.deluge_user_name,
-                                 self.config.conversion.deluge_password) as client:
-                for job in job_list:
-                    encoded_id, metadata = client.core.prefetch_magnet_metadata(job.magnet_link)
-                    encoded_name = metadata.get("name".encode(), None)
-                    torrent_id = encoded_id.decode()
-                    client.core.add_torrent_magnet(job.magnet_link, {})
-                    torrent = client.core.get_torrent_status(
-                        torrent_id, ["name", "download_location", "is_finished"])
-                    job.torrent_hash = torrent_id
-                    job.download_directory = torrent["download_location".encode()].decode()
-                    job.name = (encoded_name.decode()
-                                if encoded_name is not None
-                                else torrent["name".encode()].decode())
-                    job.status = "downloading"
-                    job.save(self.logger)
-        else:
+        if len(job_list) == 0:
             self.logger.info("No search results to add during job processing")
+            return
+
+        self.logger.info("Adding downloads to Deluge instance on %s",
+                         self.config.conversion.deluge_host)
+        with DelugeRPCClient(self.config.conversion.deluge_host,
+                             self.config.conversion.deluge_port,
+                             self.config.conversion.deluge_user_name,
+                             self.config.conversion.deluge_password) as client:
+            for job in job_list:
+                encoded_id, metadata = client.core.prefetch_magnet_metadata(job.magnet_link)
+                encoded_name = metadata.get("name".encode(), None)
+                torrent_id = encoded_id.decode()
+                client.core.add_torrent_magnet(job.magnet_link, {})
+                torrent = client.core.get_torrent_status(
+                    torrent_id, ["name", "download_location", "is_finished"])
+                job.torrent_hash = torrent_id
+                job.download_directory = torrent["download_location".encode()].decode()
+                job.name = (encoded_name.decode()
+                            if encoded_name is not None
+                            else torrent["name".encode()].decode())
+                job.status = "downloading"
+                job.save(self.logger)
 
     def query_torrents_status(self):
         """Updates downloaded torrents to the Deluse client"""
 
         job_list = self.get_jobs_by_status("downloading")
-        if len(job_list) > 0:
-            self.logger.info("Marking completed downloads on Deluge instance at %s",
-                             self.config.conversion.deluge_host)
-            with DelugeRPCClient(self.config.conversion.deluge_host,
-                                 self.config.conversion.deluge_port,
-                                 self.config.conversion.deluge_user_name,
-                                 self.config.conversion.deluge_password) as client:
-                for job in job_list:
-                    torrent = client.core.get_torrent_status(
-                        job.torrent_hash, ["name", "download_location", "is_finished"])
-                    if torrent.get("is_finished".encode(), False):
-                        job.name = torrent["name".encode()].decode()
-                        job.status = "pending"
-                        job.save(self.logger)
-        else:
-            self.logger.info("No files to convert during job processing")
+        if len(job_list) == 0:
+            self.logger.info("No downloading jobs to query for status during job processing")
+            return
+
+        self.logger.info("Marking completed downloads on Deluge instance at %s",
+                         self.config.conversion.deluge_host)
+        with DelugeRPCClient(self.config.conversion.deluge_host,
+                             self.config.conversion.deluge_port,
+                             self.config.conversion.deluge_user_name,
+                             self.config.conversion.deluge_password) as client:
+            for job in job_list:
+                torrent = client.core.get_torrent_status(
+                    job.torrent_hash, ["name", "download_location", "is_finished"])
+                if torrent.get("is_finished".encode(), False):
+                    job.name = torrent["name".encode()].decode()
+                    job.status = "pending"
+                    job.save(self.logger)
 
     def create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""

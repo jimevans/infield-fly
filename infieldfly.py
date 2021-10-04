@@ -160,6 +160,8 @@ def show_job(args, config):
             print(f"Torrent directory: {os.path.join(job.download_directory, job.name)}")
         if job.is_download_only is not None:
             print(f"Is download-only job: {job.is_download_only}")
+        if job.converted_file_name is not None:
+            print(f"File name of converted file: {job.converted_file_name}.mp4")
 
 def create_job(args, config):
     """Creates a new queued job"""
@@ -215,10 +217,15 @@ def process_jobs(args, config):
     job_queue = JobQueue(config)
     if not args.skip_search:
         airdate = datetime.now()
-        job_queue.perform_searches(datetime(month=airdate.month,
-                                            day=airdate.day,
-                                            year=airdate.year),
-                                   args.unattended)
+        job_queue.perform_searches(
+            datetime(month=airdate.month, day=airdate.day, year=airdate.year), args.unattended)
+
+    if not args.skip_add_downloads:
+        job_queue.add_torrents()
+
+    if not args.skip_query_downloads:
+        job_queue.query_torrents_status()
+
     if not args.skip_convert:
         job_queue.perform_conversions(args.unattended)
 
@@ -338,10 +345,26 @@ def add_jobs_subparser(subparsers):
 
     process_jobs_parser = job_command_parsers.add_parser("process", help="Process current queue")
     search_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
-    search_parser.add_argument("--skip-search", dest="skip_search", action = "store_true",
-                               help="Skip the search phase of job processing")
-    search_parser.add_argument("--no-skip-search", dest="skip_search", action="store_false",
-                               help="Perform the search phase of job processing")
+    search_parser.add_argument(
+        "--skip-search", dest="skip_search", action = "store_true",
+        help="Skip the search phase of job processing")
+    search_parser.add_argument(
+        "--no-skip-search", dest="skip_search", action="store_false",
+        help="Perform the search phase of job processing")
+    add_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
+    add_downloads_parser.add_argument(
+        "--skip-add-downloads", dest="skip_add_downloads", action = "store_true",
+        help="Skip the add downloads phase of job processing")
+    add_downloads_parser.add_argument(
+        "--no-skip-add-downloads", dest="skip_add_downloads", action="store_false",
+        help="Perform the add downloads phase of job processing")
+    query_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
+    query_downloads_parser.add_argument(
+        "--skip-query-downloads", dest="skip_query_downloads", action = "store_true",
+        help="Skip the query downloads status phase of job processing")
+    query_downloads_parser.add_argument(
+        "--no-skip-query-downloads", dest="skip_query_downloads", action="store_false",
+        help="Perform the query downloads status phase of job processing")
     convert_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     convert_parser.add_argument("--skip-convert", dest="skip_convert", action = "store_true",
                                 help="Skip the convert phase of job processing")
