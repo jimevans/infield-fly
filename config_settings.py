@@ -70,6 +70,30 @@ class ConversionSettings:
         return self.settings.get("ffmpeg_location", None)
 
     @property
+    def deluge_host(self):
+        """Gets the host name of the host running the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_host", "localhost")
+
+    @property
+    def deluge_port(self):
+        """Gets the port for the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_port", None)
+
+    @property
+    def deluge_user_name(self):
+        """Gets the user name for the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_user_name", None)
+
+    @property
+    def deluge_password(self):
+        """Gets the user name for the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_password", None)
+
+    @property
     def magnet_directory(self):
         """Gets the path of the directory to which to write magnet files"""
 
@@ -96,6 +120,13 @@ class ConversionSettings:
 
         return self.settings.get("log_directory",
                                  os.path.join(self.infield_fly_directory, "logs"))
+
+    @property
+    def job_directory(self):
+        """Gets the path of the directory to which job files are written"""
+
+        return self.settings.get("job_directory",
+                                 os.path.join(self.infield_fly_directory, ".jobs"))
 
     @property
     def infield_fly_directory(self):
