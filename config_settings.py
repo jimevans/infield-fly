@@ -23,14 +23,14 @@ class Configuration:
         if os.path.exists(settings_file_path):
             with open(settings_file_path, encoding='utf-8') as settings_file:
                 settings = json.load(settings_file)
-                if "notification" in settings:
-                    self.settings["notification"] = NotificationSettings(settings["notification"])
-
-                if "metadata" in settings:
-                    self.settings["metadata"] = MetadataSettings(settings["metadata"])
-
-                if "conversion" in settings:
-                    self.settings["conversion"] = ConversionSettings(settings["conversion"])
+                self.settings["notification"] = NotificationSettings(
+                    settings.get("notification", None))
+                self.settings["metadata"] = MetadataSettings(settings.get("metadata", None))
+                self.settings["conversion"] = ConversionSettings(settings.get("conversion", None))
+        else:
+            self.settings["conversion"] = ConversionSettings()
+            self.settings["metadata"] = MetadataSettings()
+            self.settings["notification"] = NotificationSettings()
 
     @property
     def notification(self):
@@ -55,7 +55,7 @@ class ConversionSettings:
 
     """Settings object containing settings for conversiion of files"""
 
-    def __init__(self, raw_settings):
+    def __init__(self, raw_settings=None):
         super().__init__()
         self.settings = raw_settings if raw_settings is not None else {}
 
