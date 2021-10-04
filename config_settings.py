@@ -9,17 +9,19 @@ class Configuration:
 
     """Configuration object containing settings for use with Infield Fly"""
 
-    def __init__(self):
+    def __init__(self, config_file=None):
         super().__init__()
         self.settings = {
             "notification": None,
             "metadata": None,
-            "converstion": None
+            "conversion": None
         }
-        settings_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                          "settings.json")
+        settings_file_path = (config_file
+                              if config_file is not None
+                              else os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                "settings.json"))
         if os.path.exists(settings_file_path):
-            with open(settings_file_path) as settings_file:
+            with open(settings_file_path, encoding='utf-8') as settings_file:
                 settings = json.load(settings_file)
                 if "notification" in settings:
                     self.settings["notification"] = NotificationSettings(settings["notification"])
@@ -70,6 +72,32 @@ class ConversionSettings:
         return self.settings.get("ffmpeg_location", None)
 
     @property
+    def staging_directory(self):
+        """Gets the path of the directory into which converted files are to be written"""
+
+        return self.settings.get("staging_directory",
+                                 os.path.join(self.infield_fly_directory, "staging"))
+
+    @property
+    def final_directory(self):
+        """Gets the path of the directory where final, converted files will be written"""
+
+        return self.settings.get("final_directory",
+                                 os.path.join(self.infield_fly_directory, "completed"))
+
+    @property
+    def database_directory(self):
+        """Gets the path of the directory containing the episode database cache file"""
+
+        return self.settings.get("database_directory", self.infield_fly_directory)
+
+    @property
+    def database_cache_file(self):
+        """Gets the name of the episode database cache"""
+
+        return self.settings.get("database_cache_file", ".dbcache")
+
+    @property
     def deluge_host(self):
         """Gets the host name of the host running the Deluge BitTorrent client"""
 
@@ -92,27 +120,6 @@ class ConversionSettings:
         """Gets the user name for the Deluge BitTorrent client"""
 
         return self.settings.get("deluge_password", None)
-
-    @property
-    def magnet_directory(self):
-        """Gets the path of the directory to which to write magnet files"""
-
-        return self.settings.get("magnet_directory",
-                                 os.path.join(self.infield_fly_directory, "magnets"))
-
-    @property
-    def staging_directory(self):
-        """Gets the path of the directory into which converted files are to be written"""
-
-        return self.settings.get("staging_directory",
-                                 os.path.join(self.infield_fly_directory, "staging"))
-
-    @property
-    def final_directory(self):
-        """Gets the path of the directory where final, converted files will be written"""
-
-        return self.settings.get("final_directory",
-                                 os.path.join(self.infield_fly_directory, "completed"))
 
     @property
     def log_directory(self):

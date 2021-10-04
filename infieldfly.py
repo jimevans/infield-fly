@@ -50,18 +50,17 @@ def search_for_torrents(searches_to_perform, search_retry_count, output_director
                 magnet_file_path = os.path.join(output_directory,
                                                 search_result.title + ".magnet")
                 print("Writing magnet link to {}".format(magnet_file_path))
-                with open(magnet_file_path, "w") as magnet_file:
+                with open(magnet_file_path, "w", encoding='utf-8') as magnet_file:
                     magnet_file.write(search_result.magnet_link)
                     magnet_file.flush()
             else:
                 print("Torrent title: {}".format(search_result.title))
                 print("Magnet link: {}".format(search_result.magnet_link))
 
-def find_downloads(args):
+def find_downloads(args, config):
     """Finds available downloads"""
 
-    config = Configuration()
-    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+    episode_db = EpisodeDatabase.load_from_cache(config)
     from_date = datetime.strptime(args.fromdate, "%Y-%m-%d")
     to_date = datetime.strptime(args.todate, "%Y-%m-%d")
 
@@ -81,11 +80,10 @@ def find_downloads(args):
     else:
         search_for_torrents(searches_to_perform, args.retry_count, args.directory)
 
-def list_series(args):
+def list_series(args, config):
     """Lists the episodes of a series in the cached dataabase."""
 
-    config = Configuration()
-    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+    episode_db = EpisodeDatabase.load_from_cache(config)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if series_metadata is None:
         print("Keyword '{}' was not found in the database".format(args.keyword))
@@ -97,20 +95,18 @@ def list_series(args):
             print("s{:02d}e{:02d} (aired: {}) - {}".format(
                 episode.season_number, episode.episode_number, airdate, episode.title))
 
-def update_database(args):
+def update_database(args, config):
     """Updates the episode metadata in the databasae for tracked series"""
 
-    config = Configuration()
-    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+    episode_db = EpisodeDatabase.load_from_cache(config)
     episode_db.update_all_tracked_series(force_updates=args.force_updates,
                                          is_unattended_mode=args.unattended)
     episode_db.save_to_cache()
 
-def convert(args):
+def convert(args, config):
     """Converts a file using the soecified conversion arguments"""
 
-    config = Configuration()
-    episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+    episode_db = EpisodeDatabase.load_from_cache(config)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if args.keyword is not None and series_metadata is None:
         print("Keyword '{}' was not found in the database".format(args.keyword))
@@ -139,15 +135,15 @@ def convert(args):
                     print("No recipient number specified in notification settings in settings "
                         "file. Not notifying.")
                 else:
-                    notifier = Notifier.create_default_notifier(config.notification)
+                    notifier = Notifier.create_default_notifier(config)
                     if notifier is not None:
                         notifier.notify(config.notification.receiving_number,
                                         "Conversion of {} complete.".format(args.source))
 
-def show_job(args):
+def show_job(args, config):
     """Deletes a new queued job"""
 
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
     if job is None:
         print("No existing job with ID '{}'".format(args.id))
@@ -167,27 +163,27 @@ def show_job(args):
         if job.is_download_only is not None:
             print("Is download-only job: {}".format(job.is_download_only))
 
-def create_job(args):
+def create_job(args, config):
     """Creates a new queued job"""
 
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     job = job_queue.create_job(args.keyword, args.search_term)
     job.save(logging.getLogger())
 
-def delete_job(args):
+def delete_job(args, config):
     """Deletes a new queued job"""
 
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
     if job is None:
         print("No existing job with ID '{}'".format(args.id))
     else:
         job.delete()
 
-def update_job(args):
+def update_job(args, config):
     """Updates a new queued job"""
 
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
     if job is None:
         print("No existing job with ID '{}'".format(args.id))
@@ -195,30 +191,30 @@ def update_job(args):
         job.status = args.status
         job.save(logging.getLogger())
 
-def list_jobs(args):
+def list_jobs(args, config):
     """Lists all jobs in the job queue"""
 
     status = args.status
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     jobs = job_queue.load_jobs()
     for job in jobs:
         if status is None or status == job.status:
             print("{} {} {} '{}'".format(job.job_id, job.status, job.keyword, job.query))
 
-def clear_jobs(args):
+def clear_jobs(args, config):
     """Clears the job queue"""
 
     status = args.status
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     jobs = job_queue.load_jobs()
     for job in jobs:
         if status is None or status == job.status:
             job.delete()
 
-def process_jobs(args):
+def process_jobs(args, config):
     """Executes current jobs in the job queue"""
 
-    job_queue = JobQueue()
+    job_queue = JobQueue(config)
     if not args.skip_search:
         airdate = datetime.now()
         job_queue.perform_searches(datetime(month=airdate.month,
@@ -383,6 +379,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-u", "--unattended", action="store_true", default=False,
                         help="Run Infield Fly in unattended mode.")
+    parser.add_argument("-c", "--config", nargs="?", default=None,
+                        help="Path to the JSON file containing configuration values")
     subparsers = parser.add_subparsers(dest="command", required=True,
                                        help="Command to use")
     add_convert_subparser(subparsers)
@@ -391,7 +389,8 @@ def main():
     add_jobs_subparser(subparsers)
     args = parser.parse_args()
     setup_logging(args)
-    args.func(args)
+    config = Configuration(args.config)
+    args.func(args, config)
 
 if __name__ == "__main__":
     main()
