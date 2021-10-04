@@ -25,11 +25,8 @@ class TorrentDataProvider:
     def user_agent(self):
         """Gets the user agent string to be used with the torrent API"""
 
-        return "{}/{} ({}) python {}".format(
-            "infield-fly",
-            "1.0",
-            "; ".join(platform.uname()),
-            platform.python_version())
+        platform_name = "; ".join(platform.uname())
+        return f"infield-fly/1.0 ({platform_name}) python {platform.python_version()}"
 
     def get_token(self):
         """Gets the API token for use with the torrent API"""

@@ -97,7 +97,7 @@ class JobQueue:
                 if match is not None:
                     src_file = os.path.join(src_dir, match.group(0))
                     dest_file = os.path.join(self.config.conversion.staging_directory,
-                                             "{}.mp4".format(job.converted_file_name))
+                                             f"{job.converted_file_name}.mp4")
                     converter = Converter(src_file,
                                           dest_file,
                                           self.config.conversion.ffmpeg_location,
@@ -150,17 +150,17 @@ class JobQueue:
                     if search_result_counter == 0:
                         added_job = job
                         self.logger.info(
-                            "Search result for query string '%s'. " +
-                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'",
+                            ("Search result for query string '%s'. "
+                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'"),
                             added_job.query, added_job.job_id, search_result.hash,
                             search_result.title, added_job.converted_file_name)
                     else:
                         added_job = job.copy()
-                        added_job.converted_file_name = "{}.{}".format(
-                            added_job.converted_file_name, search_result_counter)
+                        added_job.converted_file_name = (f"{added_job.converted_file_name}."
+                                                         f"{search_result_counter}")
                         self.logger.warning(
-                            "Multiple search results for query string '%s' found: " +
-                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'",
+                            ("Multiple search results for query string '%s' found: "
+                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'"),
                             added_job.query, added_job.job_id, search_result.hash,
                             search_result.title, added_job.converted_file_name)
                     added_job.status = "adding"
@@ -229,10 +229,10 @@ class JobQueue:
                 airdate, airdate)
             for series_episode in series_episodes_since_last_search:
                 for stored_search in tracked_series.stored_searches:
-                    search_string = "{} {}".format(
-                            " ".join(stored_search.search_terms),
-                            "s{:02d}e{:02d}".format(
-                                series_episode.season_number, series_episode.episode_number))
+                    search_terms = stored_search[:]
+                    search_terms.append(
+                        f"s{series_episode.season_number:02d}e{series_episode.episode_number:02d}")
+                    search_string = " ".join(search_terms)
                     if not self.is_existing_job(tracked_series.main_keyword, search_string):
                         job = self.create_job(tracked_series.main_keyword, search_string)
                         job.status = "searching"
