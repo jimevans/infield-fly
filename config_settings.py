@@ -11,15 +11,11 @@ class Configuration:
 
     def __init__(self, config_file=None):
         super().__init__()
-        self.settings = {
-            "notification": None,
-            "metadata": None,
-            "conversion": None
-        }
         settings_file_path = (config_file
                               if config_file is not None
                               else os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                                 "settings.json"))
+        self.settings = {}
         if os.path.exists(settings_file_path):
             with open(settings_file_path, encoding='utf-8') as settings_file:
                 settings = json.load(settings_file)
