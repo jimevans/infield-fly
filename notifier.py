@@ -14,24 +14,24 @@ class Notifier:
         self.sending_number = sending_number
 
     @classmethod
-    def create_default_notifier(cls, notification_settings):
+    def create_default_notifier(cls, config):
         """Creates a notifier using the specified notification settings"""
 
         logger = logging.getLogger()
-        if notification_settings.sid is None or notification_settings.sid == "":
+        if config.notification.sid is None or config.notification.sid == "":
             logger.warning("Twilio account SID not set. Not notifying.")
             return None
-        if notification_settings.auth_token is None or notification_settings.auth_token == "":
+        if config.notification.auth_token is None or config.notification.auth_token == "":
             logger.warning("Twilio auth token not set. Not notifying.")
             return None
-        if (notification_settings.sending_number is None
-                or notification_settings.sending_number == ""):
+        if (config.notification.sending_number is None
+                or config.notification.sending_number == ""):
             logger.warning("Twilio SMS sending number not set. Not notifying.")
             return None
 
-        account_sid = notification_settings.sid
-        auth_token = notification_settings.auth_token
-        sender = notification_settings.sending_number
+        account_sid = config.notification.sid
+        auth_token = config.notification.auth_token
+        sender = config.notification.sending_number
         return Notifier(account_sid, auth_token, sender)
 
     def notify(self, phone_number, message_body):

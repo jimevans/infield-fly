@@ -8,7 +8,6 @@ import uuid
 from datetime import datetime
 from time import perf_counter
 from deluge_client import DelugeRPCClient
-from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter
 from torrent_finder import TorrentDataProvider
@@ -18,8 +17,9 @@ class JobQueue:
 
     """Queue of jobs being processed"""
 
-    def __init__(self):
+    def __init__(self, configuration):
         self.logger = logging.getLogger()
+        self.config = configuration
 
     def get_job_by_id(self, job_id):
         """Gets a job by its ID, if it exists; otherwise, returns None"""
@@ -61,15 +61,14 @@ class JobQueue:
         job.query = query
         match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", query, re.IGNORECASE)
         if match is not None:
-            config = Configuration()
-            episode_db = EpisodeDatabase.load_from_cache(config.metadata)
+            episode_db = EpisodeDatabase.load_from_cache(self.config)
             series = episode_db.get_tracked_series_by_keyword(keyword)
             if series is not None:
                 episode = series.get_episode(int(match.group(2)), int(match.group(3)))
                 if episode is not None:
                     job.converted_file_name = "".join(
-                                    config.conversion.string_substitutions.get(c, c)
-                                    for c in episode.plex_title).strip()
+                        self.config.conversion.string_substitutions.get(c, c)
+                        for c in episode.plex_title).strip()
         job.save(self.logger)
         return job
 
@@ -82,9 +81,8 @@ class JobQueue:
     def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
 
-        config = Configuration()
-        self.update_downloaded_torrents(config)
-        final_directory = config.conversion.final_directory
+        self.update_downloaded_torrents()
+        final_directory = self.config.conversion.final_directory
         pending_job_list = self.get_jobs_by_status("pending")
         for job in pending_job_list:
             job.status = "converting"
@@ -98,10 +96,12 @@ class JobQueue:
                     r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
                 if match is not None:
                     src_file = os.path.join(src_dir, match.group(0))
-                    dest_file = os.path.join(config.conversion.staging_directory,
+                    dest_file = os.path.join(self.config.conversion.staging_directory,
                                              "{}.mp4".format(job.converted_file_name))
-                    converter = Converter(
-                        src_file, dest_file, config.conversion.ffmpeg_location, is_unattended_mode)
+                    converter = Converter(src_file,
+                                          dest_file,
+                                          self.config.conversion.ffmpeg_location,
+                                          is_unattended_mode)
                     if is_unattended_mode:
                         self.logger.info("Starting conversion")
                     start_time = perf_counter()
@@ -131,8 +131,7 @@ class JobQueue:
             job.status = "searching"
             job.save(self.logger)
 
-        config = Configuration()
-        self.create_new_search_jobs(config, airdate)
+        self.create_new_search_jobs(airdate)
 
         finder = TorrentDataProvider()
         if is_unattended_mode:
@@ -174,19 +173,19 @@ class JobQueue:
         if is_unattended_mode:
             self.logger.info("Search completed in %s seconds", end_time - start_time)
 
-        self.add_torrents(config)
+        self.add_torrents()
 
-    def add_torrents(self, config):
+    def add_torrents(self):
         """Adds found torrents to the Deluse client"""
 
         job_list = self.get_jobs_by_status("adding")
         if len(job_list) > 0:
             self.logger.info("Adding downloads to Deluge instance on %s",
-                             config.conversion.deluge_host)
-            with DelugeRPCClient(config.conversion.deluge_host,
-                                config.conversion.deluge_port,
-                                config.conversion.deluge_user_name,
-                                config.conversion.deluge_password) as client:
+                             self.config.conversion.deluge_host)
+            with DelugeRPCClient(self.config.conversion.deluge_host,
+                                 self.config.conversion.deluge_port,
+                                 self.config.conversion.deluge_user_name,
+                                 self.config.conversion.deluge_password) as client:
                 for job in job_list:
                     torrent_id = client.core.add_torrent_magnet(job.magnet_link, {})
                     torrent = client.core.get_torrent_status(
@@ -199,17 +198,17 @@ class JobQueue:
         else:
             self.logger.info("No search results to add during job processing")
 
-    def update_downloaded_torrents(self, config):
+    def update_downloaded_torrents(self):
         """Updates downloaded torrents to the Deluse client"""
 
         job_list = self.get_jobs_by_status("downloading")
         if len(job_list) > 0:
             self.logger.info("Marking completed downloads on Deluge instance at %s",
-                             config.conversion.deluge_host)
-            with DelugeRPCClient(config.conversion.deluge_host,
-                                config.conversion.deluge_port,
-                                config.conversion.deluge_user_name,
-                                config.conversion.deluge_password) as client:
+                             self.config.conversion.deluge_host)
+            with DelugeRPCClient(self.config.conversion.deluge_host,
+                                 self.config.conversion.deluge_port,
+                                 self.config.conversion.deluge_user_name,
+                                 self.config.conversion.deluge_password) as client:
                 for job in job_list:
                     torrent = client.core.get_torrent_status(
                         job.torrent_hash, ["name", "download_location", "is_finished"])
@@ -220,11 +219,11 @@ class JobQueue:
         else:
             self.logger.info("No files to convert during job processing")
 
-    def create_new_search_jobs(self, config, airdate):
+    def create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""
 
-        episode_db = EpisodeDatabase.load_from_cache(config.metadata)
-        for tracked_series in config.metadata.tracked_series:
+        episode_db = EpisodeDatabase.load_from_cache(self.config)
+        for tracked_series in self.config.metadata.tracked_series:
             series = episode_db.get_series(tracked_series.series_id)
             series_episodes_since_last_search = series.get_episodes_by_airdate(
                 airdate, airdate)
@@ -240,7 +239,7 @@ class JobQueue:
                         job.is_download_only = stored_search.is_download_only
                         if not stored_search.is_download_only:
                             job.converted_file_name = "".join(
-                                config.conversion.string_substitutions.get(c, c)
+                                self.config.conversion.string_substitutions.get(c, c)
                                 for c in series_episode.plex_title).strip()
                         job.save(self.logger)
 
@@ -272,7 +271,7 @@ class JobQueue:
     def cache_file_path(self):
         """Gets the path to the job queue directory"""
 
-        return os.path.join(os.path.dirname(os.path.realpath(__file__)), ".jobs")
+        return self.config.conversion.job_directory
 
 
 class Job:
@@ -424,7 +423,7 @@ class Job:
         job = None
         job_file_path = os.path.join(directory, file_name)
         if os.path.exists(job_file_path):
-            with open(job_file_path) as job_file:
+            with open(job_file_path, encoding='utf-8') as job_file:
                 job_queue_dictionary = json.load(job_file)
                 job = Job(directory, job_queue_dictionary)
 
@@ -446,19 +445,6 @@ class Job:
 
         return job_copy
 
-    def write_magnet_file(self, destination_directory, logger):
-        """Writes a file containing the magnet link for this job"""
-
-        if (self.magnet_link is None or self.title is None):
-            logger.warning("Link or file name not set; cannot write magnet file.")
-
-        if destination_directory is not None and os.path.isdir(destination_directory):
-            magnet_file_path = os.path.join(destination_directory, self.title + ".magnet")
-            logger.info("Writing magnet link to %s", magnet_file_path)
-            with open(magnet_file_path, "w") as magnet_file:
-                magnet_file.write(self.magnet_link)
-                magnet_file.flush()
-
     def save(self, logger):
         """Writes this job to a file"""
 
@@ -469,5 +455,5 @@ class Job:
             logger.warning(
                 "Cannot save job; path '%s' exists, but is not a directory.", self.directory)
 
-        with open(self.file_path, "w") as job_file:
+        with open(self.file_path, "w", encoding='utf-8') as job_file:
             json.dump(self.dictionary, job_file, indent=2)

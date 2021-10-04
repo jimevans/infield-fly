@@ -12,8 +12,10 @@ class EpisodeDatabase:
 
     """The episode database of all known series"""
 
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
+        self.cache_directory = config.conversion.database_directory
+        self.cache_file_name = config.conversion.database_cache_file
         self.known_series = {}
         self.metadata_provider = None
         self.tracked_series = []
@@ -99,7 +101,7 @@ class EpisodeDatabase:
         """Writes this episode database to a cache file"""
 
         dbcache_file_path = self.cache_file_path
-        with open(dbcache_file_path, "w") as dbcache_file:
+        with open(dbcache_file_path, "w", encoding='utf-8') as dbcache_file:
             json.dump(self, dbcache_file, indent=2, default=lambda x: x.to_json())
 
     def delete_cache(self):
@@ -113,16 +115,16 @@ class EpisodeDatabase:
     def cache_file_path(self):
         """Gets the path to the episode database cache file"""
 
-        return os.path.join(os.path.dirname(os.path.realpath(__file__)), ".dbcache")
+        return os.path.join(self.cache_directory, self.cache_file_name)
 
     @classmethod
-    def load_from_cache(cls, metadata_settings=None):
+    def load_from_cache(cls, config):
         """Creates an episode database from a cache file"""
 
-        episode_db = EpisodeDatabase()
+        episode_db = EpisodeDatabase(config)
         dbcache_file_path = episode_db.cache_file_path
         if os.path.exists(dbcache_file_path):
-            with open(dbcache_file_path) as dbcache_file:
+            with open(dbcache_file_path, encoding='utf-8') as dbcache_file:
                 dbcache = json.load(dbcache_file)
                 for series_id in dbcache["series"]:
                     series_object = dbcache["series"][series_id]
@@ -132,9 +134,9 @@ class EpisodeDatabase:
                                                                    episode_object)
                         series_info.add_episode(episode_info)
                     episode_db.add_series(series_info)
-        if metadata_settings is not None:
-            episode_db.metadata_provider = TVMetadataProvider(metadata_settings)
-            episode_db.tracked_series.extend(metadata_settings.tracked_series)
+        if config.metadata is not None:
+            episode_db.metadata_provider = TVMetadataProvider(config.metadata)
+            episode_db.tracked_series.extend(config.metadata.tracked_series)
         return episode_db
 
 

@@ -132,8 +132,6 @@ dmypy.json
 settings.json
 .dbcache
 .jobs/
-.queuelock
-magnets/
 staging/
 completed/
 logs/
