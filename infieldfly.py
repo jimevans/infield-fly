@@ -24,15 +24,14 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
         for series_episode in series_episodes:
             found_episodes.append(series_episode)
             for stored_search in tracked_series.stored_searches:
-                searches_to_perform.append("{} {}".format(
-                    " ".join(stored_search.search_terms),
-                    "s{:02d}e{:02d}".format(
-                        series_episode.season_number, series_episode.episode_number)
-                ))
+                search_terms = stored_search.search_terms[:]
+                search_terms.append((
+                    f"s{series_episode.season_number:02d}e{series_episode.episode_number:02d}"))
+                searches_to_perform.append(" ".join(search_terms))
 
     print("Episodes found:")
     for episode in found_episodes:
-        print("{} (airdate {:%Y-%m-%d})".format(episode.plex_title, episode.airdate))
+        print(F"{episode.plex_title} (airdate {episode.airdate:%Y-%m-%d})")
 
     return searches_to_perform
 
@@ -49,13 +48,13 @@ def search_for_torrents(searches_to_perform, search_retry_count, output_director
             if output_directory is not None and os.path.isdir(output_directory):
                 magnet_file_path = os.path.join(output_directory,
                                                 search_result.title + ".magnet")
-                print("Writing magnet link to {}".format(magnet_file_path))
+                print(f"Writing magnet link to {magnet_file_path}")
                 with open(magnet_file_path, "w", encoding='utf-8') as magnet_file:
                     magnet_file.write(search_result.magnet_link)
                     magnet_file.flush()
             else:
-                print("Torrent title: {}".format(search_result.title))
-                print("Magnet link: {}".format(search_result.magnet_link))
+                print(f"Torrent title: {search_result.title}")
+                print(f"Magnet link: {search_result.magnet_link}")
 
 def find_downloads(args, config):
     """Finds available downloads"""
@@ -68,8 +67,7 @@ def find_downloads(args, config):
         episode_db.update_all_tracked_series()
         episode_db.save_to_cache()
 
-    print("Searching for downloads between {} and {}".format(
-          from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d")))
+    print(f"Searching for downloads between {from_date:%Y-%m-%d} and {to_date:%Y-%m-%d}")
     searches_to_perform = get_search_strings(from_date, to_date, episode_db, config.metadata)
 
     print("")
@@ -86,14 +84,14 @@ def list_series(args, config):
     episode_db = EpisodeDatabase.load_from_cache(config)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if series_metadata is None:
-        print("Keyword '{}' was not found in the database".format(args.keyword))
+        print(f"Keyword '{args.keyword}' was not found in the database")
     else:
         for episode in series_metadata.episodes:
             airdate = ("not aired"
                        if episode.airdate is None
                        else episode.airdate.strftime("%Y-%m-%d"))
-            print("s{:02d}e{:02d} (aired: {}) - {}".format(
-                episode.season_number, episode.episode_number, airdate, episode.title))
+            print((f"s{episode.season_number:02d}e{episode.episode_number:02d} "
+                   f"(aired: {airdate}) - {episode.title}"))
 
 def update_database(args, config):
     """Updates the episode metadata in the databasae for tracked series"""
@@ -109,7 +107,7 @@ def convert(args, config):
     episode_db = EpisodeDatabase.load_from_cache(config)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if args.keyword is not None and series_metadata is None:
-        print("Keyword '{}' was not found in the database".format(args.keyword))
+        print(f"Keyword '{args.keyword}' was not found in the database")
     else:
         mapper = FileMapper(episode_db)
         file_map = mapper.map_files(args.source, args.destination, args.keyword)
@@ -138,7 +136,7 @@ def convert(args, config):
                     notifier = Notifier.create_default_notifier(config)
                     if notifier is not None:
                         notifier.notify(config.notification.receiving_number,
-                                        "Conversion of {} complete.".format(args.source))
+                                        f"Conversion of {args.source} complete.")
 
 def show_job(args, config):
     """Deletes a new queued job"""
@@ -146,22 +144,22 @@ def show_job(args, config):
     job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
     if job is None:
-        print("No existing job with ID '{}'".format(args.id))
+        print(f"No existing job with ID '{args.id}'")
     else:
-        print("ID: {}".format(job.job_id))
-        print("Status: {}".format(job.status))
-        print("Date added: {}".format(job.added))
-        print("Series keyword: {}".format(job.keyword))
-        print("Search string: {}".format(job.query))
+        print(f"ID: {job.job_id}")
+        print(f"Status: {job.status}")
+        print(f"Date added: {job.added}")
+        print(f"Series keyword: {job.keyword}")
+        print(f"Search string: {job.query}")
         if job.magnet_link is not None:
-            print("Torrent title: {}".format(job.title))
-            print("Magnet link: {}".format(job.magnet_link))
+            print(f"Torrent title: {job.title}")
+            print(f"Magnet link: {job.magnet_link}")
         if job.torrent_hash is not None:
-            print("Torrent hash: {}".format(job.torrent_hash))
+            print(f"Torrent hash: {job.torrent_hash}")
         if job.download_directory is not None:
-            print("Torrent directory: {}".format(os.path.join(job.download_directory, job.name)))
+            print(f"Torrent directory: {os.path.join(job.download_directory, job.name)}")
         if job.is_download_only is not None:
-            print("Is download-only job: {}".format(job.is_download_only))
+            print(f"Is download-only job: {job.is_download_only}")
 
 def create_job(args, config):
     """Creates a new queued job"""
@@ -176,7 +174,7 @@ def delete_job(args, config):
     job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
     if job is None:
-        print("No existing job with ID '{}'".format(args.id))
+        print(f"No existing job with ID '{args.id}'")
     else:
         job.delete()
 
@@ -186,7 +184,7 @@ def update_job(args, config):
     job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
     if job is None:
-        print("No existing job with ID '{}'".format(args.id))
+        print(f"No existing job with ID '{args.id}'")
     else:
         job.status = args.status
         job.save(logging.getLogger())
@@ -199,7 +197,7 @@ def list_jobs(args, config):
     jobs = job_queue.load_jobs()
     for job in jobs:
         if status is None or status == job.status:
-            print("{} {} {} '{}'".format(job.job_id, job.status, job.keyword, job.query))
+            print(f"{job.job_id} {job.status} {job.keyword} '{job.query}'")
 
 def clear_jobs(args, config):
     """Clears the job queue"""

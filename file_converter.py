@@ -69,15 +69,14 @@ class Converter:
 
         if self.file_stream_info.has_forced_subtitle_stream:
             base_name, _ = os.path.splitext(self.output_file)
-            forced_subs_file = "{}.eng.forced.srt".format(base_name)
+            forced_subs_file = f"{base_name}.eng.forced.srt"
             forced_subs_args = []
             forced_subs_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
             forced_subs_args.append("-hide_banner")
             forced_subs_args.append("-i")
             forced_subs_args.append(self.input_file)
             forced_subs_args.append("-map")
-            forced_subs_args.append("0:{}".format(
-                self.file_stream_info.forced_subtitle_stream.index))
+            forced_subs_args.append(f"0:{self.file_stream_info.forced_subtitle_stream.index}")
             forced_subs_args.append(forced_subs_file)
             if dry_run:
                 self.logger.info("Forced subtitle conversion arguments:\n%s", forced_subs_args)
@@ -89,7 +88,7 @@ class Converter:
 
         ffmpeg_args = []
         ffmpeg_args.append("-map")
-        ffmpeg_args.append("0:{}".format(self.file_stream_info.video_stream.index))
+        ffmpeg_args.append(f"0:{self.file_stream_info.video_stream.index}")
         ffmpeg_args.append("-c:v")
         if is_convert_video:
             ffmpeg_args.append("libx264")
@@ -109,7 +108,7 @@ class Converter:
 
         ffmpeg_args = []
         ffmpeg_args.append("-map")
-        ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream.index))
+        ffmpeg_args.append(f"0:{self.file_stream_info.audio_stream.index}")
         ffmpeg_args.append("-metadata:s:a:0")
         ffmpeg_args.append("language=eng")
         ffmpeg_args.append("-disposition:a:0")
@@ -124,28 +123,22 @@ class Converter:
                 ffmpeg_args.append("-b:a:0")
                 ffmpeg_args.append("160k")
                 ffmpeg_args.append("-ac:a:0")
-                ffmpeg_args.append("{}".format(self.file_stream_info.audio_stream.channel_count
-                                            if self.file_stream_info.audio_stream.channel_count < 2
-                                            else 2))
+                ffmpeg_args.append(f"{min(self.file_stream_info.audio_stream.channel_count, 2)}")
             ffmpeg_args.append("-map")
-            ffmpeg_args.append("0:{}".format(self.file_stream_info.audio_stream.index))
+            ffmpeg_args.append(f"0:{self.file_stream_info.audio_stream.index}")
             ffmpeg_args.append("-metadata:s:a:1")
             ffmpeg_args.append("language=eng")
             ffmpeg_args.append("-disposition:a:1")
             ffmpeg_args.append("0")
             ffmpeg_args.append("-c:a:1")
-            if (self.file_stream_info.audio_stream.codec == "ac3"
-                    or self.file_stream_info.audio_stream.codec == "eac3"):
+            if self.file_stream_info.audio_stream.codec in ("ac3", "eac3"):
                 ffmpeg_args.append("copy")
             else:
                 ffmpeg_args.append("ac3")
                 ffmpeg_args.append("-b:a:1")
                 ffmpeg_args.append("640k")
                 ffmpeg_args.append("-ac:a:1")
-                ffmpeg_args.append("{}".format(
-                    self.file_stream_info.audio_stream.channel_count
-                    if self.file_stream_info.audio_stream.channel_count < 7
-                    else 6))
+                ffmpeg_args.append(f"{min(self.file_stream_info.audio_stream.channel_count, 6)}")
         else:
             ffmpeg_args.append("copy")
 
@@ -157,7 +150,7 @@ class Converter:
         ffmpeg_args = []
         if is_convert_subtitles:
             ffmpeg_args.append("-map")
-            ffmpeg_args.append("0:{}".format(self.file_stream_info.subtitle_stream.index))
+            ffmpeg_args.append(f"0:{self.file_stream_info.subtitle_stream.index}")
             ffmpeg_args.append("-metadata:s:s:0")
             ffmpeg_args.append("language=eng")
             ffmpeg_args.append("-disposition:s:0")
@@ -223,7 +216,7 @@ class FileStreamInfo:
                     streams["audio"] = stream
 
             if (stream.is_subtitle
-                    and (stream.codec == "subrip" or stream.codec == "mov_text")
+                    and (stream.codec in ("subrip" , "mov_text"))
                     and stream.language == "eng"):
                 if stream.is_forced:
                     if streams["forced_subtitle"] is None:
@@ -261,14 +254,13 @@ class FileStreamInfo:
         """Displays the file stream information"""
 
         print("Stream Info:")
-        print("video stream: index={}, codec={}".format(
-            self.video_stream.index, self.video_stream.codec))
-        print("audio stream: index={}, codec={}, channels={}".format(
-            self.audio_stream.index, self.audio_stream.codec, self.audio_stream.channel_count))
-        print("subtitle stream: index={}, codec={}".format(
-            self.subtitle_stream.index, self.subtitle_stream.codec))
-        print("forced subtitle stream: index={}, codec={}".format(
-            self.forced_subtitle_stream.index, self.forced_subtitle_stream.codec))
+        print(f"video stream: index={self.video_stream.index}, codec={self.video_stream.codec}")
+        print((f"audio stream: index={self.audio_stream.index}, codec={self.audio_stream.codec}, "
+               f"channels={self.audio_stream.channel_count}"))
+        print((f"subtitle stream: index={self.subtitle_stream.index}, "
+               f"codec={self.subtitle_stream.codec}"))
+        print((f"forced subtitle stream: index={self.forced_subtitle_stream.index}, "
+               f"codec={self.forced_subtitle_stream.codec}"))
 
 
     class StreamInfo:
@@ -357,13 +349,13 @@ class FileMapper:
                     episode_metadata = series_metadata.get_episode(
                         int(match.group(2)), int(match.group(3)))
                     if episode_metadata is not None:
-                        converted_file_name = "{}.mp4".format(episode_metadata.plex_title)
+                        converted_file_name = f"{episode_metadata.plex_title}.mp4"
                         file_map.append((os.path.join(src_dir, input_file),
                                          os.path.join(dest_dir, converted_file_name)))
         else:
             if os.path.isdir(destination):
                 source_file_base, _ = os.path.splitext(os.path.basename(source))
-                file_map.append((source, os.path.join(destination, source_file_base + ".mp4")))
+                file_map.append((source, os.path.join(destination, f"{source_file_base}.mp4")))
             else:
                 file_map.append((source, destination))
 

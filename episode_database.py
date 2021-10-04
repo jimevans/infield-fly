@@ -140,7 +140,6 @@ class EpisodeDatabase:
         return episode_db
 
 
-
 class SeriesInfo:
 
     """The metadata for a series"""
@@ -263,8 +262,9 @@ class EpisodeInfo:
     def plex_title(self):
         """Returns the title of the episode in a format compatible with Plex naming conventions"""
 
-        return "{} - s{:02d}e{:02d} - {}".format(self.series_title, self.season_number,
-                                                 self.episode_number, self.title)
+        return (f"{self.series_title} - "
+                f"s{self.season_number:02d}e{self.episode_number:02d} - "
+                f"{self.title}")
 
 
 class TVMetadataProvider:
@@ -321,7 +321,7 @@ class TVMetadataProvider:
 
         series = []
         params = { "q": search_term, "type": "series" }
-        relative_url = "search?{}".format(urllib.parse.urlencode(params))
+        relative_url = f"search?{urllib.parse.urlencode(params)}"
         result = self.get_data(relative_url)
         search_object = result["data"]
         if search_object is not None:
@@ -341,7 +341,7 @@ class TVMetadataProvider:
     def get_series(self, series_id, is_unattended_mode=False):
         """Retrieves metadata for a series and its episodes using the thetvdb.com API"""
 
-        relative_url = "series/{}/episodes/default".format(series_id)
+        relative_url = f"series/{series_id}/episodes/default"
         page_index = 0
         params = { "page": page_index }
         result = self.get_data(relative_url, params)
@@ -381,7 +381,7 @@ class TVMetadataProvider:
         method uses a far more chatty protocol than get_series(), which should be preferred
         """
 
-        relative_url = "series/{}/extended".format(series_id)
+        relative_url = f"series/{series_id}/extended"
         page_index = 0
         params = { "page": page_index }
         result = self.get_data(relative_url, params)
@@ -407,7 +407,7 @@ class TVMetadataProvider:
     def get_episode_airdate(self, episode_id):
         """Retrieves metadata for an episode and gets its air date using the thetvdb.com API"""
 
-        relative_url = "episodes/{}".format(episode_id)
+        relative_url = f"episodes/{episode_id}"
         result = self.get_data(relative_url)
         data = result["data"]
         if data is None:
@@ -430,7 +430,7 @@ class TVMetadataProvider:
         episode_ids = []
         episodes = []
         for season in seasons:
-            season_url = "seasons/{}/extended".format(season["id"])
+            season_url = f"seasons/{season['id']}/extended"
             progress_bar.increment()
             season_result = self.get_data(season_url)
             season_data = season_result["data"]
@@ -510,16 +510,15 @@ class ProgressBar:
         """Clears the progress bar"""
 
         clear = " " * self.length
-        print("\r{}".format(clear), end="\r")
+        print(f"\r{clear}", end="\r")
 
     def _update_display(self):
         """Updates the display of the progress bar"""
 
         percent_value = 100 * (self.current_value / float(self.total_value))
-        percent_format = "{{0:>{}.{}f}}".format(4 + self.decimals, self.decimals)
+        percent_format = f"{{0:>{4 + self.decimals}.{self.decimals}f}}"
         percent = percent_format.format(percent_value)
         bar_length = self.length - len(self.prefix) - len(percent) - len(self.suffix) - 6
         filled_length = int(bar_length * self.current_value // self.total_value)
         bar_text = self.fill_character * filled_length + '-' * (bar_length - filled_length)
-        print("\r{} |{}| {}% {}".format(self.prefix, bar_text, percent, self.suffix),
-              end=self.print_end)
+        print(f"\r{self.prefix} |{bar_text}| {percent}% {self.suffix}", end=self.print_end)
