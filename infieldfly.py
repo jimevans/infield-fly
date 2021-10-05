@@ -9,7 +9,7 @@ from logging.handlers import RotatingFileHandler
 from config_settings import Configuration
 from episode_database import EpisodeDatabase
 from file_converter import Converter, FileMapper
-from job_queue import JobQueue
+from job_queue import JobQueue, JobStatus
 from notifier import Notifier
 from torrent_finder import TorrentDataProvider
 
@@ -147,7 +147,7 @@ def show_job(args, config):
         print(f"No existing job with ID '{args.id}'")
     else:
         print(f"ID: {job.job_id}")
-        print(f"Status: {job.status}")
+        print(f"Status: {job.status.value}")
         print(f"Date added: {job.added}")
         print(f"Series keyword: {job.keyword}")
         print(f"Search string: {job.query}")
@@ -188,8 +188,11 @@ def update_job(args, config):
     if job is None:
         print(f"No existing job with ID '{args.id}'")
     else:
-        job.status = args.status
-        job.save(logging.getLogger())
+        if args.status not in set(item.value for item in JobStatus):
+            print(f"Unknown status value '{args.status}'")
+        else:
+            job.status = JobStatus(args.status)
+            job.save(logging.getLogger())
 
 def list_jobs(args, config):
     """Lists all jobs in the job queue"""
@@ -199,7 +202,7 @@ def list_jobs(args, config):
     jobs = job_queue.load_jobs()
     for job in jobs:
         if status is None or status == job.status:
-            print(f"{job.job_id} {job.status} {job.keyword} '{job.query}'")
+            print(f"{job.job_id} {job.status_description}")
 
 def clear_jobs(args, config):
     """Clears the job queue"""
