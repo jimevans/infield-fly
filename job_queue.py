@@ -6,6 +6,7 @@ import os
 import re
 import uuid
 from datetime import datetime
+from enum import Enum
 from time import perf_counter
 from deluge_client import DelugeRPCClient
 from episode_database import EpisodeDatabase
@@ -30,28 +31,6 @@ class JobQueue:
                 return job
 
         return None
-
-    def update_download_job(self, torrent_hash, torrent_name, torrent_directory):
-        """Updates the status of a currently downloading job"""
-
-        jobs = self.load_jobs()
-        for job in jobs:
-            if job.torrent_hash == torrent_hash:
-                if job.status == "adding":
-                    job.download_directory = torrent_directory
-                    job.name = torrent_name
-                    job.status = "downloading"
-                    job.save(self.logger)
-                elif job.status == "downloading":
-                    job.name = torrent_name
-                    job.status = "completed" if job.is_download_only else "pending"
-                    job.save(self.logger)
-            elif job.status == "adding" and job.title == torrent_name:
-                job.torrent_hash = torrent_hash
-                job.download_directory = torrent_directory
-                job.name = torrent_name
-                job.status = "downloading"
-                job.save(self.logger)
 
     def create_job(self, keyword, query):
         """Creates a new job using the specified keyword and query string"""
@@ -82,13 +61,13 @@ class JobQueue:
         """Executes all pending conversion jobs, converting files to the proper format"""
 
         final_directory = self.config.conversion.final_directory
-        pending_job_list = self.get_jobs_by_status("pending")
+        pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
         if len(pending_job_list) == 0:
             self.logger.info("No files to convert during job processing")
             return
 
         for job in pending_job_list:
-            job.status = "converting"
+            job.status = JobStatus.CONVERTING
             job.save(self.logger)
         for job in pending_job_list:
             src_dir = os.path.join(job.download_directory, job.name)
@@ -115,7 +94,7 @@ class JobQueue:
                         self.logger.info(
                             "Conversion completed in %s seconds", end_time - start_time)
 
-                    job.status = "completed"
+                    job.status = JobStatus.COMPLETED
                     job.save(self.logger)
                     if datetime.now().strftime("%Y-%m-%d") != job.added:
                         job.delete()
@@ -125,18 +104,18 @@ class JobQueue:
     def perform_searches(self, airdate, is_unattended_mode=False):
         """Executes all pending search jobs, searching for available downloads"""
 
-        completed_job_list = [x for x in self.get_jobs_by_status("completed")
+        completed_job_list = [x for x in self.get_jobs_by_status(JobStatus.COMPLETED)
                               if x.added != airdate.strftime("%Y-%m-%d")]
         for job in completed_job_list:
             job.delete()
 
-        for job in self.get_jobs_by_status("waiting"):
-            job.status = "searching"
+        for job in self.get_jobs_by_status(JobStatus.WAITING):
+            job.status = JobStatus.SEARCHING
             job.save(self.logger)
 
         self.create_new_search_jobs(airdate)
 
-        search_jobs_list = self.get_jobs_by_status("searching")
+        search_jobs_list = self.get_jobs_by_status(JobStatus.SEARCHING)
         if len(search_jobs_list) == 0:
             self.logger.info("No queries to search during job processing")
             return
@@ -150,7 +129,7 @@ class JobQueue:
                 job.query, retry_count=4, is_unattended_mode=is_unattended_mode)
             if len(search_results) == 0:
                 self.logger.info("No search results found, setting job back to waiting.")
-                job.status = "waiting"
+                job.status = JobStatus.WAITING
                 job.save(self.logger)
             else:
                 search_result_counter = 0
@@ -171,7 +150,7 @@ class JobQueue:
                             "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'"),
                             added_job.query, added_job.job_id, search_result.hash,
                             search_result.title, added_job.converted_file_name)
-                    added_job.status = "adding"
+                    added_job.status = JobStatus.ADDING
                     added_job.magnet_link = search_result.magnet_link
                     added_job.title = search_result.title
                     added_job.torrent_hash = search_result.hash
@@ -184,7 +163,7 @@ class JobQueue:
     def add_torrents(self):
         """Adds found torrents to the Deluse client"""
 
-        job_list = self.get_jobs_by_status("adding")
+        job_list = self.get_jobs_by_status(JobStatus.ADDING)
         if len(job_list) == 0:
             self.logger.info("No search results to add during job processing")
             return
@@ -207,13 +186,13 @@ class JobQueue:
                 job.name = (encoded_name.decode()
                             if encoded_name is not None
                             else torrent["name".encode()].decode())
-                job.status = "downloading"
+                job.status = JobStatus.DOWNLOADING
                 job.save(self.logger)
 
     def query_torrents_status(self):
         """Updates downloaded torrents to the Deluse client"""
 
-        job_list = self.get_jobs_by_status("downloading")
+        job_list = self.get_jobs_by_status(JobStatus.DOWNLOADING)
         if len(job_list) == 0:
             self.logger.info("No downloading jobs to query for status during job processing")
             return
@@ -229,7 +208,7 @@ class JobQueue:
                     job.torrent_hash, ["name", "download_location", "is_finished"])
                 if torrent.get("is_finished".encode(), False):
                     job.name = torrent["name".encode()].decode()
-                    job.status = "pending"
+                    job.status = JobStatus.PENDING
                     job.save(self.logger)
 
     def create_new_search_jobs(self, airdate):
@@ -242,13 +221,13 @@ class JobQueue:
                 airdate, airdate)
             for series_episode in series_episodes_since_last_search:
                 for stored_search in tracked_series.stored_searches:
-                    search_terms = stored_search[:]
+                    search_terms = stored_search.search_terms[:]
                     search_terms.append(
                         f"s{series_episode.season_number:02d}e{series_episode.episode_number:02d}")
                     search_string = " ".join(search_terms)
                     if not self.is_existing_job(tracked_series.main_keyword, search_string):
                         job = self.create_job(tracked_series.main_keyword, search_string)
-                        job.status = "searching"
+                        job.status = JobStatus.SEARCHING
                         job.is_download_only = stored_search.is_download_only
                         if not stored_search.is_download_only:
                             job.converted_file_name = "".join(
@@ -287,6 +266,25 @@ class JobQueue:
         return self.config.conversion.job_directory
 
 
+class JobStatus(Enum):
+    """Provides the enumerated values for the status of a job"""
+
+    WAITING = "waiting"
+    SEARCHING = "searching"
+    ADDING = "adding"
+    DOWNLOADING = "downloading"
+    PENDING = "pending"
+    CONVERTING = "converting"
+    COMPLETED = "completed"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def _missing_(cls, value):
+        """Returns the UNKNOWN value for values not matching valid values"""
+
+        return cls(cls.UNKNOWN)
+
+
 class Job:
 
     """Object representing a job to be processed"""
@@ -298,7 +296,10 @@ class Job:
         if "id" not in self.dictionary:
             self.dictionary["id"] = str(uuid.uuid1())
         if "status" not in self.dictionary:
-            self.dictionary["status"] = "waiting"
+            self.dictionary["status"] = JobStatus.WAITING
+        else:
+            self.dictionary["status"] = JobStatus(job_dict["status"])
+
         if "added" not in self.dictionary:
             self.dictionary["added"] =  datetime.now().strftime("%Y-%m-%d")
         if "download_only" not in self.dictionary:
@@ -427,7 +428,32 @@ class Job:
 
     @is_download_only.setter
     def is_download_only(self, value):
-        self.dictionary["download_only"] = value
+        self.dictionary["download_only"] = value                
+
+    @property
+    def status_description(self):
+        """Gets a textual status description of this job"""
+
+        if self.status == JobStatus.WAITING:
+            return f"Waiting to search for '{self.query}'"
+
+        if self.status == JobStatus.SEARCHING:
+            return f"Searching using search term '{self.query}'"
+
+        if self.status == JobStatus.ADDING:
+            return f"Adding download for '{self.title}'"
+
+        if self.status == JobStatus.DOWNLOADING:
+            return f"Downloading '{self.name}'"
+
+        if self.status == JobStatus.PENDING:
+            return f"Pending conversion of finished download '{self.name}'"
+
+        if self.status == JobStatus.CONVERTING:
+            return f"Converting '{self.name}' to '{self.converted_file_name}'"
+
+        if self.status == JobStatus.COMPLETED:
+            return f"Conversion to '{self.converted_file_name}' complete"
 
     @classmethod
     def load(cls, directory, file_name):
@@ -469,4 +495,4 @@ class Job:
                 "Cannot save job; path '%s' exists, but is not a directory.", self.directory)
 
         with open(self.file_path, "w", encoding='utf-8') as job_file:
-            json.dump(self.dictionary, job_file, indent=2)
+            json.dump(self.dictionary, job_file, indent=2, default=lambda x: x.value)
