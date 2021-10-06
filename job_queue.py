@@ -57,50 +57,6 @@ class JobQueue:
         jobs = self.load_jobs()
         return [x for x in jobs if x.status == status]
 
-    def perform_conversions(self, is_unattended_mode=False):
-        """Executes all pending conversion jobs, converting files to the proper format"""
-
-        final_directory = self.config.conversion.final_directory
-        pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
-        if len(pending_job_list) == 0:
-            self.logger.info("No files to convert during job processing")
-            return
-
-        for job in pending_job_list:
-            job.status = JobStatus.CONVERTING
-            job.save(self.logger)
-        for job in pending_job_list:
-            src_dir = os.path.join(job.download_directory, job.name)
-            file_list = os.listdir(src_dir)
-            file_list.sort()
-            for input_file in file_list:
-                match = re.match(
-                    r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
-                if match is not None:
-                    src_file = os.path.join(src_dir, match.group(0))
-                    dest_file = os.path.join(self.config.conversion.staging_directory,
-                                             f"{job.converted_file_name}.mp4")
-                    converter = Converter(src_file,
-                                          dest_file,
-                                          self.config.conversion.ffmpeg_location,
-                                          is_unattended_mode)
-                    if is_unattended_mode:
-                        self.logger.info("Starting conversion")
-                    start_time = perf_counter()
-                    converter.convert_file(
-                        convert_video=False, convert_audio=True, convert_subtitles=True)
-                    end_time = perf_counter()
-                    if is_unattended_mode:
-                        self.logger.info(
-                            "Conversion completed in %s seconds", end_time - start_time)
-
-                    job.status = JobStatus.COMPLETED
-                    job.save(self.logger)
-                    if datetime.now().strftime("%Y-%m-%d") != job.added:
-                        job.delete()
-                    os.rename(
-                        dest_file, os.path.join(final_directory, os.path.basename(dest_file)))
-
     def perform_searches(self, airdate, is_unattended_mode=False):
         """Executes all pending search jobs, searching for available downloads"""
 
@@ -208,8 +164,54 @@ class JobQueue:
                     job.torrent_hash, ["name", "download_location", "is_finished"])
                 if torrent.get("is_finished".encode(), False):
                     job.name = torrent["name".encode()].decode()
-                    job.status = JobStatus.PENDING
+                    job.status = (JobStatus.COMPLETED
+                                  if job.is_download_only
+                                  else JobStatus.PENDING)
                     job.save(self.logger)
+
+    def perform_conversions(self, is_unattended_mode=False):
+        """Executes all pending conversion jobs, converting files to the proper format"""
+
+        final_directory = self.config.conversion.final_directory
+        pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
+        if len(pending_job_list) == 0:
+            self.logger.info("No files to convert during job processing")
+            return
+
+        for job in pending_job_list:
+            job.status = JobStatus.CONVERTING
+            job.save(self.logger)
+        for job in pending_job_list:
+            src_dir = os.path.join(job.download_directory, job.name)
+            file_list = os.listdir(src_dir)
+            file_list.sort()
+            for input_file in file_list:
+                match = re.match(
+                    r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
+                if match is not None:
+                    src_file = os.path.join(src_dir, match.group(0))
+                    dest_file = os.path.join(self.config.conversion.staging_directory,
+                                             f"{job.converted_file_name}.mp4")
+                    converter = Converter(src_file,
+                                          dest_file,
+                                          self.config.conversion.ffmpeg_location,
+                                          is_unattended_mode)
+                    if is_unattended_mode:
+                        self.logger.info("Starting conversion")
+                    start_time = perf_counter()
+                    converter.convert_file(
+                        convert_video=False, convert_audio=True, convert_subtitles=True)
+                    end_time = perf_counter()
+                    if is_unattended_mode:
+                        self.logger.info(
+                            "Conversion completed in %s seconds", end_time - start_time)
+
+                    job.status = JobStatus.COMPLETED
+                    job.save(self.logger)
+                    if datetime.now().strftime("%Y-%m-%d") != job.added:
+                        job.delete()
+                    os.rename(
+                        dest_file, os.path.join(final_directory, os.path.basename(dest_file)))
 
     def create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""
@@ -453,7 +455,9 @@ class Job:
             return f"Converting '{self.name}' to '{self.converted_file_name}'"
 
         if self.status == JobStatus.COMPLETED:
-            return f"Conversion to '{self.converted_file_name}' complete"
+            return (f"Completed conversion to '{self.converted_file_name}'"
+                   if self.is_download_only
+                   else f"Completed download of {self.name}")
 
     @classmethod
     def load(cls, directory, file_name):
