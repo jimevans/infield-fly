@@ -430,34 +430,37 @@ class Job:
 
     @is_download_only.setter
     def is_download_only(self, value):
-        self.dictionary["download_only"] = value                
+        self.dictionary["download_only"] = value
 
     @property
     def status_description(self):
         """Gets a textual status description of this job"""
 
+        description_string = f"Unknown status - '{self.query}'"
         if self.status == JobStatus.WAITING:
-            return f"Waiting to search for '{self.query}'"
+            description_string = f"Waiting to search for '{self.query}'"
 
         if self.status == JobStatus.SEARCHING:
-            return f"Searching using search term '{self.query}'"
+            description_string = f"Searching using search term '{self.query}'"
 
         if self.status == JobStatus.ADDING:
-            return f"Adding download for '{self.title}'"
+            description_string = f"Adding download for '{self.title}'"
 
         if self.status == JobStatus.DOWNLOADING:
-            return f"Downloading '{self.name}'"
+            description_string = f"Downloading '{self.name}'"
 
         if self.status == JobStatus.PENDING:
-            return f"Pending conversion of finished download '{self.name}'"
+            description_string = f"Pending conversion of finished download '{self.name}'"
 
         if self.status == JobStatus.CONVERTING:
-            return f"Converting '{self.name}' to '{self.converted_file_name}'"
+            description_string = f"Converting '{self.name}' to '{self.converted_file_name}'"
 
         if self.status == JobStatus.COMPLETED:
-            return (f"Completed conversion to '{self.converted_file_name}'"
-                   if self.is_download_only
-                   else f"Completed download of {self.name}")
+            description_string = (f"Completed download of '{self.name}'"
+                                  if self.is_download_only
+                                  else f"Completed conversion to '{self.converted_file_name}'")
+
+        return description_string
 
     @classmethod
     def load(cls, directory, file_name):
