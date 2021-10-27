@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -35,7 +36,7 @@ class JobQueue:
     def create_job(self, keyword, query):
         """Creates a new job using the specified keyword and query string"""
 
-        job = Job(self.cache_file_path, {})
+        job = Job(self.job_queue_file_path, {})
         job.keyword = keyword
         job.query = query
         match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", query, re.IGNORECASE)
@@ -164,15 +165,12 @@ class JobQueue:
                     job.torrent_hash, ["name", "download_location", "is_finished"])
                 if torrent.get("is_finished".encode(), False):
                     job.name = torrent["name".encode()].decode()
-                    job.status = (JobStatus.COMPLETED
-                                  if job.is_download_only
-                                  else JobStatus.PENDING)
+                    job.status = JobStatus.PENDING
                     job.save(self.logger)
 
     def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
 
-        final_directory = self.config.conversion.final_directory
         pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
         if len(pending_job_list) == 0:
             self.logger.info("No files to convert during job processing")
@@ -182,36 +180,10 @@ class JobQueue:
             job.status = JobStatus.CONVERTING
             job.save(self.logger)
         for job in pending_job_list:
-            src_dir = os.path.join(job.download_directory, job.name)
-            file_list = os.listdir(src_dir)
-            file_list.sort()
-            for input_file in file_list:
-                match = re.match(
-                    r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
-                if match is not None:
-                    src_file = os.path.join(src_dir, match.group(0))
-                    dest_file = os.path.join(self.config.conversion.staging_directory,
-                                             f"{job.converted_file_name}.mp4")
-                    converter = Converter(src_file,
-                                          dest_file,
-                                          self.config.conversion.ffmpeg_location,
-                                          is_unattended_mode)
-                    if is_unattended_mode:
-                        self.logger.info("Starting conversion")
-                    start_time = perf_counter()
-                    converter.convert_file(
-                        convert_video=False, convert_audio=True, convert_subtitles=True)
-                    end_time = perf_counter()
-                    if is_unattended_mode:
-                        self.logger.info(
-                            "Conversion completed in %s seconds", end_time - start_time)
-
-                    job.status = JobStatus.COMPLETED
-                    job.save(self.logger)
-                    if datetime.now().strftime("%Y-%m-%d") != job.added:
-                        job.delete()
-                    os.rename(
-                        dest_file, os.path.join(final_directory, os.path.basename(dest_file)))
+            if job.is_download_only:
+                self.copy_downloaded_files(job, is_unattended_mode)
+            else:
+                self.convert_downloaded_files(job, is_unattended_mode)
 
     def create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""
@@ -237,6 +209,62 @@ class JobQueue:
                                 for c in series_episode.plex_title).strip()
                         job.save(self.logger)
 
+    def copy_downloaded_files(self, job, is_unattended_mode):
+        """Copies downloaded job files to a destination directory"""
+
+        src_dir = os.path.join(job.download_directory, job.name)
+
+        if is_unattended_mode:
+            self.logger.info("Starting copy of downloaded files")
+        start_time = perf_counter()
+        shutil.copytree(src_dir, self.config.conversion.final_directory)
+        end_time = perf_counter()
+        if is_unattended_mode:
+            self.logger.info("Copy completed in %s seconds", end_time - start_time)
+
+        self.mark_job_complete(job)
+
+    def convert_downloaded_files(self, job, is_unattended_mode):
+        """Converts downloaded job files"""
+
+        src_dir = os.path.join(job.download_directory, job.name)
+
+        file_list = os.listdir(src_dir)
+        file_list.sort()
+        for input_file in file_list:
+            match = re.match(
+                r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
+            if match is not None:
+                src_file = os.path.join(src_dir, match.group(0))
+                dest_file = os.path.join(self.config.conversion.staging_directory,
+                                        f"{job.converted_file_name}.mp4")
+                converter = Converter(src_file,
+                                      dest_file,
+                                      self.config.conversion.ffmpeg_location,
+                                      is_unattended_mode)
+                if is_unattended_mode:
+                    self.logger.info("Starting conversion")
+                start_time = perf_counter()
+                converter.convert_file(
+                    convert_video=False, convert_audio=True, convert_subtitles=True)
+                end_time = perf_counter()
+                if is_unattended_mode:
+                    self.logger.info(
+                        "Conversion completed in %s seconds", end_time - start_time)
+
+                self.mark_job_complete(job)
+                os.rename(dest_file,
+                          os.path.join(self.config.conversion.final_directory,
+                                       os.path.basename(dest_file)))
+
+    def mark_job_complete(self, job):
+        """Marks a job as completed"""
+
+        job.status = JobStatus.COMPLETED
+        job.save(self.logger)
+        if datetime.now().strftime("%Y-%m-%d") != job.added:
+            job.delete()
+
     def is_existing_job(self, keyword, search_string):
         """
         Gets a value indicating whether a job for a specified keyword and search string
@@ -252,17 +280,17 @@ class JobQueue:
     def load_jobs(self):
         """Loads all job files in the cache directory"""
 
-        if not os.path.exists(self.cache_file_path):
-            os.makedirs(self.cache_file_path)
+        if not os.path.exists(self.job_queue_file_path):
+            os.makedirs(self.job_queue_file_path)
 
         jobs = []
-        for job_file in os.listdir(self.cache_file_path):
-            jobs.append(Job.load(self.cache_file_path, job_file))
+        for job_file in os.listdir(self.job_queue_file_path):
+            jobs.append(Job.load(self.job_queue_file_path, job_file))
 
         return jobs
 
     @property
-    def cache_file_path(self):
+    def job_queue_file_path(self):
         """Gets the path to the job queue directory"""
 
         return self.config.conversion.job_directory
