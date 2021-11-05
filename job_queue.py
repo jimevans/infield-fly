@@ -213,11 +213,11 @@ class JobQueue:
         """Copies downloaded job files to a destination directory"""
 
         src_dir = os.path.join(job.download_directory, job.name)
+        dest_dir = os.path.join(self.config.conversion.final_directory, job.name)
 
-        if is_unattended_mode:
-            self.logger.info("Starting copy of downloaded files")
+        self.logger.info("Copying downloaded files from %s to %s", src_dir, dest_dir)
         start_time = perf_counter()
-        shutil.copytree(src_dir, self.config.conversion.final_directory)
+        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
         end_time = perf_counter()
         if is_unattended_mode:
             self.logger.info("Copy completed in %s seconds", end_time - start_time)
