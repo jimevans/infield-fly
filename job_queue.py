@@ -40,16 +40,7 @@ class JobQueue:
         job.keyword = keyword
         job.query = query
         job.is_download_only = is_download_only
-        match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", query, re.IGNORECASE)
-        if match is not None:
-            episode_db = EpisodeDatabase.load_from_cache(self.config)
-            series = episode_db.get_tracked_series_by_keyword(keyword)
-            if series is not None:
-                episode = series.get_episode(int(match.group(2)), int(match.group(3)))
-                if episode is not None:
-                    job.converted_file_name = "".join(
-                        self.config.conversion.string_substitutions.get(c, c)
-                        for c in episode.plex_title).strip()
+        job.update_converted_file_name(self.config)
         job.save(self.logger)
         return job
 
@@ -69,6 +60,7 @@ class JobQueue:
 
         for job in self.get_jobs_by_status(JobStatus.WAITING):
             job.status = JobStatus.SEARCHING
+            job.update_converted_file_name(self.config)
             job.save(self.logger)
 
         self.create_new_search_jobs(airdate)
@@ -532,3 +524,17 @@ class Job:
 
         with open(self.file_path, "w", encoding='utf-8') as job_file:
             json.dump(self.dictionary, job_file, indent=2, default=lambda x: x.value)
+
+    def update_converted_file_name(self, config):
+        match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", self.query, re.IGNORECASE)
+        if match is not None:
+            episode_db = EpisodeDatabase.load_from_cache(config)
+            series = episode_db.get_tracked_series_by_keyword(self.keyword)
+            if series is not None:
+                episode = series.get_episode(int(match.group(2)), int(match.group(3)))
+                if episode is not None:
+                    candidate_converted_file_name = "".join(
+                        config.conversion.string_substitutions.get(c, c)
+                        for c in episode.plex_title).strip()
+                    if self.converted_file_name != candidate_converted_file_name:
+                        self.converted_file_name = candidate_converted_file_name
