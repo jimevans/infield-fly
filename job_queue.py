@@ -33,12 +33,13 @@ class JobQueue:
 
         return None
 
-    def create_job(self, keyword, query):
+    def create_job(self, keyword, query, is_download_only=False):
         """Creates a new job using the specified keyword and query string"""
 
         job = Job(self.job_queue_file_path, {})
         job.keyword = keyword
         job.query = query
+        job.is_download_only = is_download_only
         match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", query, re.IGNORECASE)
         if match is not None:
             episode_db = EpisodeDatabase.load_from_cache(self.config)

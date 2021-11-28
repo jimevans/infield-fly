@@ -27,7 +27,11 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
                 search_terms = stored_search.search_terms[:]
                 search_terms.append((
                     f"s{series_episode.season_number:02d}e{series_episode.episode_number:02d}"))
-                searches_to_perform.append(" ".join(search_terms))
+                searches_to_perform.append({
+                    "keyword": tracked_series.main_keyword,
+                    "query": " ".join(search_terms),
+                    "download_only": stored_search.is_download_only
+                })
 
     print("Episodes found:")
     for episode in found_episodes:
@@ -41,7 +45,7 @@ def search_for_torrents(searches_to_perform, search_retry_count, output_director
     finder = TorrentDataProvider()
     print("Performing searches")
     for search in searches_to_perform:
-        search_results = finder.search(search, retry_count=search_retry_count)
+        search_results = finder.search(search["query"], retry_count=search_retry_count)
         if len(search_results) == 0:
             print("No results found after retries")
         for search_result in search_results:
@@ -74,9 +78,14 @@ def find_downloads(args, config):
     if args.dry_run:
         print("Dry run requested. Not performing searches. Searches to perform:")
         for search in searches_to_perform:
-            print(search)
+            print(search["query"])
     else:
-        search_for_torrents(searches_to_perform, args.retry_count, args.directory)
+        if args.create_jobs:
+            job_queue = JobQueue(config)
+            for search in searches_to_perform:
+                job_queue.create_job(search["keyword"], search["query"], search["download_only"])
+        else:
+            search_for_torrents(searches_to_perform, args.retry_count, args.directory)
 
 def list_series(args, config):
     """Lists the episodes of a series in the cached dataabase."""
@@ -290,6 +299,8 @@ def add_search_subparser(subparsers):
                                   help="Directory to which to write magnet links to files")
     search_subparser.add_argument("-x", "--dry-run", action="store_true",
                                   help="Perform a dry run, printing data, but do not convert")
+    search_subparser.add_argument("-c", "--create-jobs", dest="create_jobs", action="store_true",
+                                  help="Create jobs for searches in the job queue")
     search_subparser.set_defaults(func=find_downloads)
 
 def add_database_subparser(subparsers):
