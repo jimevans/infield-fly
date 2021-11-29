@@ -386,13 +386,12 @@ def add_jobs_subparser(subparsers):
                                 help="Perform the convert phase of job processing")
     process_jobs_parser.set_defaults(skip_search=False, skip_convert=False, func=process_jobs)
 
-def setup_logging(args):
+def setup_logging(config, is_unattended):
     """Sets up logging for the Infield Fly library"""
 
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
-    if args.unattended:
-        config = Configuration()
+    if is_unattended:
         if not os.path.isdir(config.conversion.log_directory):
             os.makedirs(config.conversion.log_directory)
         handler = RotatingFileHandler(
@@ -407,6 +406,11 @@ def setup_logging(args):
         handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
 
+def load_config(config_file):
+    """Loads configuration from the specified file"""
+
+    config = Configuration(config_file)
+    return config
 
 def main():
     """Main entry point"""
@@ -423,8 +427,8 @@ def main():
     add_database_subparser(subparsers)
     add_jobs_subparser(subparsers)
     args = parser.parse_args()
-    setup_logging(args)
-    config = Configuration(args.config)
+    config = load_config(args.config)
+    setup_logging(config, args.unattended)
     args.func(args, config)
 
 if __name__ == "__main__":
