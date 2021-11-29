@@ -411,19 +411,19 @@ def load_config(config_file):
     """Loads configuration from the specified file"""
 
     settings_dict = None
+    infield_fly_directory = os.path.dirname(os.path.realpath(__file__))
 
     # If unspecified, default to reading config from settings.json in the
     # same directory as this file.
     config_file_path = (config_file
                         if config_file is not None
-                        else os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                          "settings.json"))
+                        else os.path.join(infield_fly_directory, "settings.json"))
 
     if os.path.exists(config_file_path):
         with open(config_file_path, encoding='utf-8') as settings_file:
             settings_dict = json.load(settings_file)
 
-    return Configuration(settings_dict)
+    return Configuration(infield_fly_directory, settings_dict)
 
 def main():
     """Main entry point"""

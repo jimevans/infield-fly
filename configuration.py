@@ -8,16 +8,18 @@ class Configuration:
 
     """Configuration object containing settings for use with Infield Fly"""
 
-    def __init__(self, config_dict=None):
+    def __init__(self, infield_fly_directory=None, config_dict=None):
         super().__init__()
+
         self.settings = {}
         if config_dict is not None:
-            self.settings["conversion"] = ConversionSettings(config_dict.get("conversion", None))
+            self.settings["conversion"] = ConversionSettings(
+                infield_fly_directory, config_dict.get("conversion", None))
             self.settings["metadata"] = MetadataSettings(config_dict.get("metadata", None))
             self.settings["notification"] = NotificationSettings(
                 config_dict.get("notification", None))
         else:
-            self.settings["conversion"] = ConversionSettings()
+            self.settings["conversion"] = ConversionSettings(infield_fly_directory)
             self.settings["metadata"] = MetadataSettings()
             self.settings["notification"] = NotificationSettings()
 
@@ -44,9 +46,12 @@ class ConversionSettings:
 
     """Settings object containing settings for conversiion of files"""
 
-    def __init__(self, raw_settings=None):
+    def __init__(self, infield_fly_dir=None, raw_settings=None):
         super().__init__()
         self.settings = raw_settings if raw_settings is not None else {}
+        self.infield_fly_dir = (infield_fly_dir
+                                if infield_fly_dir is not None
+                                else os.path.dirname(os.path.realpath(__file__)))
 
     @property
     def string_substitutions(self):
@@ -128,7 +133,7 @@ class ConversionSettings:
     def infield_fly_directory(self):
         """Gets the path of the tool installation directory"""
 
-        return os.path.dirname(os.path.realpath(__file__))
+        return self.infield_fly_dir
 
 
 class NotificationSettings:
