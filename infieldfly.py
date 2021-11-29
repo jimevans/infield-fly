@@ -1,6 +1,7 @@
 """Main module for converting files"""
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -409,8 +410,20 @@ def setup_logging(config, is_unattended):
 def load_config(config_file):
     """Loads configuration from the specified file"""
 
-    config = Configuration(config_file)
-    return config
+    settings_dict = None
+
+    # If unspecified, default to reading config from settings.json in the
+    # same directory as this file.
+    config_file_path = (config_file
+                        if config_file is not None
+                        else os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                          "settings.json"))
+
+    if os.path.exists(config_file_path):
+        with open(config_file_path, encoding='utf-8') as settings_file:
+            settings_dict = json.load(settings_file)
+
+    return Configuration(settings_dict)
 
 def main():
     """Main entry point"""
@@ -419,7 +432,8 @@ def main():
     parser.add_argument("-u", "--unattended", action="store_true", default=False,
                         help="Run Infield Fly in unattended mode.")
     parser.add_argument("-c", "--config", nargs="?", default=None,
-                        help="Path to the JSON file containing configuration values")
+                        help="Path to the JSON file containing configuration values " +
+                        "(defaults to settings.json in the same directory as infieldfly.py)")
     subparsers = parser.add_subparsers(dest="command", required=True,
                                        help="Command to use")
     add_convert_subparser(subparsers)

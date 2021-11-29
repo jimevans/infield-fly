@@ -1,6 +1,5 @@
 """Module containing configuration information for use with Infield Fly"""
 
-import json
 import os
 from dataclasses import dataclass
 from typing import List
@@ -9,20 +8,14 @@ class Configuration:
 
     """Configuration object containing settings for use with Infield Fly"""
 
-    def __init__(self, config_file=None):
+    def __init__(self, config_dict=None):
         super().__init__()
-        settings_file_path = (config_file
-                              if config_file is not None
-                              else os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                                "settings.json"))
         self.settings = {}
-        if os.path.exists(settings_file_path):
-            with open(settings_file_path, encoding='utf-8') as settings_file:
-                settings = json.load(settings_file)
-                self.settings["notification"] = NotificationSettings(
-                    settings.get("notification", None))
-                self.settings["metadata"] = MetadataSettings(settings.get("metadata", None))
-                self.settings["conversion"] = ConversionSettings(settings.get("conversion", None))
+        if config_dict is not None:
+            self.settings["conversion"] = ConversionSettings(config_dict.get("conversion", None))
+            self.settings["metadata"] = MetadataSettings(config_dict.get("metadata", None))
+            self.settings["notification"] = NotificationSettings(
+                config_dict.get("notification", None))
         else:
             self.settings["conversion"] = ConversionSettings()
             self.settings["metadata"] = MetadataSettings()
