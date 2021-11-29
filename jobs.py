@@ -10,9 +10,9 @@ from datetime import datetime
 from enum import Enum
 from time import perf_counter
 from deluge_client import DelugeRPCClient
-from episode_database import EpisodeDatabase
-from file_converter import Converter
-from torrent_finder import TorrentDataProvider
+from conversion import Converter
+from database import EpisodeDatabase
+from search import TorrentDataProvider
 
 
 class JobQueue:
