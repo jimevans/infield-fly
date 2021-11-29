@@ -526,6 +526,8 @@ class Job:
             json.dump(self.dictionary, job_file, indent=2, default=lambda x: x.value)
 
     def update_converted_file_name(self, config):
+        """Updates converted file name with latest name from cached episode database"""
+
         match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", self.query, re.IGNORECASE)
         if match is not None:
             episode_db = EpisodeDatabase.load_from_cache(config)
