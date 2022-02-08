@@ -359,7 +359,8 @@ class TVMetadataProvider:
             data = result["data"]
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
 
-        if not is_unattended_mode:
+        progress_bar = None
+        if not is_unattended_mode and len(episodes) > 0:
             progress_bar = ProgressBar(len(episodes), length=80, prefix="Process episodes:")
         for episode_object in episodes:
             if not is_unattended_mode:
@@ -370,7 +371,7 @@ class TVMetadataProvider:
 
             series_info.add_episode(episode_info)
 
-        if not is_unattended_mode:
+        if not is_unattended_mode and progress_bar is not None:
             progress_bar.clear()
 
         return series_info
@@ -392,7 +393,9 @@ class TVMetadataProvider:
         series_info = SeriesInfo.from_dictionary(data)
         episodes = self._get_episodes_extended(data)
 
-        progress_bar = ProgressBar(len(episodes), prefix="Get episodes:")
+        progress_bar = None
+        if len(episodes) > 0:
+            progress_bar = ProgressBar(len(episodes), prefix="Get episodes:")
         for episode in episodes:
             episode_info = EpisodeInfo.from_dictionary(series_info.title, episode)
             progress_bar.increment()
@@ -400,7 +403,8 @@ class TVMetadataProvider:
                 episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
 
             series_info.add_episode(episode_info)
-        progress_bar.clear()
+        if progress_bar is not None:
+            progress_bar.clear()
 
         return series_info
 
@@ -426,7 +430,9 @@ class TVMetadataProvider:
                 season_ids.append(raw_season["id"])
                 seasons.append(raw_season)
 
-        progress_bar = ProgressBar(len(seasons), prefix="Get seasons:")
+        progress_bar = None
+        if len(seasons) > 0:
+            progress_bar = ProgressBar(len(seasons), prefix="Get seasons:")
         episode_ids = []
         episodes = []
         for season in seasons:
@@ -438,7 +444,8 @@ class TVMetadataProvider:
                 if episode_object["id"] not in episode_ids:
                     episode_ids.append(episode_object["id"])
                     episodes.append(episode_object)
-        progress_bar.clear()
+        if progress_bar is not None:
+            progress_bar.clear()
 
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
         return episodes
