@@ -126,6 +126,11 @@ class JobQueue:
                              self.config.conversion.deluge_password) as client:
             for job in job_list:
                 encoded_id, metadata = client.core.prefetch_magnet_metadata(job.magnet_link)
+                if encoded_id is None:
+                    self.logger.error("Magnet metadata prefetch failed, no ID returned")
+                    return
+                if metadata is None:
+                    self.logger.error("Magnet metadata prefetch failed, no metadata returned")
                 encoded_name = metadata.get("name".encode(), None)
                 torrent_id = encoded_id.decode()
                 client.core.add_torrent_magnet(job.magnet_link, {})
