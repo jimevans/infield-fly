@@ -216,7 +216,7 @@ class FileStreamInfo:
                     streams["audio"] = stream
 
             if (stream.is_subtitle
-                    and (stream.codec in ("subrip" , "mov_text"))
+                    and (stream.codec in ("subrip", "ass", "mov_text"))
                     and stream.language == "eng"):
                 if stream.is_forced:
                     if streams["forced_subtitle"] is None:
