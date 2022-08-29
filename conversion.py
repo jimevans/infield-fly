@@ -314,7 +314,7 @@ class FileMapper:
 
     def __init__(self,
                  episode_db,
-                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)",
+                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4|\.avi)",
                  file_name_subtitutions={}):
         super().__init__()
         self.file_name_match_regex = file_name_match_regex
