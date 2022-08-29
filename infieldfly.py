@@ -119,14 +119,12 @@ def convert(args, config):
     if args.keyword is not None and series_metadata is None:
         print(f"Keyword '{args.keyword}' was not found in the database")
     else:
-        mapper = FileMapper(episode_db)
+        mapper = FileMapper(episode_db,
+                            file_name_subtitutions=config.conversion.string_substitutions)
         file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
         for src_file, dest_file in file_map:
-            converted_dest_file = "".join(
-                config.conversion.string_substitutions.get(c, c) for c in dest_file)
-            converter = Converter(src_file, converted_dest_file,
-                                  config.conversion.ffmpeg_location)
+            converter = Converter(src_file, dest_file, config.conversion.ffmpeg_location)
             converter.convert_file(convert_video=args.convert_video,
                                    convert_audio=args.convert_audio,
                                    convert_subtitles=args.convert_subtitles,

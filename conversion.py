@@ -314,10 +314,12 @@ class FileMapper:
 
     def __init__(self,
                  episode_db,
-                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)"):
+                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)",
+                 file_name_subtitutions={}):
         super().__init__()
         self.file_name_match_regex = file_name_match_regex
         self.episode_db = episode_db
+        self.file_name_substitutions = file_name_subtitutions
 
     def find_keyword_match(self, partial_file_name):
         """Attempts to find a keyword match based on the partial file name"""
@@ -349,7 +351,9 @@ class FileMapper:
                     episode_metadata = series_metadata.get_episode(
                         int(match.group(2)), int(match.group(3)))
                     if episode_metadata is not None:
-                        converted_file_name = f"{episode_metadata.plex_title}.mp4"
+                        dest_file_name = f"{episode_metadata.plex_title}.mp4"
+                        converted_file_name = "".join(
+                            self.file_name_substitutions.get(c, c) for c in dest_file_name)
                         file_map.append((os.path.join(src_dir, input_file),
                                          os.path.join(dest_dir, converted_file_name)))
         else:
