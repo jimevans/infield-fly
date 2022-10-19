@@ -7,12 +7,14 @@ import os
 import sys
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
+
 from configuration import Configuration
 from conversion import Converter, FileMapper
 from database import EpisodeDatabase
 from jobs import JobQueue, JobStatus
 from notification import Notifier
 from search import TorrentDataProvider
+
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
     """Gets the set of search strings for all tracked series during the specified date range"""
