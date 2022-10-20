@@ -90,7 +90,7 @@ class TorrentDataProvider:
             retry_count -= 1
             search_response = self.get_data(params, throttle_delay_in_seconds=5.0)
 
-        if "error" in search_response:
+        if search_response is None or "error" in search_response:
             return []
 
         torrent_results = []
