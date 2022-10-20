@@ -99,18 +99,25 @@ class TorrentDataProvider:
                        if "episode_info" in torrent_dict and "tvdb" in torrent_dict["episode_info"]
                        else None)
 
-            magnet_link_query = (parse_qs(urlparse(torrent_dict["download"]).query)
-                                 if "download" in torrent_dict
-                                 else None)
-            urn_list = ([x for x in magnet_link_query["xt"] if x.startswith("urn:btih:")]
-                        if magnet_link_query is not None and "xt" in magnet_link_query
-                        else [])
-            torrent_hash = urn_list[0][9:] if len(urn_list) > 0 else None
-
-            torrent_results.append(TorrentResult(
-                torrent_dict["title"], torrent_dict["download"], torrent_hash, tvdb_id))
+            torrent_results.append(self.create_torrent_result(
+                torrent_dict["download"], torrent_dict["title"], tvdb_id))
 
         return torrent_results
+    
+    def create_torrent_result(self, magnet_url, title=None, tvdb_id=None):
+        """Creates a torrent result for the given torrent data"""
+
+        magnet_link_query = (parse_qs(urlparse(magnet_url).query)
+                                if magnet_url
+                                else None)
+        urn_list = ([x for x in magnet_link_query["xt"] if x.startswith("urn:btih:")]
+                    if magnet_link_query is not None and "xt" in magnet_link_query
+                    else [])
+        torrent_hash = urn_list[0][9:] if len(urn_list) > 0 else None
+        if title is None:
+            title = magnet_link_query["dn"][0] if "dn" in magnet_link_query else ""
+
+        return TorrentResult(title, magnet_url, torrent_hash, tvdb_id)
 
 
 @dataclass

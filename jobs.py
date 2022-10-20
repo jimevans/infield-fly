@@ -102,11 +102,7 @@ class JobQueue:
                             "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'"),
                             added_job.query, added_job.job_id, search_result.hash,
                             search_result.title, added_job.converted_file_name)
-                    added_job.status = JobStatus.ADDING
-                    added_job.magnet_link = search_result.magnet_link
-                    added_job.title = search_result.title
-                    added_job.torrent_hash = search_result.hash
-                    added_job.save(self.logger)
+                    self.set_job_search_result(added_job, search_result)
                     search_result_counter += 1
         end_time=perf_counter()
         if is_unattended_mode:
@@ -256,6 +252,15 @@ class JobQueue:
                 os.rename(dest_file,
                           os.path.join(self.config.conversion.final_directory,
                                        os.path.basename(dest_file)))
+                
+    def set_job_search_result(self, job, search_result):
+        """Sets the search result for a job"""
+
+        job.status = JobStatus.ADDING
+        job.magnet_link = search_result.magnet_link
+        job.title = search_result.title
+        job.torrent_hash = search_result.hash
+        job.save(self.logger)
 
     def mark_job_complete(self, job):
         """Marks a job as completed"""
