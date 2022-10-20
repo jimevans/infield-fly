@@ -292,7 +292,7 @@ class TVMetadataProvider:
             self.logger.warning("Authorization failed")
             return
         authentication_response_json = response.json()
-        self.logger.debug(f"Response from auth request: {authentication_response_json}")
+        self.logger.debug("Response from auth request: %s", authentication_response_json)
         self.token = authentication_response_json["data"]["token"]
         self.token_expiry = datetime.now()
 
@@ -303,7 +303,7 @@ class TVMetadataProvider:
             self.authenticate()
 
         headers = { "Authorization": "Bearer " + self.token }
-        self.logger.debug(f"Making data request to {self.base_url + url}")
+        self.logger.debug("Making data request to %s", self.base_url + url)
         response = requests.get(self.base_url + url, headers = headers, params = params)
         if response.status_code == 401:
             # If receive Unauthorized response, authenticate and try again.
@@ -312,7 +312,7 @@ class TVMetadataProvider:
             response = requests.get(self.base_url + url, headers = headers, params = params)
 
         response_value = response.json()
-        self.logger.debug(f"Response from data request: {response_value}")
+        self.logger.debug("Response from data request: %s", response_value)
         if response.status_code != 200:
             self.logger.warning("Received error response (%s): %s",
                                 response.status_code,

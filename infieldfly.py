@@ -201,8 +201,13 @@ def update_job(args, config):
         if args.status not in set(item.value for item in JobStatus):
             print(f"Unknown status value '{args.status}'")
         else:
-            job.status = JobStatus(args.status)
-            job.save(logging.getLogger())
+            if args.status.lower() == "adding" and args.magnet_url is not None:
+                torrent_provider = TorrentDataProvider()
+                search_result = torrent_provider.create_torrent_result(args.magnet_url)
+                job_queue.set_job_search_result(job, search_result)
+            else:
+                job.status = JobStatus(args.status)
+                job.save(logging.getLogger())
 
 def list_jobs(args, config):
     """Lists all jobs in the job queue"""
@@ -342,6 +347,8 @@ def add_jobs_subparser(subparsers):
     job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
     job_update_parser.add_argument("id", help="ID of the job to update")
     job_update_parser.add_argument("status", help="Status to which to update the job")
+    job_update_parser.add_argument("magnet_url", nargs="?", default=None,
+                                   help="Magnet URL with which to update the job")
     job_update_parser.set_defaults(func=update_job)
 
     job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
