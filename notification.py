@@ -1,6 +1,7 @@
 """Provides objects to provide SMS notification when conversions are complete"""
 
 import logging
+
 from twilio.rest import Client
 
 

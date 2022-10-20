@@ -9,7 +9,9 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from time import perf_counter
+
 from deluge_client import DelugeRPCClient
+
 from conversion import Converter
 from database import EpisodeDatabase
 from search import TorrentDataProvider

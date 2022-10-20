@@ -5,7 +5,8 @@ import platform
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from time import sleep
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
+
 import requests
 
 

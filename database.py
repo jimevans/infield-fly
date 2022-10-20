@@ -6,7 +6,9 @@ import os
 import urllib
 from datetime import datetime
 from time import perf_counter
+
 import requests
+
 
 class EpisodeDatabase:
 

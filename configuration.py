@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import List
 
+
 class Configuration:
 
     """Configuration object containing settings for use with Infield Fly"""
