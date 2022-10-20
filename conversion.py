@@ -101,6 +101,10 @@ class Converter:
         else:
             ffmpeg_args.append("copy")
 
+        if self.file_stream_info.video_stream.codec == "hevc":
+            ffmpeg_args.append("-tag:v")
+            ffmpeg_args.append("hvc1")
+
         return ffmpeg_args
 
     def get_audio_conversion_args(self, is_convert_audio):
