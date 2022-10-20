@@ -252,7 +252,7 @@ class JobQueue:
                 os.rename(dest_file,
                           os.path.join(self.config.conversion.final_directory,
                                        os.path.basename(dest_file)))
-                
+
     def set_job_search_result(self, job, search_result):
         """Sets the search result for a job"""
 

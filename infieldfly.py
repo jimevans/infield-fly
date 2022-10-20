@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
-from configuration import Configuration, SearchConfiguration
+from configuration import Configuration
 from conversion import Converter, FileMapper
 from database import EpisodeDatabase
 from jobs import JobQueue, JobStatus
