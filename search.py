@@ -82,7 +82,7 @@ class TorrentDataProvider:
 
         self.logger.info("Searching for '%s' (retry up to %s times)", search_string, retry_count)
         search_response = self.get_data(params)
-        while "error" in search_response and retry_count > 0:
+        while search_response is not None and "error" in search_response and retry_count > 0:
             if not is_unattended_mode:
                 self.logger.info("Error in searching ('%s'); waiting and trying again...",
                                  search_response["error"])
