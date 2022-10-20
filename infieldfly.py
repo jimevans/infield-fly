@@ -399,11 +399,11 @@ def setup_logging(config, is_unattended):
             os.path.join(config.conversion.log_directory, "infieldfly.log"),
             backupCount=9,
             maxBytes=1048576)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(config.conversion.log_level)
         handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s - %(message)s"))
     else:
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(config.conversion.log_level)
         handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
 

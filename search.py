@@ -50,14 +50,18 @@ class TorrentDataProvider:
             if seconds_since_last_request < throttle_delay_in_seconds:
                 sleep(throttle_delay_in_seconds - seconds_since_last_request)
 
+        self.logger.debug(f"Sending request to {self.base_url} with parameters {params}")
         headers = { "User-Agent": self.user_agent, "Accept": "application/json" }
         response = requests.get(self.base_url, params = params, headers = headers)
         self.last_request = datetime.now()
 
         if response.status_code != 200:
+            self.logger.debug(f"Received response with unexpected status code: {response.status_code}")
             return None
 
-        return response.json()
+        received = response.json()
+        self.logger.debug(f"Received search response: {received}")
+        return received
 
     def search(self, search_string, retry_count=4, is_unattended_mode=False):
         """

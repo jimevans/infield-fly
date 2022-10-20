@@ -1,5 +1,6 @@
 """Module containing configuration information for use with Infield Fly"""
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import List
@@ -122,6 +123,12 @@ class ConversionSettings:
 
         return self.settings.get("log_directory",
                                  os.path.join(self.infield_fly_directory, "logs"))
+
+    @property
+    def log_level(self):
+        """Gets the log level for logging"""
+
+        return getattr(logging, self.settings.get("log_level", "info").upper(), logging.INFO)
 
     @property
     def job_directory(self):
