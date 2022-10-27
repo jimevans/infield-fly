@@ -62,7 +62,8 @@ class Converter:
         else:
             subprocess.run(ffmpeg_args, check=True)
 
-        self.convert_forced_subtitles(dry_run)
+        if is_convert_subtitles:
+            self.convert_forced_subtitles(dry_run)
 
     def convert_forced_subtitles(self, dry_run=False):
         """Converts forced subtitle track, if any"""
