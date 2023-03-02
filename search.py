@@ -55,7 +55,11 @@ class TorrentDataProvider:
         response = requests.get(self.base_url, params = params, headers = headers)
         self.last_request = datetime.now()
 
-        if response.status_code != 200:
+        if response.status_code == 520:
+            self.logger.debug("Received Cloudflare throttling response")
+            return { "error": "Cloudflare error" }
+
+        if response.status_code != 200 and response.status_code != 520:
             self.logger.debug("Received response with unexpected status code: %s",
                               response.status_code)
             return None
