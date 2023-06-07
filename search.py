@@ -35,7 +35,7 @@ class TorrentDataProvider:
         params = { "get_token": "get_token", "app_id": "infield-fly" }
         token_response = self.get_data(params)
         self.logger.info("Getting search provider API token")
-        if "error" in token_response:
+        if token_response is None or "error" in token_response:
             self.logger.warning("Error retrieving token")
         else:
             self.token = token_response["token"]
