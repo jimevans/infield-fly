@@ -223,9 +223,14 @@ class JobQueue:
     def convert_downloaded_files(self, job, is_unattended_mode):
         """Converts downloaded job files"""
 
-        src_dir = os.path.join(job.download_directory, job.name)
+        src_path = os.path.join(job.download_directory, job.name)
+        if os.path.isdir(src_path):
+            src_dir = src_path
+            file_list = os.listdir(src_path)
+        else:
+            src_dir = os.path.dirname(src_path)
+            file_list = [os.path.basename(src_path)]
 
-        file_list = os.listdir(src_dir)
         file_list.sort()
         for input_file in file_list:
             match = re.match(
