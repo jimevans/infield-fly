@@ -201,10 +201,19 @@ def update_job(args, config):
         if args.status not in set(item.value for item in JobStatus):
             print(f"Unknown status value '{args.status}'")
         else:
-            if args.status.lower() == "adding" and args.magnet_url is not None:
+            if args.status.lower() == "adding" and args.update_data is not None:
                 torrent_provider = TorrentDataProvider()
-                search_result = torrent_provider.create_torrent_result(args.magnet_url)
+                search_result = torrent_provider.create_torrent_result(args.update_data)
                 job_queue.set_job_search_result(job, search_result)
+            elif args.status.lower() == "pending" and args.update_data is not None:
+                if not os.path.isfile(args.update_data):
+                    print("Update to pending must include a path a to valid file")
+                else:
+                    job_queue.set_job_download_status(
+                        job,
+                        JobStatus.PENDING,
+                        os.path.basename(args.update_data),
+                        os.path.dirname(args.update_data))
             else:
                 job.status = JobStatus(args.status)
                 job.save(logging.getLogger())
@@ -347,8 +356,8 @@ def add_jobs_subparser(subparsers):
     job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
     job_update_parser.add_argument("id", help="ID of the job to update")
     job_update_parser.add_argument("status", help="Status to which to update the job")
-    job_update_parser.add_argument("magnet_url", nargs="?", default=None,
-                                   help="Magnet URL with which to update the job")
+    job_update_parser.add_argument("update_data", nargs="?", default=None,
+                                   help="Additional data with which to update the job")
     job_update_parser.set_defaults(func=update_job)
 
     job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")

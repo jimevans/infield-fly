@@ -135,12 +135,14 @@ class JobQueue:
                 torrent = client.core.get_torrent_status(
                     torrent_id, ["name", "download_location", "is_finished"])
                 job.torrent_hash = torrent_id
-                job.download_directory = torrent["download_location".encode()].decode()
-                job.name = (encoded_name.decode()
-                            if encoded_name is not None
-                            else torrent["name".encode()].decode())
-                job.status = JobStatus.DOWNLOADING
-                job.save(self.logger)
+                torrent_name = (encoded_name.decode()
+                                if encoded_name is not None
+                                else torrent["name".encode()].decode())
+                self.set_job_download_status(
+                    job,
+                    JobStatus.DOWNLOADING,
+                    torrent_name,
+                    torrent["download_location".encode()].decode())
 
     def query_torrents_status(self):
         """Updates downloaded torrents to the Deluse client"""
@@ -160,9 +162,8 @@ class JobQueue:
                 torrent = client.core.get_torrent_status(
                     job.torrent_hash, ["name", "download_location", "is_finished"])
                 if torrent.get("is_finished".encode(), False):
-                    job.name = torrent["name".encode()].decode()
-                    job.status = JobStatus.PENDING
-                    job.save(self.logger)
+                    self.set_job_download_status(
+                        job, JobStatus.PENDING, torrent["name".encode()].decode())
 
     def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
@@ -265,6 +266,15 @@ class JobQueue:
         job.magnet_link = search_result.magnet_link
         job.title = search_result.title
         job.torrent_hash = search_result.hash
+        job.save(self.logger)
+
+    def set_job_download_status(self, job, status, name, download_directory = None):
+        """Sets the download directory, file name, and status for a job"""
+
+        if download_directory is not None:
+            job.download_directory = download_directory
+        job.name = name
+        job.status = status
         job.save(self.logger)
 
     def mark_job_complete(self, job):
