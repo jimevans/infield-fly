@@ -52,7 +52,11 @@ class TorrentDataProvider:
 
         self.logger.debug("Sending request to %s with parameters %s", self.base_url, params)
         headers = { "User-Agent": self.user_agent, "Accept": "application/json" }
-        response = requests.get(self.base_url, params = params, headers = headers)
+        try:
+            response = requests.get(self.base_url, params = params, headers = headers)
+        except Exception as ex:
+            return {"error": f"Unknown error: {ex}"}
+
         self.last_request = datetime.now()
 
         if response.status_code == 520:
