@@ -242,18 +242,18 @@ def process_jobs(args, config):
     """Executes current jobs in the job queue"""
 
     job_queue = JobQueue(config)
-    if not args.skip_search:
+    if args.search:
         airdate = datetime.now()
         job_queue.perform_searches(
             datetime(month=airdate.month, day=airdate.day, year=airdate.year), args.unattended)
 
-    if not args.skip_add_downloads:
+    if args.add_downloads:
         job_queue.add_torrents()
 
-    if not args.skip_query_downloads:
+    if args.query_downloads:
         job_queue.query_torrents_status()
 
-    if not args.skip_convert:
+    if args.convert:
         job_queue.perform_conversions(args.unattended)
 
 def add_convert_subparser(subparsers):
@@ -377,31 +377,32 @@ def add_jobs_subparser(subparsers):
     process_jobs_parser = job_command_parsers.add_parser("process", help="Process current queue")
     search_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     search_parser.add_argument(
-        "--skip-search", dest="skip_search", action = "store_true",
-        help="Skip the search phase of job processing")
-    search_parser.add_argument(
-        "--no-skip-search", dest="skip_search", action="store_false",
+        "--search", dest="search", action = "store_true",
         help="Perform the search phase of job processing")
+    search_parser.add_argument(
+        "--no-search", dest="search", action="store_false",
+        help="Skip the search phase of job processing")
     add_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     add_downloads_parser.add_argument(
-        "--skip-add-downloads", dest="skip_add_downloads", action = "store_true",
-        help="Skip the add downloads phase of job processing")
-    add_downloads_parser.add_argument(
-        "--no-skip-add-downloads", dest="skip_add_downloads", action="store_false",
+        "--add-downloads", dest="add_downloads", action = "store_true",
         help="Perform the add downloads phase of job processing")
+    add_downloads_parser.add_argument(
+        "--no-add-downloads", dest="add_downloads", action="store_false",
+        help="Skip the add downloads phase of job processing")
     query_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     query_downloads_parser.add_argument(
-        "--skip-query-downloads", dest="skip_query_downloads", action = "store_true",
-        help="Skip the query downloads status phase of job processing")
-    query_downloads_parser.add_argument(
-        "--no-skip-query-downloads", dest="skip_query_downloads", action="store_false",
+        "--query-downloads", dest="query_downloads", action = "store_true",
         help="Perform the query downloads status phase of job processing")
+    query_downloads_parser.add_argument(
+        "--no-query-downloads", dest="query_downloads", action="store_false",
+        help="Skip the query downloads status phase of job processing")
     convert_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
-    convert_parser.add_argument("--skip-convert", dest="skip_convert", action = "store_true",
-                                help="Skip the convert phase of job processing")
-    convert_parser.add_argument("--no-skip-convert", dest="skip_convert", action="store_false",
+    convert_parser.add_argument("--convert", dest="convert", action = "store_true",
                                 help="Perform the convert phase of job processing")
-    process_jobs_parser.set_defaults(skip_search=False, skip_convert=False, func=process_jobs)
+    convert_parser.add_argument("--no-convert", dest="convert", action="store_false",
+                                help="Skip the convert phase of job processing")
+    process_jobs_parser.set_defaults(
+        search=True, add_downloads=True, query_downloads=True, convert=True, func=process_jobs)
 
 def setup_logging(config, is_unattended):
     """Sets up logging for the Infield Fly library"""
