@@ -72,38 +72,13 @@ class JobQueue:
             self.logger.info("No queries to search during job processing")
             return
 
-        finder = TorrentDataProvider()
         if is_unattended_mode:
             self.logger.info("Starting search")
         start_time = perf_counter()
         for job in search_jobs_list:
-            search_results = finder.search(
-                job.query, retry_count=4, is_unattended_mode=is_unattended_mode)
-            if len(search_results) == 0:
-                self.logger.info("No search results found, setting job back to waiting.")
-                job.status = JobStatus.WAITING
-                job.save(self.logger)
-            else:
-                search_result_counter = 0
-                for search_result in search_results:
-                    if search_result_counter == 0:
-                        added_job = job
-                        self.logger.info(
-                            ("Search result for query string '%s'. "
-                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'"),
-                            added_job.query, added_job.job_id, search_result.hash,
-                            search_result.title, added_job.converted_file_name)
-                    else:
-                        added_job = job.copy()
-                        added_job.converted_file_name = (f"{added_job.converted_file_name}."
-                                                         f"{search_result_counter}")
-                        self.logger.warning(
-                            ("Multiple search results for query string '%s' found: "
-                            "Job ID: %s, Hash: %s, Title: '%s', Converted file: '%s'"),
-                            added_job.query, added_job.job_id, search_result.hash,
-                            search_result.title, added_job.converted_file_name)
-                    self.set_job_search_result(added_job, search_result)
-                    search_result_counter += 1
+            # TODO: Redo search functionality
+            job.status = JobStatus.WAITING
+            job.save(self.logger)
         end_time=perf_counter()
         if is_unattended_mode:
             self.logger.info("Search completed in %s seconds", end_time - start_time)
