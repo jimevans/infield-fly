@@ -217,7 +217,7 @@ class FileStreamInfo:
                 streams["video"] = stream
 
             if stream.is_audio:
-                if (stream.is_default or (stream.language == "eng" and streams["audio"] is None)):
+                if (stream.language == "eng" and streams["audio"] is None):
                     streams["audio"] = stream
 
             if (stream.is_subtitle
