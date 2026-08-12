@@ -220,9 +220,11 @@ class FileStreamInfo:
                 if (stream.is_default or (stream.language == "eng" and streams["audio"] is None)):
                     streams["audio"] = stream
 
+            print(f'is subtitle? {stream.is_subtitle}, codec: {stream.codec}, langauge: {stream.language}')
             if (stream.is_subtitle
                     and (stream.codec in ("subrip", "ass", "mov_text"))
-                    and stream.language == "eng"):
+                    and (stream.language == "" or stream.language == "eng")):
+                print('found subtitle stream')
                 if stream.is_forced:
                     if streams["forced_subtitle"] is None:
                         streams["forced_subtitle"] = stream
