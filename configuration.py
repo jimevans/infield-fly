@@ -59,7 +59,7 @@ class ConversionSettings:
     def string_substitutions(self):
         """Gets the set of string substitution for file names during conversions"""
 
-        return self.settings.get("substitutions", None)
+        return self.settings.get("substitutions") or {}
 
     @property
     def ffmpeg_location(self):
