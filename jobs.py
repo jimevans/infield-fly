@@ -152,10 +152,17 @@ class JobQueue:
             job.status = JobStatus.CONVERTING
             job.save(self.logger)
         for job in pending_job_list:
-            if job.is_download_only:
-                self.copy_downloaded_files(job, is_unattended_mode)
-            else:
-                self.convert_downloaded_files(job, is_unattended_mode)
+            try:
+                if job.is_download_only:
+                    self.copy_downloaded_files(job, is_unattended_mode)
+                else:
+                    self.convert_downloaded_files(job, is_unattended_mode)
+            except Exception as ex:
+                # Return the job to pending so it is retried on the next run,
+                # rather than leaving it stuck in the converting state.
+                self.logger.error("Processing job %s failed: %s", job.job_id, ex)
+                job.status = JobStatus.PENDING
+                job.save(self.logger)
 
     def create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""
@@ -163,6 +170,8 @@ class JobQueue:
         episode_db = EpisodeDatabase.load_from_cache(self.config)
         for tracked_series in self.config.metadata.tracked_series:
             series = episode_db.get_series(tracked_series.series_id)
+            if series is None:
+                continue
             series_episodes_since_last_search = series.get_episodes_by_airdate(
                 airdate, airdate)
             for series_episode in series_episodes_since_last_search:
@@ -208,10 +217,14 @@ class JobQueue:
             file_list = [os.path.basename(src_path)]
 
         file_list.sort()
+        os.makedirs(self.config.conversion.staging_directory, exist_ok=True)
+        os.makedirs(self.config.conversion.final_directory, exist_ok=True)
+        is_file_converted = False
         for input_file in file_list:
             match = re.match(
                 r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
             if match is not None:
+                is_file_converted = True
                 src_file = os.path.join(src_dir, match.group(0))
                 dest_file = os.path.join(self.config.conversion.staging_directory,
                                         f"{job.converted_file_name}.mp4")
@@ -229,10 +242,17 @@ class JobQueue:
                     self.logger.info(
                         "Conversion completed in %s seconds", end_time - start_time)
 
+                # Move before marking complete, so a failed move leaves the job retryable.
+                # shutil.move handles staging and final directories on different volumes.
+                shutil.move(dest_file,
+                            os.path.join(self.config.conversion.final_directory,
+                                         os.path.basename(dest_file)))
                 self.mark_job_complete(job)
-                os.rename(dest_file,
-                          os.path.join(self.config.conversion.final_directory,
-                                       os.path.basename(dest_file)))
+
+        if not is_file_converted:
+            self.logger.warning("No episode files found to convert in %s", src_path)
+            job.status = JobStatus.PENDING
+            job.save(self.logger)
 
     def set_job_search_result(self, job, search_result):
         """Sets the search result for a job"""
