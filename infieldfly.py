@@ -23,6 +23,8 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
     searches_to_perform = []
     for tracked_series in metadata_settings.tracked_series:
         series = episode_db.get_series(tracked_series.series_id)
+        if series is None:
+            continue
         series_episodes = series.get_episodes_by_airdate(from_date, to_date)
         for series_episode in series_episodes:
             found_episodes.append(series_episode)
@@ -218,10 +220,23 @@ def update_job(args, config):
                 job.status = JobStatus(args.status)
                 job.save(logging.getLogger())
 
+def parse_job_status(status_value):
+    """Parses a job status argument, returning None if the value is not a valid status"""
+
+    if status_value is None or status_value.lower() not in set(item.value for item in JobStatus):
+        return None
+    return JobStatus(status_value.lower())
+
 def list_jobs(args, config):
     """Lists all jobs in the job queue"""
 
-    status = args.status
+    status = None
+    if args.status is not None:
+        status = parse_job_status(args.status)
+        if status is None:
+            print(f"Unknown status value '{args.status}'")
+            return
+
     job_queue = JobQueue(config)
     jobs = job_queue.load_jobs()
     for job in jobs:
@@ -231,7 +246,13 @@ def list_jobs(args, config):
 def clear_jobs(args, config):
     """Clears the job queue"""
 
-    status = args.status
+    status = None
+    if args.status is not None:
+        status = parse_job_status(args.status)
+        if status is None:
+            print(f"Unknown status value '{args.status}'")
+            return
+
     job_queue = JobQueue(config)
     jobs = job_queue.load_jobs()
     for job in jobs:
