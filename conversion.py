@@ -88,6 +88,9 @@ class Converter:
         """Gets ffmpeg command line arguments for video streams in the file"""
 
         ffmpeg_args = []
+        if not self.file_stream_info.has_video_stream:
+            return ffmpeg_args
+
         ffmpeg_args.append("-map")
         ffmpeg_args.append(f"0:{self.file_stream_info.video_stream.index}")
         ffmpeg_args.append("-c:v")
@@ -112,10 +115,15 @@ class Converter:
         """Gets ffmpeg command line arguments for audio streams in the file"""
 
         ffmpeg_args = []
+        if not self.file_stream_info.has_audio_stream:
+            return ffmpeg_args
+
+        # Streams with no language metadata are assumed to be English.
+        language = self.file_stream_info.audio_stream.language or "eng"
         ffmpeg_args.append("-map")
         ffmpeg_args.append(f"0:{self.file_stream_info.audio_stream.index}")
         ffmpeg_args.append("-metadata:s:a:0")
-        ffmpeg_args.append("language=eng")
+        ffmpeg_args.append(f"language={language}")
         ffmpeg_args.append("-disposition:a:0")
         ffmpeg_args.append("default")
         ffmpeg_args.append("-c:a:0")
@@ -132,7 +140,7 @@ class Converter:
             ffmpeg_args.append("-map")
             ffmpeg_args.append(f"0:{self.file_stream_info.audio_stream.index}")
             ffmpeg_args.append("-metadata:s:a:1")
-            ffmpeg_args.append("language=eng")
+            ffmpeg_args.append(f"language={language}")
             ffmpeg_args.append("-disposition:a:1")
             ffmpeg_args.append("0")
             ffmpeg_args.append("-c:a:1")
@@ -210,6 +218,7 @@ class FileStreamInfo:
             "subtitle": None,
             "forced_subtitle": None
         }
+        audio_streams = []
         metadata = FileStreamInfo._probe_file(input_file, ffprobe_location)
         for stream_metadata in metadata["streams"]:
             stream = FileStreamInfo.StreamInfo(stream_metadata)
@@ -217,8 +226,7 @@ class FileStreamInfo:
                 streams["video"] = stream
 
             if stream.is_audio:
-                if (stream.is_default or (stream.language == "eng" and streams["audio"] is None)):
-                    streams["audio"] = stream
+                audio_streams.append(stream)
 
             if (stream.is_subtitle
                     and (stream.codec in ("subrip", "ass", "mov_text"))
@@ -229,7 +237,29 @@ class FileStreamInfo:
                 elif streams["subtitle"] is None:
                     streams["subtitle"] = stream
 
+        streams["audio"] = FileStreamInfo._select_audio_stream(audio_streams)
         return cls(streams)
+
+    @staticmethod
+    def _select_audio_stream(audio_streams):
+        """
+        Selects the audio stream to use, preferring the default English stream, then the
+        first English stream, then the default stream, then the first stream. Streams with
+        no language metadata are treated as English.
+        """
+
+        english_streams = [x for x in audio_streams if x.language in ("eng", "")]
+        candidate_lists = [
+            [x for x in english_streams if x.is_default],
+            english_streams,
+            [x for x in audio_streams if x.is_default],
+            audio_streams
+        ]
+        for candidates in candidate_lists:
+            if len(candidates) > 0:
+                return candidates[0]
+
+        return None
 
     @property
     def has_video_stream(self):
@@ -325,6 +355,7 @@ class FileMapper:
         self.file_name_match_regex = file_name_match_regex
         self.episode_db = episode_db
         self.file_name_substitutions = file_name_subtitutions
+        self.logger = logging.getLogger()
 
     def find_keyword_match(self, partial_file_name):
         """Attempts to find a keyword match based on the partial file name"""
@@ -341,7 +372,7 @@ class FileMapper:
 
         file_map = []
         if os.path.isdir(source):
-            src_dir = os.path.dirname(source)
+            src_dir = source
             dest_dir = destination
             if not os.path.isdir(destination):
                 dest_dir = os.path.dirname(destination)
@@ -350,9 +381,14 @@ class FileMapper:
             for input_file in file_list:
                 match = re.match(self.file_name_match_regex, input_file, re.IGNORECASE)
                 if match is not None:
-                    if keyword is None:
-                        keyword = self.find_keyword_match(match.group(1))
-                    series_metadata = self.episode_db.get_tracked_series_by_keyword(keyword)
+                    file_keyword = (keyword
+                                    if keyword is not None
+                                    else self.find_keyword_match(match.group(1)))
+                    series_metadata = self.episode_db.get_tracked_series_by_keyword(file_keyword)
+                    if series_metadata is None:
+                        self.logger.warning("No tracked series found for %s; skipping",
+                                            input_file)
+                        continue
                     episode_metadata = series_metadata.get_episode(
                         int(match.group(2)), int(match.group(3)))
                     if episode_metadata is not None:
