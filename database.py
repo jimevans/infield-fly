@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import urllib
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import perf_counter
 
 import requests
@@ -96,6 +96,10 @@ class EpisodeDatabase:
         """Updates the metadata for a series in this episode database"""
 
         series_info = self.metadata_provider.get_series(series_id, is_unattended_mode)
+        if series_info is None:
+            logging.getLogger().warning("Unable to retrieve metadata for series %s", series_id)
+            return None
+
         self.add_series(series_info)
         return series_info
 
@@ -290,17 +294,22 @@ class TVMetadataProvider:
         response = requests.post(self.base_url + "login", json = authentication_payload)
         if not response.status_code == 200:
             self.logger.warning("Authorization failed")
+            self.token = None
+            self.token_expiry = None
             return
         authentication_response_json = response.json()
         self.logger.debug("Response from auth request: %s", authentication_response_json)
         self.token = authentication_response_json["data"]["token"]
-        self.token_expiry = datetime.now()
+        # Tokens are valid for one month; renew a little early to be safe.
+        self.token_expiry = datetime.now() + timedelta(days=28)
 
     def get_data(self, url, params = None):
         """Gets data from a thetvdb.com end point"""
 
         if self.token is None or datetime.now() > self.token_expiry:
             self.authenticate()
+            if self.token is None:
+                return None
 
         headers = { "Authorization": "Bearer " + self.token }
         self.logger.debug("Making data request to %s", self.base_url + url)
@@ -308,18 +317,20 @@ class TVMetadataProvider:
         if response.status_code == 401:
             # If receive Unauthorized response, authenticate and try again.
             self.authenticate()
+            if self.token is None:
+                return None
             headers = { "Authorization": "Bearer " + self.token }
             response = requests.get(self.base_url + url, headers = headers, params = params)
 
-        response_value = response.json()
-        self.logger.debug("Response from data request: %s", response_value)
         if response.status_code != 200:
             self.logger.warning("Received error response (%s): %s",
                                 response.status_code,
-                                response_value["message"])
+                                response.text)
             return None
 
-        return response.json()
+        response_value = response.json()
+        self.logger.debug("Response from data request: %s", response_value)
+        return response_value
 
     def search_for_series(self, search_term, status=None):
         """Searches for a series using the thetvdb.com API"""
@@ -328,7 +339,7 @@ class TVMetadataProvider:
         params = { "q": search_term, "type": "series" }
         relative_url = f"search?{urllib.parse.urlencode(params)}"
         result = self.get_data(relative_url)
-        search_object = result["data"]
+        search_object = result["data"] if result is not None else None
         if search_object is not None:
             for search_result in search_object:
                 if ("primary_language" in search_result
@@ -350,10 +361,10 @@ class TVMetadataProvider:
         page_index = 0
         params = { "page": page_index }
         result = self.get_data(relative_url, params)
-        data = result["data"]
-        if data is None:
+        if result is None or result["data"] is None:
             return None
 
+        data = result["data"]
         series_info = SeriesInfo.from_dictionary(data["series"])
         episodes = []
         while len(data["episodes"]) > 0:
@@ -361,6 +372,9 @@ class TVMetadataProvider:
             page_index += 1
             params["page"] = page_index
             result = self.get_data(relative_url, params)
+            # Don't return a partial episode list if a page fails to load.
+            if result is None or result["data"] is None:
+                return None
             data = result["data"]
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
 
@@ -391,9 +405,10 @@ class TVMetadataProvider:
         page_index = 0
         params = { "page": page_index }
         result = self.get_data(relative_url, params)
-        data = result["data"]
-        if data is None:
+        if result is None or result["data"] is None:
             return None
+
+        data = result["data"]
 
         series_info = SeriesInfo.from_dictionary(data)
         episodes = self._get_episodes_extended(data)
@@ -418,9 +433,10 @@ class TVMetadataProvider:
 
         relative_url = f"episodes/{episode_id}"
         result = self.get_data(relative_url)
-        data = result["data"]
-        if data is None:
+        if result is None or result["data"] is None:
             return None
+
+        data = result["data"]
 
         airdate = (datetime.strptime(data["aired"], "%Y-%m-%d")
                   if "aired" in data and data["aired"] is not None
@@ -444,6 +460,8 @@ class TVMetadataProvider:
             season_url = f"seasons/{season['id']}/extended"
             progress_bar.increment()
             season_result = self.get_data(season_url)
+            if season_result is None or season_result["data"] is None:
+                continue
             season_data = season_result["data"]
             for episode_object in season_data["episodes"]:
                 if episode_object["id"] not in episode_ids:
