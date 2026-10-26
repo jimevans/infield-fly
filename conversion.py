@@ -31,7 +31,7 @@ class Converter:
         return tool_location
 
     def convert_file(self, dry_run=False, convert_video=False, convert_audio=True,
-                     convert_subtitles=True):
+                     convert_subtitles=True, aspect_ratio=None, crf=17):
         """Converts a single file"""
 
         is_convert_subtitles = convert_subtitles and self.file_stream_info.has_subtitle_stream
@@ -51,7 +51,7 @@ class Converter:
         ffmpeg_args.append("-1")
         ffmpeg_args.append("-map_chapters")
         ffmpeg_args.append("0")
-        ffmpeg_args.extend(self.get_video_conversion_args(convert_video))
+        ffmpeg_args.extend(self.get_video_conversion_args(convert_video, aspect_ratio, crf))
         ffmpeg_args.extend(self.get_audio_conversion_args(is_convert_audio))
         ffmpeg_args.extend(self.get_subtitle_conversion_args(is_convert_subtitles))
 
@@ -84,7 +84,7 @@ class Converter:
             else:
                 subprocess.run(forced_subs_args, check=True)
 
-    def get_video_conversion_args(self, is_convert_video):
+    def get_video_conversion_args(self, is_convert_video, aspect_ratio=None, crf=17):
         """Gets ffmpeg command line arguments for video streams in the file"""
 
         ffmpeg_args = []
@@ -96,10 +96,22 @@ class Converter:
         ffmpeg_args.append("-c:v")
         if is_convert_video:
             ffmpeg_args.append("libx264")
-            ffmpeg_args.append("-vf")
-            ffmpeg_args.append("scale=-1:1080")
+            video_filters = []
+            if self.file_stream_info.video_stream.height > 1080:
+                video_filters.append("scale=-2:1080")
+            if aspect_ratio is not None:
+                # Crop from the center to the requested aspect ratio, rounding
+                # dimensions down to even values as required by libx264. A
+                # tolerance of 0.01 is allowed so that, for example, 1.78 leaves
+                # a 16:9 (1.7778) frame uncropped.
+                video_filters.append(
+                    f"crop=w='if(gt(iw/ih,{aspect_ratio}+0.01),trunc(ih*{aspect_ratio}/2)*2,iw)'"
+                    f":h='if(lt(iw/ih,{aspect_ratio}-0.01),trunc(iw/{aspect_ratio}/2)*2,ih)'")
+            if len(video_filters) > 0:
+                ffmpeg_args.append("-vf")
+                ffmpeg_args.append(",".join(video_filters))
             ffmpeg_args.append("-crf")
-            ffmpeg_args.append("17")
+            ffmpeg_args.append(f"{crf:g}")
             ffmpeg_args.append("-preset")
             ffmpeg_args.append("medium")
         else:
@@ -319,6 +331,14 @@ class FileStreamInfo:
             self.channel_count = (stream_metadata["channels"]
                                  if "channels" in stream_metadata
                                  else -1)
+
+            self.height = (stream_metadata["height"]
+                          if "height" in stream_metadata
+                          else -1)
+
+            self.width = (stream_metadata["width"]
+                          if "width" in stream_metadata
+                          else -1)
 
             self.language = (stream_metadata["tags"]["language"]
                             if "tags" in stream_metadata and "language" in stream_metadata["tags"]

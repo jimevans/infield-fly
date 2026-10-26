@@ -122,6 +122,14 @@ def convert(args, config):
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if args.keyword is not None and series_metadata is None:
         print(f"Keyword '{args.keyword}' was not found in the database")
+    elif args.aspect_ratio is not None and not args.convert_video:
+        print("Aspect ratio can only be specified when converting video (--convert-video)")
+    elif args.aspect_ratio is not None and args.aspect_ratio <= 0:
+        print("Aspect ratio must be a positive number")
+    elif args.crf is not None and not args.convert_video:
+        print("Constant rate factor can only be specified when converting video (--convert-video)")
+    elif args.crf is not None and not 0 <= args.crf <= 51:
+        print("Constant rate factor must be between 0 and 51")
     else:
         mapper = FileMapper(episode_db,
                             file_name_subtitutions=config.conversion.string_substitutions)
@@ -132,6 +140,8 @@ def convert(args, config):
             converter.convert_file(convert_video=args.convert_video,
                                    convert_audio=args.convert_audio,
                                    convert_subtitles=args.convert_subtitles,
+                                   aspect_ratio=args.aspect_ratio,
+                                   crf=args.crf if args.crf is not None else 17,
                                    dry_run=args.dry_run)
 
         if args.notify:
@@ -290,6 +300,12 @@ def add_convert_subparser(subparsers):
     video_parser = convert_subparser.add_mutually_exclusive_group(required=False)
     video_parser.add_argument("--convert-video", dest="convert_video", action="store_true")
     video_parser.add_argument("--no-convert-video", dest="convert_video", action="store_false")
+    convert_subparser.add_argument("-a", "--aspect-ratio", dest="aspect_ratio", type=float,
+                                   help="Aspect ratio (e.g., 2.40) to which to crop the center " +
+                                   "of the video stream; requires --convert-video")
+    convert_subparser.add_argument("--crf", type=float,
+                                   help="Constant rate factor (0-51) for video conversion " +
+                                   "(defaults to 17); requires --convert-video")
 
     audio_parser = convert_subparser.add_mutually_exclusive_group(required=False)
     audio_parser.add_argument("--convert-audio", dest="convert_audio", action = "store_true")
@@ -307,6 +323,8 @@ def add_convert_subparser(subparsers):
                                    help="Notify via SMS when job is complete")
 
     convert_subparser.set_defaults(convert_video=False,
+                                   aspect_ratio=None,
+                                   crf=None,
                                    convert_audio=True,
                                    convert_subtitles=True,
                                    dry_run=False,
