@@ -7,13 +7,24 @@ import pytest
 
 from infield_fly.configuration import Configuration
 from infield_fly.database import EpisodeDatabase, SeriesInfo
+from infield_fly.jobs import Job
+
+
+# Tracked series settings where series 1 is "The Show", searched for in 1080p and as a
+# download-only job, and series 2 cannot be retrieved from the episode database.
+TRACKED_SERIES = {
+    "show": {"id": 1, "description": "The Show", "enable_search": True,
+             "search_configs": [{"search_terms": ["1080p"]}, {"download_only": True}]},
+    "missing": {"id": 2, "description": "Missing", "enable_search": True}
+}
 
 
 @pytest.fixture
 def make_config(tmp_path):
     """Returns a factory creating a Configuration rooted in a temporary directory"""
 
-    def _make_config(conversion=None, metadata=None, notification=None):
+    def _make_config(conversion=None, metadata=None, notification=None, search=None,
+                     download=None):
         config_dict = {
             "conversion": {
                 "database_directory": str(tmp_path),
@@ -21,10 +32,13 @@ def make_config(tmp_path):
                 "staging_directory": str(tmp_path / "staging"),
                 "final_directory": str(tmp_path / "final"),
                 "log_directory": str(tmp_path / "logs"),
+                "nzb_directory": str(tmp_path / "nzb"),
                 **(conversion or {})
             },
             "metadata": metadata or {},
-            "notification": notification or {}
+            "notification": notification or {},
+            "search": search or {},
+            "download": download or {}
         }
         return Configuration(str(tmp_path), config_dict)
 
@@ -45,6 +59,20 @@ def make_episode_db(config, episodes):
     series.add_episodes(episodes)
     database.add_series(series)
     return database
+
+
+def save_job(config, status, **values):
+    """Saves a job with the specified status and values to the configured job directory"""
+
+    job = Job(config.conversion.job_directory, {"status": status.value, **values})
+    job.save(logging.getLogger())
+    return job
+
+
+def load_job(config, job_id):
+    """Loads a job from the configured job directory"""
+
+    return Job.load(config.conversion.job_directory, job_id)
 
 
 @pytest.fixture(autouse=True)

@@ -19,7 +19,10 @@ Some features also depend on external services:
 * Mapping file names to episode titles, and finding episodes to download, uses
   episode metadata from [TheTVDB](https://thetvdb.com), which requires a v4 API
   key.
-* Processing download jobs uses a [Deluge](https://deluge-torrent.org) daemon.
+* Searching for downloads uses a [Newznab](https://newznab.readthedocs.io)
+  indexer API, such as [NZBPlanet](https://nzbplanet.net).
+* Processing download jobs uses a [SABnzbd](https://sabnzbd.org) instance for
+  NZB files, or a [Deluge](https://deluge-torrent.org) daemon for torrents.
 * SMS notification of completed conversions uses [Twilio](https://www.twilio.com).
 
 ## Installation
@@ -101,7 +104,7 @@ All sections and settings are optional. An example:
         "keywords": ["show"],
         "enable_search": true,
         "search_configs": [
-          { "search_terms": ["1080p"] },
+          { "search_terms": ["1080p", "amzn"], "release_groups": ["flux", "ntb"] },
           { "search_terms": ["2160p"], "download_only": true }
         ]
       }
@@ -112,23 +115,58 @@ All sections and settings are optional. An example:
     "auth_token": "<Twilio auth token>",
     "sending_number": "+15555550100",
     "receiving_number": "+15555550101"
+  },
+  "search": {
+    "newznab_url": "https://api.nzbplanet.net/api",
+    "api_key": "<Newznab indexer API key>",
+    "max_candidates": 5
+  },
+  "download": {
+    "sabnzbd_url": "http://localhost:8080",
+    "sabnzbd_api_key": "<SABnzbd API key>",
+    "sabnzbd_category": "tv"
   }
 }
 ```
 
 The `conversion` section also accepts `staging_directory`, `database_directory`,
-`database_cache_file`, `log_directory`, and `job_directory` to relocate the
-working files. `substitutions` maps characters in episode titles to
+`database_cache_file`, `log_directory`, `job_directory`, and `nzb_directory` to
+relocate the working files. `substitutions` maps characters in episode titles to
 replacements when naming converted files.
 
 Each entry in `tracked_series` is keyed by its main keyword, and `id` is the
 series ID on TheTVDB. The main keyword (when a `description` is given) and any
 additional `keywords` are matched against file names to identify the series.
 When `enable_search` is true, each entry in `search_configs` produces a search
-for each new episode, made of the `primary_search_term` (defaulting to the main
-keyword), the entry's `search_terms`, and the episode number (for example,
-`the show 1080p s01e02`). Downloads from `download_only` searches are copied
-to the final directory without conversion.
+string for each new episode, made of the `primary_search_term` (defaulting to the
+main keyword), the entry's `search_terms`, and the episode number (for example,
+`the show 1080p s01e02`).
+
+Only one download of each episode is converted. The search strings of the
+entries that aren't `download_only` are combined into one job, which tries them
+in the order the entries are listed, using the first that finds a usable
+download. List the preferred entry first, and fallbacks after it. Each
+`download_only` entry is a job of its own, whose download is copied to the
+final directory without conversion. A download rejected for one job of an
+episode is not tried by the episode's other jobs.
+
+An entry's optional `release_groups` lists the release groups whose posts may
+be downloaded for it, in order of preference. Its search string is searched for
+once, and among the results, posts from the first listed group are tried first
+(newest first), then posts from the next group, and so on. Posts from groups not
+in the list are never downloaded, and when none of the results is from a listed
+group, the next entry's search string is tried. A group matches when its name
+appears as one or more whole words anywhere in a post's title, ignoring case and
+punctuation, so `ntb` matches `...H.264-NTb` but not `...H.264-NTBX`. Avoid
+group names that are also common release words, such as `web` or `amzn`, which
+would match posts from any group. Without `release_groups`, posts from any group
+may be downloaded.
+
+The `search` section enables searching for downloads when `api_key` is set.
+`newznab_url` is the indexer's API end point (defaulting to NZBPlanet's), and
+`max_candidates` limits how many search results are downloaded and validated
+for a job on each run. The `download` section names the SABnzbd instance to which
+NZB files are added, and optionally the category under which to add them.
 
 ## Usage
 ```
@@ -211,7 +249,7 @@ Note that `-u` and `-c` mean something different here than before the command.
 ### Processing jobs
 Jobs track an episode from search through download to conversion. A job moves
 through the statuses `waiting`, `searching`, `adding`, `downloading`, `pending`,
-`converting`, and `completed`.
+`converting`, and `completed`. A job whose download fails returns to `waiting`.
 
 ```
 infield-fly jobs add <keyword> <search string>   # add a job
@@ -223,25 +261,44 @@ infield-fly jobs clear [status]                  # remove all jobs, or those wit
 infield-fly jobs process                         # run the processing phases
 ```
 
-Infield Fly doesn't search for downloads itself. Find a download for a job's
-search string, then give the job its magnet link with `jobs update`, which
-accepts additional data for two statuses:
+To find a download for a job yourself, give the job the download with
+`jobs update`, which accepts additional data for two statuses:
 
-* `adding` with a magnet link queues that download for the job
+* `adding` with a magnet link, or the path or URL of an NZB file, queues that
+  download for the job in Deluge or SABnzbd
 * `pending` with the path of a downloaded file or directory queues it for
   conversion
 
 `jobs process` runs each of the following phases, which can be skipped with
-`--no-search`, `--no-add-downloads`, `--no-query-downloads`, or `--no-convert`:
+`--no-search`, `--no-search-downloads`, `--no-add-downloads`,
+`--no-query-downloads`, or `--no-convert`:
 
 1. **Search:** creates jobs for episodes of tracked series airing today, and
    removes completed jobs from earlier days.
-2. **Add downloads:** adds the magnet links of `adding` jobs to Deluge.
-3. **Query downloads:** marks finished Deluge downloads as `pending`.
-4. **Convert:** converts `pending` downloads into the final directory (or copies
+2. **Search downloads:** searches the Newznab indexer for each `waiting` job,
+   using a text search (`t=search`) for each of the job's search strings in turn
+   until one finds a usable download. Results are used as the indexer returns
+   them, without further filtering, so each search config's terms must be
+   specific enough to find only the right posts. Results are tried newest first,
+   up to `max_candidates` for the job in each run. The NZB file of each result is
+   checked to ensure that it lists every part of every file it contains; the
+   first that passes is used, and those that fail are rejected and not tried
+   again. Jobs with no usable result stay `waiting` until the next run.
+3. **Add downloads:** adds the NZB files of `adding` jobs to SABnzbd, and their
+   magnet links to Deluge.
+4. **Query downloads:** marks finished downloads as `pending`. A download that
+   fails in SABnzbd is removed from its history and rejected, and its job
+   returns to `waiting` to try the next search result.
+5. **Convert:** converts `pending` downloads into the final directory (or copies
    them, for download-only jobs). When a download contains more than one episode
    file (`.mkv` or `.mp4`), such as a sample alongside the episode, only the
    largest is converted.
+
+Infield Fly checks that an NZB file is complete, but not that its articles are
+still available from your Usenet provider. Enable SABnzbd's
+**Config → Switches → Check before download** and **Abort jobs that cannot be
+completed** settings, so that downloads whose articles have been removed fail
+quickly, and the next search result is tried.
 
 To process jobs on a schedule, run the command from the virtual environment
 with the unattended and config options, for example with this crontab entry:
@@ -251,6 +308,20 @@ with the unattended and config options, for example with this crontab entry:
 ```
 
 ## Development
+Each way of downloading episodes is a download track, in its own package under
+`src/infield_fly`, with its tests in the matching directory under `tests`:
+
+* `torrent`: magnet links (`magnet.py`), downloaded with Deluge (`downloader.py`)
+* `usenet`: NZB files found on a Newznab indexer (`newznab.py`), checked for
+  completeness (`validation.py`), and downloaded with SABnzbd (`sabnzbd.py`,
+  `downloader.py`)
+
+Each track's `downloader.py` implements the `Downloader` interface in
+`downloader.py`, and `JobQueue` in `jobs.py` hands each track the jobs whose
+`downloader` value matches the track's `name`. To add a track, implement the
+interface in a new package and add its class to `DOWNLOADER_CLASSES` in
+`jobs.py`.
+
 Run the tests with coverage, and lint the source and tests, using:
 
 ```

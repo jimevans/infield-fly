@@ -9,10 +9,12 @@ from unittest import mock
 
 import pytest
 
-from conftest import make_episode_db
+from conftest import TRACKED_SERIES, make_episode_db
+from infield_fly.configuration import EpisodeSearch
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobQueue, JobStatus
-from infield_fly.search import TorrentResult
+from infield_fly.torrent.downloader import TorrentDownloader
+from infield_fly.usenet.downloader import NzbDownloader
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 PLEX_NAME = "The Show - s01e02 - Pilot - Part 2"
@@ -21,14 +23,8 @@ PLEX_NAME = "The Show - s01e02 - Pilot - Part 2"
 @pytest.fixture
 def config(make_config):
     return make_config(
-        conversion={"substitutions": {":": " -"}, "deluge_host": "deluge", "deluge_port": 1,
-                    "deluge_user_name": "user", "deluge_password": "pass",
-                    "ffmpeg_location": "/ffmpeg"},
-        metadata={"tracked_series": {
-            "show": {"id": 1, "description": "The Show", "enable_search": True,
-                     "search_configs": [{"search_terms": ["1080p"]}, {"download_only": True}]},
-            "missing": {"id": 2, "description": "Missing", "enable_search": True}
-        }})
+        conversion={"substitutions": {":": " -"}, "ffmpeg_location": "/ffmpeg"},
+        metadata={"tracked_series": TRACKED_SERIES})
 
 
 @pytest.fixture
@@ -57,12 +53,6 @@ def add_job(queue, status, **values):
 
 def job_statuses(queue):
     return sorted((x.query, x.status) for x in queue.load_jobs())
-
-
-@pytest.fixture
-def deluge_client():
-    with mock.patch("infield_fly.jobs.DelugeRPCClient") as client_class:
-        yield client_class.return_value.__enter__.return_value
 
 
 class TestJobQueueBasics:
@@ -99,26 +89,40 @@ class TestJobQueueBasics:
         assert queue.is_existing_job("show", "q")
         assert not queue.is_existing_job("show", "other")
         assert not queue.is_existing_job("other", "q")
+        assert not queue.is_existing_job("show", "q", True)
 
-    def test_set_job_search_result(self, queue):
-        job = add_job(queue, JobStatus.SEARCHING)
+    def test_create_search_job(self, queue):
+        search = EpisodeSearch(["show 2160p s01e02", "show s01e02"], False,
+                               {"show 2160p s01e02": ["flux", "ntb"]})
 
-        queue.set_job_search_result(job, TorrentResult("Title", "magnet:?x", "HASH"))
+        job = queue.create_search_job("show", search)
 
-        loaded = queue.get_job_by_id(job.job_id)
-        assert loaded.status == JobStatus.ADDING
-        assert (loaded.title, loaded.magnet_link, loaded.torrent_hash) == (
-            "Title", "magnet:?x", "HASH")
+        job = queue.get_job_by_id(job.job_id)
+        assert (job.search_queries, job.release_groups, job.is_download_only) == (
+            ["show 2160p s01e02", "show s01e02"], {"show 2160p s01e02": ["flux", "ntb"]},
+            False)
+        assert queue.create_search_job("show", search) is None
 
-    def test_set_job_download_status(self, queue):
-        job = add_job(queue, JobStatus.ADDING)
+    def test_share_rejections(self, queue):
+        first = add_job(queue, JobStatus.WAITING, keyword="show", query="show s01e02",
+                        rejected=["a", "b"])
+        second = add_job(queue, JobStatus.DOWNLOADING, keyword="show",
+                         query="show 2160p S1E2", rejected=["c", "a"])
+        other_episode = add_job(queue, JobStatus.WAITING, keyword="show",
+                                query="show s01e03", rejected=["d"])
+        other_series = add_job(queue, JobStatus.WAITING, keyword="other",
+                               query="other s01e02")
+        no_episode = add_job(queue, JobStatus.WAITING, keyword="show", query="show special",
+                             rejected=["e"])
 
-        queue.set_job_download_status(job, JobStatus.DOWNLOADING, "name", "/downloads")
-        queue.set_job_download_status(job, JobStatus.PENDING, "renamed")
+        queue.share_rejections(queue.load_jobs())
 
-        loaded = queue.get_job_by_id(job.job_id)
-        assert (loaded.status, loaded.name, loaded.download_directory) == (
-            JobStatus.PENDING, "renamed", "/downloads")
+        rejected = {x.job_id: x.rejected for x in queue.load_jobs()}
+        assert sorted(rejected[first.job_id]) == ["a", "b", "c"]
+        assert sorted(rejected[second.job_id]) == ["a", "b", "c"]
+        assert rejected[other_episode.job_id] == ["d"]
+        assert rejected[other_series.job_id] == []
+        assert rejected[no_episode.job_id] == ["e"]
 
     def test_mark_job_complete_today_keeps_job(self, queue):
         job = add_job(queue, JobStatus.CONVERTING)
@@ -167,97 +171,121 @@ class TestRefreshJobs:
 
         assert len(queue.load_jobs()) == 2
 
+    def test_creates_one_converted_job_with_fallbacks(self, make_config):
+        config = make_config(
+            conversion={"substitutions": {":": " -"}},
+            metadata={"tracked_series": {"show": {
+                "id": 1, "description": "The Show", "enable_search": True,
+                "search_configs": [{"search_terms": ["2160p"]}, {"search_terms": ["1080p"]},
+                                   {"search_terms": ["1080p"], "download_only": True}]}}})
+        queue = JobQueue(config)
+        database = make_episode_db(config, [
+            EpisodeInfo(12, "The Show", season_number=1, episode_number=2,
+                        title="Pilot: Part 2", airdate=self.AIRDATE)])
+
+        with mock.patch("infield_fly.jobs.EpisodeDatabase.load_from_cache",
+                        return_value=database):
+            queue.refresh_jobs(self.AIRDATE)
+
+        jobs = sorted(((x.search_queries, x.is_download_only, x.converted_file_name)
+                       for x in queue.load_jobs()), key=lambda x: x[1])
+        assert jobs == [
+            (["show 2160p s01e02", "show 1080p s01e02"], False, PLEX_NAME),
+            (["show 1080p s01e02"], True, PLEX_NAME)]
+
     def test_no_episodes_on_airdate(self, queue, episode_db):
         queue.refresh_jobs(datetime(2021, 1, 1))
 
         assert queue.load_jobs() == []
 
 
-class TestAddTorrents:
+class TestSearchDownloadsSharesRejections:
 
-    def test_no_jobs(self, queue, deluge_client, caplog):
+    def test_shares_rejections_before_searching(self, queue):
+        waiting = add_job(queue, JobStatus.WAITING, keyword="show", query="show s01e02")
+        add_job(queue, JobStatus.DOWNLOADING, keyword="show", query="show 1080p s01e02",
+                rejected=["bad"])
+
+        with mock.patch("infield_fly.jobs.DOWNLOADER_CLASSES", ()):
+            queue.search_downloads()
+
+        assert queue.get_job_by_id(waiting.job_id).rejected == ["bad"]
+
+
+class TestDownloadTracks:
+
+    @pytest.fixture
+    def tracks(self):
+        """Replaces the download tracks with two mock tracks, named 'first' and 'second'"""
+
+        first, second = mock.Mock(), mock.Mock()
+        first.name, second.name = "first", "second"
+        with mock.patch("infield_fly.jobs.DOWNLOADER_CLASSES",
+                        (mock.Mock(return_value=first), mock.Mock(return_value=second))):
+            yield first, second
+
+    def test_default_tracks(self, queue):
+        assert [type(x) for x in queue.downloaders] == [NzbDownloader, TorrentDownloader]
+
+    def test_get_downloader(self, queue, tracks):
+        first, second = tracks
+        first.recognizes_download.side_effect = lambda location: location == "a"
+        second.recognizes_download.side_effect = lambda location: location == "b"
+
+        assert queue.get_downloader("a") is first
+        assert queue.get_downloader("b") is second
+        assert queue.get_downloader("c") is None
+
+    def test_get_downloader_for_real_tracks(self, queue):
+        assert isinstance(queue.get_downloader("magnet:?xt=x"), TorrentDownloader)
+        assert isinstance(queue.get_downloader("https://indexer/x.nzb"), NzbDownloader)
+        assert queue.get_downloader("nonsense") is None
+
+    def test_search_with_no_jobs(self, queue, tracks, caplog):
         caplog.set_level("INFO")
+        add_job(queue, JobStatus.ADDING)
 
-        queue.add_torrents()
+        queue.search_downloads()
 
-        assert "No search results to add" in caplog.text
-        deluge_client.core.prefetch_magnet_metadata.assert_not_called()
+        assert "No waiting jobs to search for" in caplog.text
+        tracks[0].search_downloads.assert_not_called()
 
-    def test_adds_torrents(self, queue, deluge_client):
-        named = add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
-        unnamed = add_job(queue, JobStatus.ADDING, magnet_link="magnet:2")
-        metadata = {named.magnet_link: (b"id1", {b"name": b"Metadata name"}),
-                    unnamed.magnet_link: (b"id2", {})}
-        deluge_client.core.prefetch_magnet_metadata.side_effect = lambda link: metadata[link]
-        deluge_client.core.get_torrent_status.return_value = {
-            b"name": b"Torrent name", b"download_location": b"/downloads"}
+    def test_search_offers_remaining_jobs_to_each_track_in_turn(self, queue, tracks):
+        first, second = tracks
+        found = add_job(queue, JobStatus.WAITING, query="found")
+        add_job(queue, JobStatus.SEARCHING, query="interrupted")
+        add_job(queue, JobStatus.ADDING, query="adding")
 
-        queue.add_torrents()
+        def find(jobs):
+            for job in jobs:
+                if job.job_id == found.job_id:
+                    job.status = JobStatus.ADDING
 
-        named = queue.get_job_by_id(named.job_id)
-        assert (named.status, named.torrent_hash, named.name, named.download_directory) == (
-            JobStatus.DOWNLOADING, "id1", "Metadata name", "/downloads")
-        assert queue.get_job_by_id(unnamed.job_id).name == "Torrent name"
-        deluge_client.core.add_torrent_magnet.assert_any_call("magnet:1", {})
-        deluge_client.core.get_torrent_status.assert_any_call(
-            "id1", ["name", "download_location", "is_finished"])
+        first.search_downloads.side_effect = find
 
-    def test_skips_job_when_prefetch_returns_no_id(self, queue, deluge_client, caplog):
-        failed = add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
-        added = add_job(queue, JobStatus.ADDING, magnet_link="magnet:2")
-        metadata = {failed.magnet_link: (None, None),
-                    added.magnet_link: (b"id2", {b"name": b"Metadata name"})}
-        deluge_client.core.prefetch_magnet_metadata.side_effect = lambda link: metadata[link]
-        deluge_client.core.get_torrent_status.return_value = {
-            b"name": b"Torrent name", b"download_location": b"/downloads"}
+        queue.search_downloads()
 
-        queue.add_torrents()
+        assert sorted(x.query for x in first.search_downloads.call_args[0][0]) == [
+            "found", "interrupted"]
+        assert [x.query for x in second.search_downloads.call_args[0][0]] == ["interrupted"]
 
-        assert f"failed for job {failed.job_id}, no ID returned" in caplog.text
-        deluge_client.core.add_torrent_magnet.assert_called_once_with("magnet:2", {})
-        assert queue.get_job_by_id(failed.job_id).status == JobStatus.ADDING
-        assert queue.get_job_by_id(added.job_id).status == JobStatus.DOWNLOADING
+    @pytest.mark.parametrize("phase, status, track_method", [
+        ("add_downloads", JobStatus.ADDING, "add_downloads"),
+        ("query_downloads_status", JobStatus.DOWNLOADING, "query_downloads"),
+    ])
+    def test_phases_give_each_track_its_jobs(self, queue, tracks, caplog, phase, status,
+                                            track_method):
+        first, second = tracks
+        add_job(queue, status, query="first job", downloader="first")
+        add_job(queue, status, query="unknown job", downloader="unknown")
+        add_job(queue, JobStatus.WAITING, query="other status", downloader="first")
 
-    def test_uses_torrent_name_when_prefetch_returns_no_metadata(self, queue, deluge_client,
-                                                                 caplog):
-        job = add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
-        deluge_client.core.prefetch_magnet_metadata.return_value = (b"id1", None)
-        deluge_client.core.get_torrent_status.return_value = {
-            b"name": b"Torrent name", b"download_location": b"/downloads"}
+        getattr(queue, phase)()
 
-        queue.add_torrents()
-
-        job = queue.get_job_by_id(job.job_id)
-        assert (job.status, job.torrent_hash, job.name) == (
-            JobStatus.DOWNLOADING, "id1", "Torrent name")
-        assert "returned no metadata" in caplog.text
-
-
-class TestQueryTorrentsStatus:
-
-    def test_no_jobs(self, queue, deluge_client, caplog):
-        caplog.set_level("INFO")
-
-        queue.query_torrents_status()
-
-        assert "No downloading jobs" in caplog.text
-        deluge_client.core.get_torrent_status.assert_not_called()
-
-    def test_marks_finished_downloads_pending(self, queue, deluge_client):
-        finished = add_job(queue, JobStatus.DOWNLOADING, torrent_hash="done",
-                           download_directory="/downloads")
-        unfinished = add_job(queue, JobStatus.DOWNLOADING, torrent_hash="busy")
-        statuses = {"done": {b"name": b"Done name", b"is_finished": True},
-                    "busy": {b"name": b"Busy name"}}
-        deluge_client.core.get_torrent_status.side_effect = lambda torrent_hash, _: \
-            statuses[torrent_hash]
-
-        queue.query_torrents_status()
-
-        finished = queue.get_job_by_id(finished.job_id)
-        assert (finished.status, finished.name, finished.download_directory) == (
-            JobStatus.PENDING, "Done name", "/downloads")
-        assert queue.get_job_by_id(unfinished.job_id).status == JobStatus.DOWNLOADING
+        assert [x.query for x in getattr(first, track_method).call_args[0][0]] == [
+            "first job"]
+        getattr(second, track_method).assert_called_once_with([])
+        assert "has unknown downloader 'unknown'" in caplog.text
 
 
 class TestPerformConversions:
@@ -435,14 +463,21 @@ class TestJob:
         assert job.added == TODAY
         assert not job.is_download_only
         for name in ("keyword", "query", "magnet_link", "title", "name", "torrent_hash",
-                     "download_directory", "converted_file_name"):
+                     "download_directory", "converted_file_name", "nzb_guid", "nzb_file",
+                     "nzo_id", "episode_key"):
             assert getattr(job, name) is None
+        assert job.downloader == "deluge"
+        assert job.rejected == []
+        assert job.fallback_queries == []
+        assert job.search_queries == [None]
 
     def test_properties_round_trip(self, tmp_path):
         job = Job(str(tmp_path), {"id": "abc", "status": "pending", "added": "2020-01-01",
                                   "download_only": True})
         values = {"keyword": "k", "query": "q", "magnet_link": "m", "title": "t", "name": "n",
                   "torrent_hash": "h", "download_directory": "d", "converted_file_name": "c",
+                  "downloader": "sabnzbd", "nzb_guid": "g", "nzb_file": "f", "nzo_id": "z",
+                  "rejected": ["r"], "fallback_queries": ["f"],
                   "added": "2021-01-01", "status": JobStatus.ADDING, "is_download_only": False}
         assert job.job_id == "abc"
         assert job.status == JobStatus.PENDING
@@ -467,6 +502,34 @@ class TestJob:
         job.delete()
         job.delete()
         assert Job.load(directory, job.job_id) is None
+
+    @pytest.mark.parametrize("query, expected", [
+        ("show 1080p s01e02", ("show", "s01e02")),
+        ("show S1E2", ("show", "s01e02")),
+        ("show special", None),
+    ])
+    def test_episode_key(self, tmp_path, query, expected):
+        assert Job(str(tmp_path), {"keyword": "show", "query": query}).episode_key == expected
+
+    def test_set_download_status(self, tmp_path):
+        job = Job(str(tmp_path), {})
+
+        job.set_download_status(JobStatus.DOWNLOADING, "name", "/downloads")
+        job.set_download_status(JobStatus.PENDING, "renamed")
+
+        assert (job.status, job.name, job.download_directory) == (
+            JobStatus.PENDING, "renamed", "/downloads")
+
+    def test_delete_removes_nzb_file(self, tmp_path):
+        nzb_file = tmp_path / "job.nzb"
+        nzb_file.write_bytes(b"<nzb/>")
+        job = Job(str(tmp_path / "jobs"), {"nzb_file": str(nzb_file)})
+        job.save(logging.getLogger())
+
+        job.delete()
+
+        assert not nzb_file.exists()
+        assert not os.path.exists(job.file_path)
 
     def test_save_to_non_directory_path_warns_without_writing(self, tmp_path, caplog):
         not_a_directory = tmp_path / "file"

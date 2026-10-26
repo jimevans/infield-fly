@@ -1,6 +1,6 @@
-"""Tests for the search module"""
+"""Tests for the torrent.magnet module"""
 
-from infield_fly.search import TorrentResult
+from infield_fly.torrent.magnet import TorrentResult
 
 MAGNET = "magnet:?xt=urn:btih:ABCDEF&dn=Show.S01E01.1080p"
 

@@ -3,8 +3,11 @@
 import logging
 import os
 
-from infield_fly.configuration import (Configuration, ConversionSettings, MetadataSettings,
-                           NotificationSettings, SearchConfiguration, TrackedSeries)
+import pytest
+
+from infield_fly.configuration import (Configuration, ConversionSettings, DownloadSettings,
+                                       EpisodeSearch, MetadataSettings, NotificationSettings,
+                                       SearchConfiguration, SearchSettings, TrackedSeries)
 
 
 class TestConfiguration:
@@ -15,6 +18,8 @@ class TestConfiguration:
         assert isinstance(config.conversion, ConversionSettings)
         assert isinstance(config.metadata, MetadataSettings)
         assert isinstance(config.notification, NotificationSettings)
+        assert isinstance(config.search, SearchSettings)
+        assert isinstance(config.download, DownloadSettings)
         assert config.conversion.infield_fly_directory == "/install"
         assert config.metadata.tracked_series == []
         assert config.notification.sid == ""
@@ -23,12 +28,16 @@ class TestConfiguration:
         config = Configuration("/install", {
             "conversion": {"ffmpeg_location": "/ffmpeg"},
             "metadata": {"api_key": "key"},
-            "notification": {"sid": "abc"}
+            "notification": {"sid": "abc"},
+            "search": {"api_key": "search key"},
+            "download": {"sabnzbd_api_key": "download key"}
         })
 
         assert config.conversion.ffmpeg_location == "/ffmpeg"
         assert config.metadata.api_key == "key"
         assert config.notification.sid == "abc"
+        assert config.search.api_key == "search key"
+        assert config.download.sabnzbd_api_key == "download key"
 
     def test_with_empty_config_dict(self):
         config = Configuration("/install", {})
@@ -56,6 +65,7 @@ class TestConversionSettings:
         assert settings.log_directory == os.path.join("/install", "logs")
         assert settings.log_level == logging.INFO
         assert settings.job_directory == os.path.join("/install", ".jobs")
+        assert settings.nzb_directory == os.path.join("/install", ".nzb")
 
     def test_default_directory_is_user_config_directory(self):
         settings = ConversionSettings()
@@ -218,3 +228,98 @@ class TestMetadataSettings:
             SearchConfiguration(["the show", "1080p", "web"], False),
             SearchConfiguration(["the show"], True)
         ]
+
+
+class TestSearchSettings:
+
+    def test_defaults(self):
+        settings = SearchSettings()
+
+        assert settings.newznab_url == "https://api.nzbplanet.net/api"
+        assert settings.api_key == ""
+        assert settings.max_candidates == 5
+        assert not settings.is_enabled
+
+    def test_explicit_values(self):
+        settings = SearchSettings({"newznab_url": "https://indexer/api", "api_key": "key",
+                                   "max_candidates": 2})
+
+        assert (settings.newznab_url, settings.api_key, settings.max_candidates) == (
+            "https://indexer/api", "key", 2)
+        assert settings.is_enabled
+
+
+class TestDownloadSettings:
+
+    def test_defaults(self):
+        settings = DownloadSettings()
+
+        assert settings.sabnzbd_url == "http://localhost:8080"
+        assert settings.sabnzbd_api_key == ""
+        assert settings.sabnzbd_category is None
+
+    def test_explicit_values(self):
+        settings = DownloadSettings({"sabnzbd_url": "http://sab:9090", "sabnzbd_api_key": "key",
+                                     "sabnzbd_category": "tv"})
+
+        assert (settings.sabnzbd_url, settings.sabnzbd_api_key, settings.sabnzbd_category) == (
+            "http://sab:9090", "key", "tv")
+
+
+class TestGetEpisodeSearches:
+
+    @staticmethod
+    def searches(*search_configs):
+        tracked_series = TrackedSeries(1, "The Show", "show", ["show"], [
+            SearchConfiguration(["show", *config[0]], config[1], *config[2:])
+            for config in search_configs])
+        return tracked_series.get_episode_searches(1, 2)
+
+    def test_single_search(self):
+        assert self.searches((["1080p"], False)) == [
+            EpisodeSearch(["show 1080p s01e02"], False)]
+
+    def test_converted_searches_are_fallbacks_in_order(self):
+        assert self.searches((["2160p"], False), (["4k"], True), (["1080p"], False)) == [
+            EpisodeSearch(["show 2160p s01e02", "show 1080p s01e02"], False),
+            EpisodeSearch(["show 4k s01e02"], True)]
+
+    def test_download_only_searches_are_separate(self):
+        assert self.searches(([], True), (["2160p"], True)) == [
+            EpisodeSearch(["show s01e02"], True), EpisodeSearch(["show 2160p s01e02"], True)]
+
+    @pytest.mark.parametrize("download_only", [False, True])
+    def test_ignores_duplicate_queries_of_same_kind(self, download_only):
+        assert self.searches((["1080p"], download_only), (["1080p"], download_only)) == [
+            EpisodeSearch(["show 1080p s01e02"], download_only)]
+
+    def test_same_query_converted_and_download_only(self):
+        assert self.searches((["1080p"], False), (["1080p"], True)) == [
+            EpisodeSearch(["show 1080p s01e02"], False),
+            EpisodeSearch(["show 1080p s01e02"], True)]
+
+    def test_no_searches(self):
+        assert self.searches() == []
+
+    def test_release_groups_are_kept_for_each_query(self):
+        assert self.searches((["2160p"], False, ["flux", "ntb"]), (["1080p"], False),
+                             (["4k"], True, ["grp"])) == [
+            EpisodeSearch(["show 2160p s01e02", "show 1080p s01e02"], False,
+                          {"show 2160p s01e02": ["flux", "ntb"]}),
+            EpisodeSearch(["show 4k s01e02"], True, {"show 4k s01e02": ["grp"]})]
+
+    @pytest.mark.parametrize("download_only", [False, True])
+    def test_duplicate_query_keeps_first_release_groups(self, download_only):
+        assert self.searches((["1080p"], download_only, ["flux"]),
+                             (["1080p"], download_only, ["ntb"])) == [
+            EpisodeSearch(["show 1080p s01e02"], download_only,
+                          {"show 1080p s01e02": ["flux"]})]
+
+    def test_reads_release_groups_from_settings(self):
+        settings = MetadataSettings({"tracked_series": {"show": {
+            "id": 1, "description": "The Show", "enable_search": True,
+            "search_configs": [{"search_terms": ["1080p"], "release_groups": ["flux", "ntb"]},
+                               {"search_terms": ["720p"]}]}}})
+
+        assert [x.release_groups for x in settings.tracked_series[0].stored_searches] == [
+            ["flux", "ntb"], []]

@@ -1,4 +1,4 @@
-"""Module for describing torrents found for jobs"""
+"""Module for describing torrents given to jobs by magnet link"""
 
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse

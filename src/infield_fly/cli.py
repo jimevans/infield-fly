@@ -18,7 +18,6 @@ import argcomplete
 from infield_fly.configuration import (CONFIG_FILE_ENVIRONMENT_VARIABLE,
                                        DEFAULT_CONFIG_DIRECTORY, Configuration)
 from infield_fly.job_status import JobStatus
-from infield_fly.search import TorrentResult
 
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
@@ -33,15 +32,10 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
         series_episodes = series.get_episodes_by_airdate(from_date, to_date)
         for series_episode in series_episodes:
             found_episodes.append(series_episode)
-            for stored_search in tracked_series.stored_searches:
-                search_terms = stored_search.search_terms[:]
-                search_terms.append((
-                    f"s{series_episode.season_number:02d}e{series_episode.episode_number:02d}"))
-                searches_to_perform.append({
-                    "keyword": tracked_series.main_keyword,
-                    "query": " ".join(search_terms),
-                    "download_only": stored_search.is_download_only
-                })
+            for search in tracked_series.get_episode_searches(
+                    series_episode.season_number, series_episode.episode_number):
+                searches_to_perform.append(
+                    {"keyword": tracked_series.main_keyword, "search": search})
 
     print("Episodes found:")
     for episode in found_episodes:
@@ -70,13 +64,22 @@ def find_downloads(args, config):
     if args.create_jobs and not args.dry_run:
         job_queue = JobQueue(config)
         for search in searches_to_perform:
-            job_queue.create_job(search["keyword"], search["query"], search["download_only"])
+            job_queue.create_search_job(search["keyword"], search["search"])
     else:
         if args.create_jobs:
             print("Dry run requested. Not creating jobs.")
         print("Search strings:")
         for search in searches_to_perform:
-            print(search["query"])
+            for index, query in enumerate(search["search"].queries):
+                print(("  then: " if index > 0 else "") + query
+                      + format_release_groups(search["search"].release_groups.get(query))
+                      + (" (download only)" if index == 0 and search["search"].is_download_only
+                         else ""))
+
+def format_release_groups(release_groups):
+    """Formats the release groups accepted for a search string for display"""
+
+    return f" [release groups: {', '.join(release_groups)}]" if release_groups else ""
 
 def list_series(args, config):
     """Lists the episodes of a series in the cached dataabase."""
@@ -178,18 +181,37 @@ def show_job(args, config):
         print(f"Status: {job.status.value}")
         print(f"Date added: {job.added}")
         print(f"Series keyword: {job.keyword}")
-        print(f"Search string: {job.query}")
+        print(f"Search string: {job.query}"
+              f"{format_release_groups(job.release_groups.get(job.query))}")
+        for fallback_query in job.fallback_queries:
+            print(f"Fallback search string: {fallback_query}"
+                  f"{format_release_groups(job.release_groups.get(fallback_query))}")
         if job.magnet_link is not None:
             print(f"Torrent title: {job.title}")
             print(f"Magnet link: {job.magnet_link}")
         if job.torrent_hash is not None:
             print(f"Torrent hash: {job.torrent_hash}")
+        print_nzb_details(job)
         if job.download_directory is not None:
             print(f"Torrent directory: {os.path.join(job.download_directory, job.name)}")
         if job.is_download_only is not None:
             print(f"Is download-only job: {job.is_download_only}")
         if job.converted_file_name is not None:
             print(f"File name of converted file: {job.converted_file_name}.mp4")
+
+def print_nzb_details(job):
+    """Prints the details of the NZB file found for a job, and of those rejected for it"""
+
+    if job.nzb_guid is not None or job.nzo_id is not None or job.nzb_file is not None:
+        print(f"NZB title: {job.title}")
+    if job.nzb_guid is not None:
+        print(f"NZB indexer ID: {job.nzb_guid}")
+    if job.nzb_file is not None:
+        print(f"NZB file: {job.nzb_file}")
+    if job.nzo_id is not None:
+        print(f"SABnzbd ID: {job.nzo_id}")
+    if len(job.rejected) > 0:
+        print(f"Rejected NZB indexer IDs: {', '.join(job.rejected)}")
 
 def create_job(args, config):
     """Creates a new queued job"""
@@ -227,20 +249,34 @@ def update_job(args, config):
             print(f"Unknown status value '{args.status}'")
         else:
             if status == JobStatus.ADDING and args.update_data is not None:
-                search_result = TorrentResult.from_magnet_link(args.update_data)
-                job_queue.set_job_search_result(job, search_result)
+                set_job_download(job_queue, job, args.update_data)
             elif status == JobStatus.PENDING and args.update_data is not None:
                 if not os.path.isfile(args.update_data):
                     print("Update to pending must include a path a to valid file")
                 else:
-                    job_queue.set_job_download_status(
-                        job,
-                        JobStatus.PENDING,
-                        os.path.basename(args.update_data),
-                        os.path.dirname(args.update_data))
+                    job.set_download_status(JobStatus.PENDING,
+                                            os.path.basename(args.update_data),
+                                            os.path.dirname(args.update_data))
+                    job.save(logging.getLogger())
             else:
                 job.status = status
                 job.save(logging.getLogger())
+
+def set_job_download(job_queue, job, location):
+    """Sets a download specified by the user as the download for a job, using its track"""
+
+    downloader = job_queue.get_downloader(location)
+    if downloader is None:
+        print("Update to adding must include a magnet link, or a path or URL to an NZB file")
+        return
+
+    try:
+        warnings = downloader.set_download(job, location)
+    except ValueError as ex:
+        print(ex)
+        return
+    for warning in warnings:
+        print(f"Warning: {warning}")
 
 def parse_job_status(status_value):
     """Parses a job status argument, returning None if the value is not a valid status"""
@@ -295,11 +331,14 @@ def process_jobs(args, config):
         airdate = datetime.now()
         job_queue.refresh_jobs(datetime(month=airdate.month, day=airdate.day, year=airdate.year))
 
+    if args.search_downloads:
+        job_queue.search_downloads()
+
     if args.add_downloads:
-        job_queue.add_torrents()
+        job_queue.add_downloads()
 
     if args.query_downloads:
-        job_queue.query_torrents_status()
+        job_queue.query_downloads_status()
 
     if args.convert:
         job_queue.perform_conversions(args.unattended)
@@ -469,6 +508,13 @@ def add_jobs_subparser(subparsers):
     search_parser.add_argument(
         "--no-search", dest="search", action="store_false",
         help="Skip creating jobs for episodes airing today")
+    search_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
+    search_downloads_parser.add_argument(
+        "--search-downloads", dest="search_downloads", action="store_true",
+        help="Search the Newznab indexer for NZB files for waiting jobs")
+    search_downloads_parser.add_argument(
+        "--no-search-downloads", dest="search_downloads", action="store_false",
+        help="Skip searching for NZB files for waiting jobs")
     add_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     add_downloads_parser.add_argument(
         "--add-downloads", dest="add_downloads", action = "store_true",
@@ -489,7 +535,8 @@ def add_jobs_subparser(subparsers):
     convert_parser.add_argument("--no-convert", dest="convert", action="store_false",
                                 help="Skip the convert phase of job processing")
     process_jobs_parser.set_defaults(
-        search=True, add_downloads=True, query_downloads=True, convert=True, func=process_jobs)
+        search=True, search_downloads=True, add_downloads=True, query_downloads=True,
+        convert=True, func=process_jobs)
 
 def setup_logging(config, is_unattended):
     """Sets up logging for the Infield Fly library"""

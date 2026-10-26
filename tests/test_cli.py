@@ -13,24 +13,22 @@ from unittest import mock
 
 import pytest
 
-from conftest import make_episode_db
+from conftest import TRACKED_SERIES, make_episode_db
 from infield_fly import cli
-from infield_fly.configuration import DEFAULT_CONFIG_DIRECTORY
+from infield_fly.configuration import DEFAULT_CONFIG_DIRECTORY, EpisodeSearch
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobQueue, JobStatus
 
 MAGNET = "magnet:?xt=urn:btih:ABCDEF&dn=Show.S01E02"
+VALID_NZB = (b'<nzb><file subject=\'"Show.S01E02.mkv" yEnc (1/1)\'><segments>'
+             b'<segment bytes="10" number="1">a@b</segment></segments></file></nzb>')
 
 
 @pytest.fixture
 def config(make_config):
     return make_config(
         conversion={"substitutions": {":": " -"}, "ffmpeg_location": "/ffmpeg"},
-        metadata={"tracked_series": {
-            "show": {"id": 1, "description": "The Show", "enable_search": True,
-                     "search_configs": [{"search_terms": ["1080p"]}, {"download_only": True}]},
-            "missing": {"id": 2, "description": "Missing", "enable_search": True}
-        }},
+        metadata={"tracked_series": TRACKED_SERIES},
         notification={"sid": "sid", "auth_token": "token", "sending_number": "+1555",
                       "receiving_number": "+1666"})
 
@@ -67,8 +65,8 @@ class TestGetSearchStrings:
             datetime(2020, 1, 1), datetime(2020, 1, 7), episode_db, config.metadata)
 
         assert searches == [
-            {"keyword": "show", "query": "show 1080p s01e01", "download_only": False},
-            {"keyword": "show", "query": "show s01e01", "download_only": True},
+            {"keyword": "show", "search": EpisodeSearch(["show 1080p s01e01"], False)},
+            {"keyword": "show", "search": EpisodeSearch(["show s01e01"], True)},
         ]
         assert capsys.readouterr().out == (
             "Episodes found:\nThe Show - s01e01 - Pilot (airdate 2020-01-01)\n")
@@ -91,9 +89,30 @@ class TestFindDownloads:
         assert "Finding episodes aired between 2020-01-01 and 2020-01-31" in output
         assert "Dry run requested" not in output
         assert output.endswith("Search strings:\n"
-                               "show 1080p s01e01\nshow s01e01\n"
-                               "show 1080p s01e02\nshow s01e02\n")
+                               "show 1080p s01e01\nshow s01e01 (download only)\n"
+                               "show 1080p s01e02\nshow s01e02 (download only)\n")
         assert load_jobs(config) == []
+
+    def test_prints_fallback_search_strings(self, make_config, capsys):
+        config = make_config(metadata={"tracked_series": {"show": {
+            "id": 1, "description": "The Show", "enable_search": True,
+            "search_configs": [{"search_terms": ["2160p"], "release_groups": ["flux", "ntb"]},
+                               {"search_terms": ["1080p"]},
+                               {"search_terms": ["4k"], "download_only": True,
+                                "release_groups": ["grp"]}]}}})
+        database = make_episode_db(config, [
+            EpisodeInfo(11, "The Show", season_number=1, episode_number=1, title="Pilot",
+                        airdate=datetime(2020, 1, 1))])
+
+        with mock.patch("infield_fly.database.EpisodeDatabase.load_from_cache",
+                        return_value=database):
+            cli.find_downloads(search_args(), config)
+
+        assert capsys.readouterr().out.endswith(
+            "Search strings:\n"
+            "show 2160p s01e01 [release groups: flux, ntb]\n"
+            "  then: show 1080p s01e01\n"
+            "show 4k s01e01 [release groups: grp] (download only)\n")
 
     def test_dry_run_does_not_create_jobs(self, config, episode_db, capsys):
         cli.find_downloads(search_args(create_jobs=True, dry_run=True), config)
@@ -117,6 +136,12 @@ class TestFindDownloads:
         assert jobs == [("show 1080p s01e01", False), ("show 1080p s01e02", False),
                         ("show s01e01", True), ("show s01e02", True)]
         assert "Search strings" not in capsys.readouterr().out
+
+    def test_does_not_duplicate_existing_jobs(self, config, episode_db):
+        cli.find_downloads(search_args(create_jobs=True), config)
+        cli.find_downloads(search_args(create_jobs=True), config)
+
+        assert len(load_jobs(config)) == 4
 
 
 class TestListSeries:
@@ -265,6 +290,19 @@ class TestShowJob:
             "Search string: show s01e01\n"
             "Is download-only job: False\n")
 
+    def test_job_with_fallback_search_strings(self, config, capsys):
+        job = add_job(config, query="show 2160p s01e01",
+                      fallback_queries=["show 1080p s01e01", "show 720p s01e01"],
+                      release_groups={"show 2160p s01e01": ["flux", "ntb"],
+                                      "show 720p s01e01": ["grp"]})
+
+        cli.show_job(Namespace(id=job.job_id), config)
+
+        assert ("Search string: show 2160p s01e01 [release groups: flux, ntb]\n"
+                "Fallback search string: show 1080p s01e01\n"
+                "Fallback search string: show 720p s01e01 [release groups: grp]\n"
+                in capsys.readouterr().out)
+
     def test_job_with_null_download_only(self, config, capsys):
         job = add_job(config, download_only=None)
 
@@ -287,6 +325,20 @@ class TestShowJob:
         assert f"Torrent directory: {os.path.join('/downloads', 'Show.S01E01')}\n" in output
         assert "Is download-only job: True\n" in output
         assert "File name of converted file: Converted.mp4\n" in output
+        assert "NZB" not in output
+
+    def test_nzb_job(self, config, capsys):
+        job = add_job(config, JobStatus.DOWNLOADING, title="Show.S01E02", nzb_guid="guid",
+                      nzb_file="/nzb/job.nzb", nzo_id="nzo1", rejected=["a", "b"])
+
+        cli.show_job(Namespace(id=job.job_id), config)
+
+        output = capsys.readouterr().out
+        assert ("NZB title: Show.S01E02\n"
+                "NZB indexer ID: guid\n"
+                "NZB file: /nzb/job.nzb\n"
+                "SABnzbd ID: nzo1\n"
+                "Rejected NZB indexer IDs: a, b\n") in output
 
 
 class TestJobCommands:
@@ -338,6 +390,60 @@ class TestUpdateJob:
         job = load_jobs(config)[0]
         assert (job.status, job.magnet_link, job.title, job.torrent_hash) == (
             JobStatus.ADDING, MAGNET, "Show.S01E02", "ABCDEF")
+
+    def test_adding_with_nzb_file(self, config, tmp_path, capsys):
+        job = add_job(config)
+        nzb_file = tmp_path / "Show.S01E02.nzb"
+        nzb_file.write_bytes(VALID_NZB)
+
+        cli.update_job(update_args(job.job_id, "adding", str(nzb_file)), config)
+
+        job = load_jobs(config)[0]
+        assert (job.status, job.downloader, job.title, job.nzb_guid) == (
+            JobStatus.ADDING, "sabnzbd", "Show.S01E02", None)
+        with open(job.nzb_file, "rb") as saved:
+            assert saved.read() == VALID_NZB
+        assert "Warning: NZB file lists no par2 files" in capsys.readouterr().out
+
+    def test_adding_with_nzb_url(self, config):
+        job = add_job(config)
+        url = "https://indexer/getnzb/Show.S01E02.nzb?apikey=key"
+
+        with mock.patch("infield_fly.usenet.newznab.NewznabSearcher.fetch_nzb",
+                        return_value=VALID_NZB) as fetch_nzb:
+            cli.update_job(update_args(job.job_id, "adding", url), config)
+
+        assert fetch_nzb.call_args[0][0].link == url
+        job = load_jobs(config)[0]
+        assert (job.status, job.title) == (JobStatus.ADDING, "Show.S01E02")
+
+    def test_adding_with_unavailable_nzb_url(self, config, capsys):
+        job = add_job(config)
+
+        with mock.patch("infield_fly.usenet.newznab.NewznabSearcher.fetch_nzb", return_value=None):
+            cli.update_job(update_args(job.job_id, "adding", "https://indexer/x.nzb"), config)
+
+        assert "Could not download NZB file" in capsys.readouterr().out
+        assert load_jobs(config)[0].status == JobStatus.WAITING
+
+    def test_adding_with_invalid_nzb_file(self, config, tmp_path, capsys):
+        job = add_job(config)
+        nzb_file = tmp_path / "bad.nzb"
+        nzb_file.write_bytes(b"<nzb/>")
+
+        cli.update_job(update_args(job.job_id, "adding", str(nzb_file)), config)
+
+        assert ("NZB file failed validation: NZB file lists no files"
+                in capsys.readouterr().out)
+        assert load_jobs(config)[0].status == JobStatus.WAITING
+
+    def test_adding_with_unrecognized_data(self, config, capsys):
+        job = add_job(config)
+
+        cli.update_job(update_args(job.job_id, "adding", "nonsense"), config)
+
+        assert "must include a magnet link, or a path or URL" in capsys.readouterr().out
+        assert load_jobs(config)[0].status == JobStatus.WAITING
 
     def test_pending_with_invalid_file(self, config, tmp_path, capsys):
         job = add_job(config)
@@ -437,21 +543,22 @@ class TestProcessJobs:
             yield queue_class.return_value
 
     def test_runs_all_phases(self, config, job_queue):
-        args = Namespace(search=True, add_downloads=True, query_downloads=True, convert=True,
-                         unattended=True)
+        args = Namespace(search=True, search_downloads=True, add_downloads=True,
+                         query_downloads=True, convert=True, unattended=True)
 
         cli.process_jobs(args, config)
 
         today = datetime.now()
         job_queue.refresh_jobs.assert_called_once_with(
             datetime(today.year, today.month, today.day))
-        job_queue.add_torrents.assert_called_once_with()
-        job_queue.query_torrents_status.assert_called_once_with()
+        job_queue.search_downloads.assert_called_once_with()
+        job_queue.add_downloads.assert_called_once_with()
+        job_queue.query_downloads_status.assert_called_once_with()
         job_queue.perform_conversions.assert_called_once_with(True)
 
     def test_skips_disabled_phases(self, config, job_queue):
-        args = Namespace(search=False, add_downloads=False, query_downloads=False,
-                         convert=False, unattended=False)
+        args = Namespace(search=False, search_downloads=False, add_downloads=False,
+                         query_downloads=False, convert=False, unattended=False)
 
         cli.process_jobs(args, config)
 
@@ -674,13 +781,16 @@ class TestMain:
         (["clear"], "clear_jobs", {"status": None}),
         (["clear", "completed"], "clear_jobs", {"status": "completed"}),
         (["process"], "process_jobs",
-         {"search": True, "add_downloads": True, "query_downloads": True, "convert": True}),
-        (["process", "--no-search", "--no-add-downloads", "--no-query-downloads",
-          "--no-convert"], "process_jobs",
-         {"search": False, "add_downloads": False, "query_downloads": False, "convert": False}),
-        (["process", "--search", "--add-downloads", "--query-downloads", "--convert"],
-         "process_jobs",
-         {"search": True, "add_downloads": True, "query_downloads": True, "convert": True}),
+         {"search": True, "search_downloads": True, "add_downloads": True,
+          "query_downloads": True, "convert": True}),
+        (["process", "--no-search", "--no-search-downloads", "--no-add-downloads",
+          "--no-query-downloads", "--no-convert"], "process_jobs",
+         {"search": False, "search_downloads": False, "add_downloads": False,
+          "query_downloads": False, "convert": False}),
+        (["process", "--search", "--search-downloads", "--add-downloads", "--query-downloads",
+          "--convert"], "process_jobs",
+         {"search": True, "search_downloads": True, "add_downloads": True,
+          "query_downloads": True, "convert": True}),
     ])
     def test_jobs_commands(self, argv, command, expected):
         args = self.run_main("jobs", *argv, command=command)

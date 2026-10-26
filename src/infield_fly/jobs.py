@@ -9,11 +9,14 @@ import uuid
 from datetime import datetime
 from time import perf_counter
 
-from deluge_client import DelugeRPCClient
-
 from infield_fly.conversion import ConversionSettings, Converter
 from infield_fly.database import EpisodeDatabase
 from infield_fly.job_status import JobStatus
+from infield_fly.torrent.downloader import TorrentDownloader
+from infield_fly.usenet.downloader import NzbDownloader
+
+# The download tracks, in the order in which they search for downloads for waiting jobs.
+DOWNLOADER_CLASSES = (NzbDownloader, TorrentDownloader)
 
 
 class JobQueue:
@@ -68,68 +71,86 @@ class JobQueue:
 
         self.create_new_search_jobs(airdate)
 
-    def add_torrents(self):
-        """Adds found torrents to the Deluse client"""
+    @property
+    def downloaders(self):
+        """Gets the download tracks with which to search for and download files for jobs"""
+
+        return [x(self.config) for x in DOWNLOADER_CLASSES]
+
+    def get_downloader(self, location):
+        """
+        Gets the download track recognizing a download specified by the user, or None if
+        no track recognizes it
+        """
+
+        for downloader in self.downloaders:
+            if downloader.recognizes_download(location):
+                return downloader
+        return None
+
+    def search_downloads(self):
+        """Searches for downloads for waiting jobs with each download track in turn"""
+
+        all_jobs = self.load_jobs()
+        self.share_rejections(all_jobs)
+        job_list = [x for x in all_jobs
+                    if x.status in (JobStatus.WAITING, JobStatus.SEARCHING)]
+        if len(job_list) == 0:
+            self.logger.info("No waiting jobs to search for during job processing")
+            return
+
+        for downloader in self.downloaders:
+            downloader.search_downloads(
+                [x for x in job_list if x.status in (JobStatus.WAITING, JobStatus.SEARCHING)])
+
+    def share_rejections(self, job_list):
+        """
+        Shares the downloads rejected for each job with the other jobs for the same episode,
+        so that a download found to be incomplete or unavailable is not tried again for the
+        episode
+        """
+
+        episodes = {}
+        for job in job_list:
+            if job.episode_key is not None:
+                episodes.setdefault(job.episode_key, []).append(job)
+
+        for episode_jobs in episodes.values():
+            rejected = []
+            for job in episode_jobs:
+                rejected.extend(x for x in job.rejected if x not in rejected)
+            for job in episode_jobs:
+                if job.rejected != rejected:
+                    job.rejected = rejected[:]
+                    job.save(self.logger)
+
+    def add_downloads(self):
+        """Adds the found downloads of adding jobs to the download client of their tracks"""
 
         job_list = self.get_jobs_by_status(JobStatus.ADDING)
-        if len(job_list) == 0:
-            self.logger.info("No search results to add during job processing")
-            return
+        for downloader, jobs in self.group_jobs_by_downloader(job_list):
+            downloader.add_downloads(jobs)
 
-        self.logger.info("Adding downloads to Deluge instance on %s",
-                         self.config.conversion.deluge_host)
-        with DelugeRPCClient(self.config.conversion.deluge_host,
-                             self.config.conversion.deluge_port,
-                             self.config.conversion.deluge_user_name,
-                             self.config.conversion.deluge_password) as client:
-            for job in job_list:
-                encoded_id, metadata = client.core.prefetch_magnet_metadata(job.magnet_link)
-                if encoded_id is None:
-                    # Leave the job in the adding state so it is retried on the next run.
-                    self.logger.error(
-                        "Magnet metadata prefetch failed for job %s, no ID returned", job.job_id)
-                    continue
-                if metadata is None:
-                    self.logger.warning(
-                        "Magnet metadata prefetch returned no metadata for job %s; "
-                        "using torrent name", job.job_id)
-                encoded_name = (metadata.get("name".encode(), None)
-                                if metadata is not None
-                                else None)
-                torrent_id = encoded_id.decode()
-                client.core.add_torrent_magnet(job.magnet_link, {})
-                torrent = client.core.get_torrent_status(
-                    torrent_id, ["name", "download_location", "is_finished"])
-                job.torrent_hash = torrent_id
-                torrent_name = (encoded_name.decode()
-                                if encoded_name is not None
-                                else torrent["name".encode()].decode())
-                self.set_job_download_status(
-                    job,
-                    JobStatus.DOWNLOADING,
-                    torrent_name,
-                    torrent["download_location".encode()].decode())
-
-    def query_torrents_status(self):
-        """Updates downloaded torrents to the Deluse client"""
+    def query_downloads_status(self):
+        """Marks downloading jobs whose downloads have finished in their tracks as pending"""
 
         job_list = self.get_jobs_by_status(JobStatus.DOWNLOADING)
-        if len(job_list) == 0:
-            self.logger.info("No downloading jobs to query for status during job processing")
-            return
+        for downloader, jobs in self.group_jobs_by_downloader(job_list):
+            downloader.query_downloads(jobs)
 
-        self.logger.info("Marking completed downloads on Deluge instance at %s",
-                         self.config.conversion.deluge_host)
-        with DelugeRPCClient(self.config.conversion.deluge_host,
-                             self.config.conversion.deluge_port,
-                             self.config.conversion.deluge_user_name,
-                             self.config.conversion.deluge_password) as client:
-            for job in job_list:
-                torrent = client.core.get_torrent_status(
-                    job.torrent_hash, ["name", "download_location", "is_finished"])
-                if torrent.get("is_finished".encode(), False):
-                    self.set_job_download_status(
-                        job, JobStatus.PENDING, torrent["name".encode()].decode())
+    def group_jobs_by_downloader(self, job_list):
+        """
+        Groups jobs by the download track handling them, returning a list of each track
+        with its jobs, and logging jobs whose track is unknown
+        """
+
+        downloaders = self.downloaders
+        for job in job_list:
+            if job.downloader not in [x.name for x in downloaders]:
+                self.logger.warning("Job %s has unknown downloader '%s'",
+                                    job.job_id, job.downloader)
+        return [(x, [job for job in job_list if job.downloader == x.name])
+                for x in downloaders]
 
     def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
@@ -166,19 +187,28 @@ class JobQueue:
             series_episodes_since_last_search = series.get_episodes_by_airdate(
                 airdate, airdate)
             for series_episode in series_episodes_since_last_search:
-                for stored_search in tracked_series.stored_searches:
-                    search_terms = stored_search.search_terms[:]
-                    search_terms.append(
-                        f"s{series_episode.season_number:02d}e{series_episode.episode_number:02d}")
-                    search_string = " ".join(search_terms)
-                    if not self.is_existing_job(tracked_series.main_keyword, search_string):
-                        job = self.create_job(tracked_series.main_keyword, search_string)
-                        job.is_download_only = stored_search.is_download_only
-                        if not stored_search.is_download_only:
-                            job.converted_file_name = "".join(
-                                self.config.conversion.string_substitutions.get(c, c)
-                                for c in series_episode.plex_title).strip()
+                for search in tracked_series.get_episode_searches(
+                        series_episode.season_number, series_episode.episode_number):
+                    job = self.create_search_job(tracked_series.main_keyword, search)
+                    if job is not None and not search.is_download_only:
+                        job.converted_file_name = "".join(
+                            self.config.conversion.string_substitutions.get(c, c)
+                            for c in series_episode.plex_title).strip()
                         job.save(self.logger)
+
+    def create_search_job(self, keyword, search):
+        """
+        Creates a job for a search for downloads of an episode, returning the job, or None
+        if a job for the search already exists
+        """
+
+        if self.is_existing_job(keyword, search.queries[0], search.is_download_only):
+            return None
+        job = self.create_job(keyword, search.queries[0], search.is_download_only)
+        job.fallback_queries = search.queries[1:]
+        job.release_groups = dict(search.release_groups)
+        job.save(self.logger)
+        return job
 
     def copy_downloaded_files(self, job, is_unattended_mode):
         """Copies downloaded job files to a destination directory"""
@@ -244,24 +274,6 @@ class JobQueue:
                                  os.path.basename(dest_file)))
         self.mark_job_complete(job)
 
-    def set_job_search_result(self, job, search_result):
-        """Sets the search result for a job"""
-
-        job.status = JobStatus.ADDING
-        job.magnet_link = search_result.magnet_link
-        job.title = search_result.title
-        job.torrent_hash = search_result.hash
-        job.save(self.logger)
-
-    def set_job_download_status(self, job, status, name, download_directory = None):
-        """Sets the download directory, file name, and status for a job"""
-
-        if download_directory is not None:
-            job.download_directory = download_directory
-        job.name = name
-        job.status = status
-        job.save(self.logger)
-
     def mark_job_complete(self, job):
         """Marks a job as completed"""
 
@@ -270,14 +282,15 @@ class JobQueue:
         if datetime.now().strftime("%Y-%m-%d") != job.added:
             job.delete()
 
-    def is_existing_job(self, keyword, search_string):
+    def is_existing_job(self, keyword, search_string, is_download_only=False):
         """
-        Gets a value indicating whether a job for a specified keyword and search string
-        already exists
+        Gets a value indicating whether a job for a specified keyword and search string,
+        either converting its download or only downloading it, already exists
         """
 
         for job in self.load_jobs():
-            if job.keyword == keyword and job.query == search_string:
+            if (job.keyword == keyword and job.query == search_string
+                    and job.is_download_only == is_download_only):
                 return True
 
         return False
@@ -301,7 +314,7 @@ class JobQueue:
         return self.config.conversion.job_directory
 
 
-class Job:
+class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attributes
 
     """Object representing a job to be processed"""
 
@@ -364,6 +377,51 @@ class Job:
         self.dictionary["query"] = value
 
     @property
+    def fallback_queries(self):
+        """
+        Gets or sets the strings with which to search, in order, when searching with the
+        query string of this job finds no download
+        """
+
+        return self.dictionary.get("fallback_queries", [])
+
+    @fallback_queries.setter
+    def fallback_queries(self, value):
+        self.dictionary["fallback_queries"] = value
+
+    @property
+    def release_groups(self):
+        """
+        Gets or sets the release groups, in order of preference, from which results of each
+        of this job's search strings are accepted, keyed by search string. Results from any
+        group are accepted for a search string with no release groups.
+        """
+
+        return self.dictionary.get("release_groups", {})
+
+    @release_groups.setter
+    def release_groups(self, value):
+        self.dictionary["release_groups"] = value
+
+    @property
+    def search_queries(self):
+        """Gets the strings with which to search for downloads for this job, in order"""
+
+        return [self.query] + self.fallback_queries
+
+    @property
+    def episode_key(self):
+        """
+        Gets the series keyword and episode number, such as ('show', 's01e02'), identifying
+        the episode this job downloads, or None if the query string has no episode number
+        """
+
+        match = re.search(r"s([0-9]+)e([0-9]+)", self.query or "", re.IGNORECASE)
+        if match is None:
+            return None
+        return (self.keyword, f"s{int(match.group(1)):02d}e{int(match.group(2)):02d}")
+
+    @property
     def status(self):
         """Gets or sets the status for this job"""
 
@@ -414,6 +472,56 @@ class Job:
         self.dictionary["torrent_hash"] = value
 
     @property
+    def downloader(self):
+        """Gets or sets the download client, 'deluge' or 'sabnzbd', used for this job"""
+
+        return self.dictionary.get("downloader", TorrentDownloader.name)
+
+    @downloader.setter
+    def downloader(self, value):
+        self.dictionary["downloader"] = value
+
+    @property
+    def nzb_guid(self):
+        """Gets or sets the indexer's ID for the NZB file found for this job"""
+
+        return self.dictionary.get("nzb_guid", None)
+
+    @nzb_guid.setter
+    def nzb_guid(self, value):
+        self.dictionary["nzb_guid"] = value
+
+    @property
+    def nzb_file(self):
+        """Gets or sets the path to the NZB file waiting to be added for this job"""
+
+        return self.dictionary.get("nzb_file", None)
+
+    @nzb_file.setter
+    def nzb_file(self, value):
+        self.dictionary["nzb_file"] = value
+
+    @property
+    def nzo_id(self):
+        """Gets or sets the SABnzbd ID of the download for this job"""
+
+        return self.dictionary.get("nzo_id", None)
+
+    @nzo_id.setter
+    def nzo_id(self, value):
+        self.dictionary["nzo_id"] = value
+
+    @property
+    def rejected(self):
+        """Gets or sets the indexer IDs of NZB files rejected for this job"""
+
+        return self.dictionary.get("rejected", [])
+
+    @rejected.setter
+    def rejected(self, value):
+        self.dictionary["rejected"] = value
+
+    @property
     def download_directory(self):
         """Gets the directory to which the torrent for this job is downloaded"""
 
@@ -445,6 +553,14 @@ class Job:
     @is_download_only.setter
     def is_download_only(self, value):
         self.dictionary["download_only"] = value
+
+    def set_download_status(self, status, name, download_directory=None):
+        """Sets the status, download name, and optionally the download directory of this job"""
+
+        if download_directory is not None:
+            self.download_directory = download_directory
+        self.name = name
+        self.status = status
 
     @property
     def status_description(self):
@@ -490,10 +606,12 @@ class Job:
         return job
 
     def delete(self):
-        """Deletes the file representing this job"""
+        """Deletes the file representing this job, and any NZB file waiting to be added"""
 
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
+        if self.nzb_file is not None and os.path.exists(self.nzb_file):
+            os.remove(self.nzb_file)
 
     def copy(self):
         """Creates a copy of this job with a new ID"""

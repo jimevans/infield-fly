@@ -2,8 +2,8 @@
 
 import logging
 import os
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import Dict, List
 
 DEFAULT_CONFIG_DIRECTORY = os.path.join(os.path.expanduser("~"), ".config", "infield-fly")
 CONFIG_FILE_ENVIRONMENT_VARIABLE = "INFIELD_FLY_CONFIG"
@@ -23,10 +23,14 @@ class Configuration:
             self.settings["metadata"] = MetadataSettings(config_dict.get("metadata", None))
             self.settings["notification"] = NotificationSettings(
                 config_dict.get("notification", None))
+            self.settings["search"] = SearchSettings(config_dict.get("search", None))
+            self.settings["download"] = DownloadSettings(config_dict.get("download", None))
         else:
             self.settings["conversion"] = ConversionSettings(infield_fly_directory)
             self.settings["metadata"] = MetadataSettings()
             self.settings["notification"] = NotificationSettings()
+            self.settings["search"] = SearchSettings()
+            self.settings["download"] = DownloadSettings()
 
     @property
     def notification(self):
@@ -45,6 +49,18 @@ class Configuration:
         """Gets the settings for conversion"""
 
         return self.settings["conversion"]
+
+    @property
+    def search(self):
+        """Gets the settings for searching for downloads"""
+
+        return self.settings["search"]
+
+    @property
+    def download(self):
+        """Gets the settings for downloading NZB files"""
+
+        return self.settings["download"]
 
 
 class ConversionSettings:
@@ -141,6 +157,13 @@ class ConversionSettings:
                                  os.path.join(self.infield_fly_directory, ".jobs"))
 
     @property
+    def nzb_directory(self):
+        """Gets the path of the directory to which NZB files found for jobs are written"""
+
+        return self.settings.get("nzb_directory",
+                                 os.path.join(self.infield_fly_directory, ".nzb"))
+
+    @property
     def infield_fly_directory(self):
         """
         Gets the path of the directory containing the settings file, against which
@@ -181,6 +204,66 @@ class NotificationSettings:
         """Gets the number to which to send notifications via Trillio"""
 
         return self.settings.get("receiving_number", "")
+
+
+class SearchSettings:
+
+    """Settings object containing settings for searching a Newznab indexer for downloads"""
+
+    def __init__(self, raw_settings=None):
+        super().__init__()
+        self.settings = raw_settings if raw_settings is not None else {}
+
+    @property
+    def newznab_url(self):
+        """Gets the URL of the Newznab API end point of the indexer"""
+
+        return self.settings.get("newznab_url", "https://api.nzbplanet.net/api")
+
+    @property
+    def api_key(self):
+        """Gets the API key for the Newznab indexer"""
+
+        return self.settings.get("api_key", "")
+
+    @property
+    def max_candidates(self):
+        """Gets the maximum number of search results to validate per job on each run"""
+
+        return self.settings.get("max_candidates", 5)
+
+    @property
+    def is_enabled(self):
+        """Gets a value indicating whether searching for downloads is configured"""
+
+        return self.api_key != ""
+
+
+class DownloadSettings:
+
+    """Settings object containing settings for downloading NZB files with SABnzbd"""
+
+    def __init__(self, raw_settings=None):
+        super().__init__()
+        self.settings = raw_settings if raw_settings is not None else {}
+
+    @property
+    def sabnzbd_url(self):
+        """Gets the base URL of the SABnzbd instance"""
+
+        return self.settings.get("sabnzbd_url", "http://localhost:8080")
+
+    @property
+    def sabnzbd_api_key(self):
+        """Gets the API key for the SABnzbd instance"""
+
+        return self.settings.get("sabnzbd_api_key", "")
+
+    @property
+    def sabnzbd_category(self):
+        """Gets the SABnzbd category for downloads, or None to use the default category"""
+
+        return self.settings.get("sabnzbd_category", None)
 
 
 class MetadataSettings:
@@ -257,6 +340,8 @@ class MetadataSettings:
                                 search_config.get("download_only", False)
                             )
                             search.search_terms.extend(search_config.get("search_terms", []))
+                            search.release_groups.extend(
+                                search_config.get("release_groups", []))
                             searches.append(search)
                     else:
                         search = SearchConfiguration(
@@ -271,9 +356,27 @@ class MetadataSettings:
 @dataclass
 class SearchConfiguration:
 
-    """Represents a search configuration"""
+    """
+    Represents a search configuration. When release groups are listed, only search results
+    from those groups are downloaded, preferring groups listed earlier.
+    """
     search_terms: List[str]
     is_download_only: bool
+    release_groups: List[str] = field(default_factory=list)
+
+
+@dataclass
+class EpisodeSearch:
+
+    """
+    Represents a search for downloads of an episode, made of queries to try in order until
+    one finds a download, and the release groups, in order of preference, from which each
+    query's results are accepted. Any group is accepted for a query with no groups.
+    """
+
+    queries: List[str]
+    is_download_only: bool
+    release_groups: Dict[str, List[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -286,3 +389,33 @@ class TrackedSeries:
     main_keyword: str
     keywords: List[str]
     stored_searches: List[SearchConfiguration]
+
+    def get_episode_searches(self, season_number, episode_number):
+        """
+        Gets the searches for downloads of an episode. The search configurations whose
+        downloads are converted are combined into one search, whose queries are tried in
+        the order of the configurations, so only one download of the episode is converted.
+        Each download-only configuration is a search of its own. Configurations producing
+        the same query as an earlier one of the same kind are ignored.
+        """
+
+        episode = f"s{season_number:02d}e{episode_number:02d}"
+        converted_search = EpisodeSearch([], False)
+        searches = []
+        for stored_search in self.stored_searches:
+            query = " ".join(stored_search.search_terms + [episode])
+            if not stored_search.is_download_only:
+                search = converted_search
+            else:
+                search = next((x for x in searches if x.queries[0] == query), None)
+                if search is None:
+                    search = EpisodeSearch([], True)
+                    searches.append(search)
+            if query not in search.queries:
+                search.queries.append(query)
+                if len(stored_search.release_groups) > 0:
+                    search.release_groups[query] = stored_search.release_groups[:]
+
+        if len(converted_search.queries) > 0:
+            searches.insert(0, converted_search)
+        return searches
