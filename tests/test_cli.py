@@ -46,7 +46,7 @@ def episode_db(config):
                     airdate=datetime(2020, 1, 8)),
         EpisodeInfo(13, "The Show", season_number=1, episode_number=3, title="Future"),
     ])
-    with mock.patch("infield_fly.cli.EpisodeDatabase.load_from_cache", return_value=database):
+    with mock.patch("infield_fly.database.EpisodeDatabase.load_from_cache", return_value=database):
         yield database
 
 
@@ -156,12 +156,12 @@ class TestConvert:
 
     @pytest.fixture
     def converter_class(self):
-        with mock.patch("infield_fly.cli.Converter") as converter_class:
+        with mock.patch("infield_fly.conversion.Converter") as converter_class:
             yield converter_class
 
     @pytest.fixture
     def notifier_factory(self):
-        with mock.patch("infield_fly.cli.Notifier.create_default_notifier") as factory:
+        with mock.patch("infield_fly.notification.Notifier.create_default_notifier") as factory:
             yield factory
 
     @pytest.mark.parametrize("overrides, message", [
@@ -433,7 +433,7 @@ class TestProcessJobs:
 
     @pytest.fixture
     def job_queue(self):
-        with mock.patch("infield_fly.cli.JobQueue") as queue_class:
+        with mock.patch("infield_fly.jobs.JobQueue") as queue_class:
             yield queue_class.return_value
 
     def test_runs_all_phases(self, config, job_queue):
@@ -456,6 +456,41 @@ class TestProcessJobs:
         cli.process_jobs(args, config)
 
         assert job_queue.method_calls == []
+
+
+class TestCompletion:
+
+    def test_completes_job_statuses_except_unknown(self):
+        assert cli.complete_job_status() == [
+            "waiting", "searching", "adding", "downloading", "pending", "converting",
+            "completed"]
+
+    def test_completes_job_ids(self, config):
+        first = add_job(config)
+        second = add_job(config)
+
+        with mock.patch("infield_fly.cli.load_config", return_value=config) as load_config:
+            job_ids = cli.complete_job_id(parsed_args=Namespace(config="/settings.json"))
+
+        load_config.assert_called_once_with("/settings.json")
+        assert job_ids == sorted([first.job_id, second.job_id])
+
+    def test_missing_job_directory_completes_nothing(self, config):
+        with mock.patch("infield_fly.cli.load_config", return_value=config):
+            assert cli.complete_job_id(parsed_args=Namespace(config=None)) == []
+
+        assert not os.path.exists(config.conversion.job_directory)
+
+    def test_missing_config_file_completes_nothing(self, tmp_path):
+        missing = str(tmp_path / "missing.json")
+
+        assert cli.complete_job_id(parsed_args=Namespace(config=missing)) == []
+
+    def test_invalid_config_file_completes_nothing(self, tmp_path):
+        config_file = tmp_path / "settings.json"
+        config_file.write_text("{", encoding="utf-8")
+
+        assert cli.complete_job_id(parsed_args=Namespace(config=str(config_file))) == []
 
 
 class TestSetupLogging:

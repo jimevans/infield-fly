@@ -7,13 +7,13 @@ import re
 import shutil
 import uuid
 from datetime import datetime
-from enum import Enum
 from time import perf_counter
 
 from deluge_client import DelugeRPCClient
 
 from infield_fly.conversion import ConversionSettings, Converter
 from infield_fly.database import EpisodeDatabase
+from infield_fly.job_status import JobStatus
 
 
 class JobQueue:
@@ -299,25 +299,6 @@ class JobQueue:
         """Gets the path to the job queue directory"""
 
         return self.config.conversion.job_directory
-
-
-class JobStatus(Enum):
-    """Provides the enumerated values for the status of a job"""
-
-    WAITING = "waiting"
-    SEARCHING = "searching"
-    ADDING = "adding"
-    DOWNLOADING = "downloading"
-    PENDING = "pending"
-    CONVERTING = "converting"
-    COMPLETED = "completed"
-    UNKNOWN = "unknown"
-
-    @classmethod
-    def _missing_(cls, value):
-        """Returns the UNKNOWN value for values not matching valid values"""
-
-        return cls(cls.UNKNOWN)
 
 
 class Job:

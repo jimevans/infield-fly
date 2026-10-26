@@ -1,4 +1,9 @@
+# PYTHON_ARGCOMPLETE_OK
 """Main module for converting files"""
+
+# Shell completion runs this module on every press of the Tab key, so modules
+# with expensive dependencies are imported in the commands that use them.
+# pylint: disable=import-outside-toplevel
 
 import argparse
 import json
@@ -8,12 +13,11 @@ import sys
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
+import argcomplete
+
 from infield_fly.configuration import (CONFIG_FILE_ENVIRONMENT_VARIABLE,
                                        DEFAULT_CONFIG_DIRECTORY, Configuration)
-from infield_fly.conversion import ConversionSettings, Converter, FileMapper
-from infield_fly.database import EpisodeDatabase
-from infield_fly.jobs import JobQueue, JobStatus
-from infield_fly.notification import Notifier
+from infield_fly.job_status import JobStatus
 from infield_fly.search import TorrentResult
 
 
@@ -48,6 +52,9 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
 def find_downloads(args, config):
     """Finds episodes aired in a date range, and prints or creates jobs for their search strings"""
 
+    from infield_fly.database import EpisodeDatabase
+    from infield_fly.jobs import JobQueue
+
     episode_db = EpisodeDatabase.load_from_cache(config)
     from_date = datetime.strptime(args.fromdate, "%Y-%m-%d")
     to_date = datetime.strptime(args.todate, "%Y-%m-%d")
@@ -74,6 +81,8 @@ def find_downloads(args, config):
 def list_series(args, config):
     """Lists the episodes of a series in the cached dataabase."""
 
+    from infield_fly.database import EpisodeDatabase
+
     episode_db = EpisodeDatabase.load_from_cache(config)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if series_metadata is None:
@@ -89,6 +98,8 @@ def list_series(args, config):
 def update_database(args, config):
     """Updates the episode metadata in the databasae for tracked series"""
 
+    from infield_fly.database import EpisodeDatabase
+
     episode_db = EpisodeDatabase.load_from_cache(config)
     episode_db.update_all_tracked_series(force_updates=args.force_updates,
                                          is_unattended_mode=args.unattended)
@@ -96,6 +107,9 @@ def update_database(args, config):
 
 def convert(args, config):
     """Converts a file using the soecified conversion arguments"""
+
+    from infield_fly import conversion, notification
+    from infield_fly.database import EpisodeDatabase
 
     episode_db = EpisodeDatabase.load_from_cache(config)
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
@@ -119,19 +133,19 @@ def convert(args, config):
         print("Constant rate factor must be between 0 and 51")
         return
 
-    mapper = FileMapper(episode_db,
-                        file_name_substitutions=config.conversion.string_substitutions)
+    mapper = conversion.FileMapper(
+        episode_db, file_name_substitutions=config.conversion.string_substitutions)
     file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
-    settings = ConversionSettings(convert_video=args.convert_video,
-                                    convert_audio=args.convert_audio,
-                                    convert_subtitles=args.convert_subtitles,
-                                    aspect_ratio=args.aspect_ratio,
-                                    crf=(args.crf if args.crf is not None
-                                        else ConversionSettings.crf))
+    settings = conversion.ConversionSettings(
+        convert_video=args.convert_video,
+        convert_audio=args.convert_audio,
+        convert_subtitles=args.convert_subtitles,
+        aspect_ratio=args.aspect_ratio,
+        crf=(args.crf if args.crf is not None else conversion.ConversionSettings.crf))
 
     for src_file, dest_file in file_map:
-        converter = Converter(src_file, dest_file, config.conversion.ffmpeg_location)
+        converter = conversion.Converter(src_file, dest_file, config.conversion.ffmpeg_location)
         converter.convert_file(settings, dry_run=args.dry_run)
 
     if args.notify:
@@ -145,13 +159,15 @@ def convert(args, config):
                 print("No recipient number specified in notification settings in settings "
                     "file. Not notifying.")
             else:
-                notifier = Notifier.create_default_notifier(config)
+                notifier = notification.Notifier.create_default_notifier(config)
                 if notifier is not None:
                     notifier.notify(config.notification.receiving_number,
                                     f"Conversion of {args.source} complete.")
 
 def show_job(args, config):
     """Deletes a new queued job"""
+
+    from infield_fly.jobs import JobQueue
 
     job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
@@ -178,12 +194,16 @@ def show_job(args, config):
 def create_job(args, config):
     """Creates a new queued job"""
 
+    from infield_fly.jobs import JobQueue
+
     job_queue = JobQueue(config)
     job = job_queue.create_job(args.keyword, args.search_term)
     job.save(logging.getLogger())
 
 def delete_job(args, config):
     """Deletes a new queued job"""
+
+    from infield_fly.jobs import JobQueue
 
     job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
@@ -194,6 +214,8 @@ def delete_job(args, config):
 
 def update_job(args, config):
     """Updates a new queued job"""
+
+    from infield_fly.jobs import JobQueue
 
     job_queue = JobQueue(config)
     job = job_queue.get_job_by_id(args.id)
@@ -230,6 +252,8 @@ def parse_job_status(status_value):
 def list_jobs(args, config):
     """Lists all jobs in the job queue"""
 
+    from infield_fly.jobs import JobQueue
+
     status = None
     if args.status is not None:
         status = parse_job_status(args.status)
@@ -245,6 +269,8 @@ def list_jobs(args, config):
 
 def clear_jobs(args, config):
     """Clears the job queue"""
+
+    from infield_fly.jobs import JobQueue
 
     status = None
     if args.status is not None:
@@ -262,6 +288,8 @@ def clear_jobs(args, config):
 def process_jobs(args, config):
     """Executes current jobs in the job queue"""
 
+    from infield_fly.jobs import JobQueue
+
     job_queue = JobQueue(config)
     if args.search:
         airdate = datetime.now()
@@ -275,6 +303,22 @@ def process_jobs(args, config):
 
     if args.convert:
         job_queue.perform_conversions(args.unattended)
+
+def complete_job_status(**_):
+    """Completes a job status argument with the valid job status values"""
+
+    return [item.value for item in JobStatus if item != JobStatus.UNKNOWN]
+
+def complete_job_id(parsed_args, **_):
+    """Completes a job ID argument with the IDs of the jobs in the job queue"""
+
+    # Job files are named by job ID, so listing the job directory avoids
+    # importing and loading the job queue.
+    try:
+        config = load_config(parsed_args.config)
+        return sorted(os.listdir(config.conversion.job_directory))
+    except (OSError, ValueError):
+        return []
 
 def add_convert_subparser(subparsers):
     """Adds the argument subparser for the 'convert' command"""
@@ -374,28 +418,34 @@ def add_jobs_subparser(subparsers):
     job_add_parser.set_defaults(func=create_job)
 
     job_show_parser = job_command_parsers.add_parser("show", help="Show details of a job")
-    job_show_parser.add_argument("id", help="ID of the job to show")
+    job_show_parser.add_argument(
+        "id", help="ID of the job to show").completer = complete_job_id
     job_show_parser.set_defaults(func=show_job)
 
     job_update_parser = job_command_parsers.add_parser("update", help="Update the status of a job")
-    job_update_parser.add_argument("id", help="ID of the job to update")
-    job_update_parser.add_argument("status", help="Status to which to update the job")
+    job_update_parser.add_argument(
+        "id", help="ID of the job to update").completer = complete_job_id
+    job_update_parser.add_argument(
+        "status", help="Status to which to update the job").completer = complete_job_status
     job_update_parser.add_argument("update_data", nargs="?", default=None,
                                    help="Additional data with which to update the job")
     job_update_parser.set_defaults(func=update_job)
 
     job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
-    job_remove_parser.add_argument("id", help="ID of the job to remove")
+    job_remove_parser.add_argument(
+        "id", help="ID of the job to remove").completer = complete_job_id
     job_remove_parser.set_defaults(func=delete_job)
 
     list_jobs_parser = job_command_parsers.add_parser("list", help="List jobs")
     list_jobs_parser.add_argument("status", nargs="?", default=None,
-                                  help="Filter job list to status")
+                                  help="Filter job list to status"
+                                  ).completer = complete_job_status
     list_jobs_parser.set_defaults(func=list_jobs)
 
     clear_jobs_parser = job_command_parsers.add_parser("clear", help="Remove jobs")
     clear_jobs_parser.add_argument("status", nargs="?", default=None,
-                                  help="Remove only jobs with status")
+                                  help="Remove only jobs with status"
+                                  ).completer = complete_job_status
     clear_jobs_parser.set_defaults(func=clear_jobs)
 
     process_jobs_parser = job_command_parsers.add_parser("process", help="Process current queue")
@@ -489,6 +539,7 @@ def main():
     add_search_subparser(subparsers)
     add_database_subparser(subparsers)
     add_jobs_subparser(subparsers)
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
     try:
         config = load_config(args.config)

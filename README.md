@@ -41,6 +41,27 @@ takes effect immediately; rerun `pip install -e .` if the dependencies in
 
 To also install the test and lint tools, use `pip install -e ".[dev]"`.
 
+### Shell completion
+Infield Fly supports tab completion of its commands and options, job IDs, and
+job statuses using [argcomplete](https://github.com/kislyuk/argcomplete), which
+is installed with it. Completion applies when the command is run as
+`infield-fly`, so the virtual environment must be activated (or `infield-fly`
+otherwise on the `PATH`). To enable it, add the line for your shell to its
+startup file:
+
+* **bash** (`~/.bashrc`):
+  `eval "$(register-python-argcomplete infield-fly)"`
+* **zsh** (`~/.zshrc`, after `compinit` has run):
+  `eval "$(register-python-argcomplete infield-fly)"`
+* **PowerShell** (the file named by `$PROFILE`):
+  `register-python-argcomplete --shell powershell infield-fly | Out-String | Invoke-Expression`
+
+`register-python-argcomplete` is installed alongside `infield-fly` in the
+virtual environment, so use its full path (for example,
+`/path/to/infield-fly/.venv/bin/register-python-argcomplete`) if the virtual
+environment is not activated when the startup file runs. Windows `cmd` does not
+support completion of command arguments.
+
 ## Configuration
 Settings are read from a JSON file, located by the first of the following that
 is set:
