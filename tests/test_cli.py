@@ -492,6 +492,24 @@ class TestCompletion:
 
         assert cli.complete_job_id(parsed_args=Namespace(config=str(config_file))) == []
 
+    def test_completes_series_keywords(self, make_config):
+        config = make_config(metadata={"tracked_series": {
+            "The Show": {"id": 1, "description": "The Show", "keywords": ["show", "Other"]},
+            "undescribed": {"id": 2, "keywords": ["show"]},
+            "untracked": {"description": "No ID", "keywords": ["unused"]}
+        }})
+
+        with mock.patch("infield_fly.cli.load_config", return_value=config) as load_config:
+            keywords = cli.complete_series_keyword(parsed_args=Namespace(config="/settings.json"))
+
+        load_config.assert_called_once_with("/settings.json")
+        assert keywords == ["other", "show", "the show"]
+
+    def test_missing_config_file_completes_no_series_keywords(self, tmp_path):
+        missing = str(tmp_path / "missing.json")
+
+        assert cli.complete_series_keyword(parsed_args=Namespace(config=missing)) == []
+
 
 class TestSetupLogging:
 

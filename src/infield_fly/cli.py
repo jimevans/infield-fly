@@ -320,6 +320,17 @@ def complete_job_id(parsed_args, **_):
     except (OSError, ValueError):
         return []
 
+def complete_series_keyword(parsed_args, **_):
+    """Completes a series keyword argument with the keywords of the tracked series"""
+
+    try:
+        config = load_config(parsed_args.config)
+    except (OSError, ValueError):
+        return []
+    return sorted(set(keyword
+                      for tracked_series in config.metadata.tracked_series
+                      for keyword in tracked_series.keywords))
+
 def add_convert_subparser(subparsers):
     """Adds the argument subparser for the 'convert' command"""
 
@@ -328,7 +339,8 @@ def add_convert_subparser(subparsers):
     convert_subparser.add_argument("destination", help="Destination directory")
 
     convert_subparser.add_argument("-k", "--keyword",
-                                   help="Keyword for series to map episode names")
+                                   help="Keyword for series to map episode names"
+                                   ).completer = complete_series_keyword
 
     video_parser = convert_subparser.add_mutually_exclusive_group(required=False)
     video_parser.add_argument("--convert-video", dest="convert_video", action="store_true")
@@ -396,7 +408,7 @@ def add_database_subparser(subparsers):
     list_subparser = db_command_parsers.add_parser("list")
     list_subparser.add_argument("keyword",
                                 help="Keyword to select the series to display from the episode " +
-                                "database")
+                                "database").completer = complete_series_keyword
     list_subparser.set_defaults(func=list_series)
 
     update_subparser = db_command_parsers.add_parser("update")
@@ -413,7 +425,8 @@ def add_jobs_subparser(subparsers):
                                                         help="Jobs subcommand")
 
     job_add_parser = job_command_parsers.add_parser("add", help="Add a new job")
-    job_add_parser.add_argument("keyword", help="Keyword for the job")
+    job_add_parser.add_argument(
+        "keyword", help="Keyword for the job").completer = complete_series_keyword
     job_add_parser.add_argument("search_term", help="Search term for the job")
     job_add_parser.set_defaults(func=create_job)
 
