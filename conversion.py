@@ -6,6 +6,19 @@ import os
 import platform
 import re
 import subprocess
+from dataclasses import dataclass
+
+
+@dataclass
+class ConversionSettings:
+
+    """Settings controlling which streams are converted and how"""
+
+    convert_video: bool = False
+    convert_audio: bool = True
+    convert_subtitles: bool = True
+    aspect_ratio: float = None
+    crf: float = 17
 
 
 class Converter:
@@ -30,12 +43,15 @@ class Converter:
             tool_location += ".exe"
         return tool_location
 
-    def convert_file(self, dry_run=False, convert_video=False, convert_audio=True,
-                     convert_subtitles=True, aspect_ratio=None, crf=17):
+    def convert_file(self, settings=None, dry_run=False):
         """Converts a single file"""
 
-        is_convert_subtitles = convert_subtitles and self.file_stream_info.has_subtitle_stream
-        is_convert_audio = (convert_audio
+        if settings is None:
+            settings = ConversionSettings()
+
+        is_convert_subtitles = (settings.convert_subtitles
+                                and self.file_stream_info.has_subtitle_stream)
+        is_convert_audio = (settings.convert_audio
                            and self.file_stream_info.has_audio_stream)
 
         ffmpeg_args = []
@@ -51,7 +67,8 @@ class Converter:
         ffmpeg_args.append("-1")
         ffmpeg_args.append("-map_chapters")
         ffmpeg_args.append("0")
-        ffmpeg_args.extend(self.get_video_conversion_args(convert_video, aspect_ratio, crf))
+        ffmpeg_args.extend(self.get_video_conversion_args(
+            settings.convert_video, settings.aspect_ratio, settings.crf))
         ffmpeg_args.extend(self.get_audio_conversion_args(is_convert_audio))
         ffmpeg_args.extend(self.get_subtitle_conversion_args(is_convert_subtitles))
 
@@ -242,7 +259,7 @@ class FileStreamInfo:
 
             if (stream.is_subtitle
                     and (stream.codec in ("subrip", "ass", "mov_text"))
-                    and (stream.language == "" or stream.language == "eng")):
+                    and stream.language in ("", "eng")):
                 if stream.is_forced:
                     if streams["forced_subtitle"] is None:
                         streams["forced_subtitle"] = stream
@@ -316,33 +333,67 @@ class FileStreamInfo:
 
         def __init__(self, stream_metadata):
             super().__init__()
-            self.index = stream_metadata["index"]
-            self.codec = stream_metadata["codec_name"]
-            self.codec_type = stream_metadata["codec_type"]
+            self.metadata = stream_metadata
 
-            self.is_default = ("disposition" in stream_metadata
-                              and "default" in stream_metadata["disposition"]
-                              and stream_metadata["disposition"]["default"] == 1)
+        @property
+        def index(self):
+            """Gets the index of the stream"""
 
-            self.is_forced = ("disposition" in stream_metadata
-                             and "forced" in stream_metadata["disposition"]
-                             and stream_metadata["disposition"]["forced"] == 1)
+            return self.metadata["index"]
 
-            self.channel_count = (stream_metadata["channels"]
-                                 if "channels" in stream_metadata
-                                 else -1)
+        @property
+        def codec(self):
+            """Gets the codec value of the stream"""
 
-            self.height = (stream_metadata["height"]
-                          if "height" in stream_metadata
-                          else -1)
+            return self.metadata["codec_name"]
 
-            self.width = (stream_metadata["width"]
-                          if "width" in stream_metadata
-                          else -1)
+        @property
+        def codec_type(self):
+            """Gets the type of codec (video, audio, subtitle) of the stream"""
 
-            self.language = (stream_metadata["tags"]["language"]
-                            if "tags" in stream_metadata and "language" in stream_metadata["tags"]
-                            else "")
+            return self.metadata["codec_type"]
+
+        @property
+        def is_default(self):
+            """Gets a value indicating whether this stream is the default for this stream type"""
+
+            return ("disposition" in self.metadata
+                    and "default" in self.metadata["disposition"]
+                    and self.metadata["disposition"]["default"] == 1)
+
+        @property
+        def is_forced(self):
+            """Gets a value indicating whether the stream contents are marked forced"""
+
+            return ("disposition" in self.metadata
+                    and "forced" in self.metadata["disposition"]
+                    and self.metadata["disposition"]["forced"] == 1)
+
+        @property
+        def channel_count(self):
+            """Gets the number of channels in the stream for an audio stream (-1 if undefined)"""
+
+            return self.metadata.get("channels", -1)
+
+        @property
+        def height(self):
+            """Gets the height of the stream for a video stream (-1 if undefined)"""
+
+            return self.metadata.get("height", -1)
+
+        @property
+        def width(self):
+            """Gets the width of the stream for a video stream (-1 if undefined)"""
+
+            return self.metadata.get("width", -1)
+
+        @property
+        def language(self):
+            """Gets the language tag of the stream, if defined"""
+
+            return (self.metadata["tags"]["language"]
+                    if "tags" in self.metadata and "language" in self.metadata["tags"]
+                    else "")
 
         @property
         def is_video(self):
@@ -370,11 +421,11 @@ class FileMapper:
     def __init__(self,
                  episode_db,
                  file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4|\.avi)",
-                 file_name_subtitutions={}):
+                 file_name_substitutions=None):
         super().__init__()
         self.file_name_match_regex = file_name_match_regex
         self.episode_db = episode_db
-        self.file_name_substitutions = file_name_subtitutions
+        self.file_name_substitutions = file_name_substitutions or {}
         self.logger = logging.getLogger()
 
     def find_keyword_match(self, partial_file_name):
@@ -386,6 +437,28 @@ class FileMapper:
                     return keyword
 
         return None
+
+    def get_mapped_file_name(self, input_file, keyword=None):
+        """Gets the Plex-friendly name for a file, or None if it cannot be mapped"""
+
+        match = re.match(self.file_name_match_regex, input_file, re.IGNORECASE)
+        if match is None:
+            return None
+
+        file_keyword = (keyword
+                        if keyword is not None
+                        else self.find_keyword_match(match.group(1)))
+        series_metadata = self.episode_db.get_tracked_series_by_keyword(file_keyword)
+        if series_metadata is None:
+            self.logger.warning("No tracked series found for %s; skipping", input_file)
+            return None
+
+        episode_metadata = series_metadata.get_episode(int(match.group(2)), int(match.group(3)))
+        if episode_metadata is None:
+            return None
+
+        dest_file_name = f"{episode_metadata.plex_title}.mp4"
+        return "".join(self.file_name_substitutions.get(c, c) for c in dest_file_name)
 
     def map_files(self, source, destination, keyword=None):
         """Maps a file given a source and destination, handling individual files and directories"""
@@ -399,24 +472,10 @@ class FileMapper:
             file_list = os.listdir(src_dir)
             file_list.sort()
             for input_file in file_list:
-                match = re.match(self.file_name_match_regex, input_file, re.IGNORECASE)
-                if match is not None:
-                    file_keyword = (keyword
-                                    if keyword is not None
-                                    else self.find_keyword_match(match.group(1)))
-                    series_metadata = self.episode_db.get_tracked_series_by_keyword(file_keyword)
-                    if series_metadata is None:
-                        self.logger.warning("No tracked series found for %s; skipping",
-                                            input_file)
-                        continue
-                    episode_metadata = series_metadata.get_episode(
-                        int(match.group(2)), int(match.group(3)))
-                    if episode_metadata is not None:
-                        dest_file_name = f"{episode_metadata.plex_title}.mp4"
-                        converted_file_name = "".join(
-                            self.file_name_substitutions.get(c, c) for c in dest_file_name)
-                        file_map.append((os.path.join(src_dir, input_file),
-                                         os.path.join(dest_dir, converted_file_name)))
+                converted_file_name = self.get_mapped_file_name(input_file, keyword)
+                if converted_file_name is not None:
+                    file_map.append((os.path.join(src_dir, input_file),
+                                     os.path.join(dest_dir, converted_file_name)))
         else:
             if os.path.isdir(destination):
                 source_file_base, _ = os.path.splitext(os.path.basename(source))

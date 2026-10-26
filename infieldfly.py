@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
 from configuration import Configuration
-from conversion import Converter, FileMapper
+from conversion import ConversionSettings, Converter, FileMapper
 from database import EpisodeDatabase
 from jobs import JobQueue, JobStatus
 from notification import Notifier
@@ -122,43 +122,54 @@ def convert(args, config):
     series_metadata = episode_db.get_tracked_series_by_keyword(args.keyword)
     if args.keyword is not None and series_metadata is None:
         print(f"Keyword '{args.keyword}' was not found in the database")
-    elif args.aspect_ratio is not None and not args.convert_video:
+        return
+
+    if args.aspect_ratio is not None and not args.convert_video:
         print("Aspect ratio can only be specified when converting video (--convert-video)")
-    elif args.aspect_ratio is not None and args.aspect_ratio <= 0:
+        return
+
+    if args.aspect_ratio is not None and args.aspect_ratio <= 0:
         print("Aspect ratio must be a positive number")
-    elif args.crf is not None and not args.convert_video:
+        return
+
+    if args.crf is not None and not args.convert_video:
         print("Constant rate factor can only be specified when converting video (--convert-video)")
-    elif args.crf is not None and not 0 <= args.crf <= 51:
+        return
+
+    if args.crf is not None and not 0 <= args.crf <= 51:
         print("Constant rate factor must be between 0 and 51")
-    else:
-        mapper = FileMapper(episode_db,
-                            file_name_subtitutions=config.conversion.string_substitutions)
-        file_map = mapper.map_files(args.source, args.destination, args.keyword)
+        return
 
-        for src_file, dest_file in file_map:
-            converter = Converter(src_file, dest_file, config.conversion.ffmpeg_location)
-            converter.convert_file(convert_video=args.convert_video,
-                                   convert_audio=args.convert_audio,
-                                   convert_subtitles=args.convert_subtitles,
-                                   aspect_ratio=args.aspect_ratio,
-                                   crf=args.crf if args.crf is not None else 17,
-                                   dry_run=args.dry_run)
+    mapper = FileMapper(episode_db,
+                        file_name_substitutions=config.conversion.string_substitutions)
+    file_map = mapper.map_files(args.source, args.destination, args.keyword)
 
-        if args.notify:
-            if args.dry_run:
-                print("Operation complete. Not sending notification on dry run.")
+    settings = ConversionSettings(convert_video=args.convert_video,
+                                    convert_audio=args.convert_audio,
+                                    convert_subtitles=args.convert_subtitles,
+                                    aspect_ratio=args.aspect_ratio,
+                                    crf=(args.crf if args.crf is not None
+                                        else ConversionSettings.crf))
+
+    for src_file, dest_file in file_map:
+        converter = Converter(src_file, dest_file, config.conversion.ffmpeg_location)
+        converter.convert_file(settings, dry_run=args.dry_run)
+
+    if args.notify:
+        if args.dry_run:
+            print("Operation complete. Not sending notification on dry run.")
+        else:
+            if config.notification is None:
+                print("No config notification settings in settings file. Not notifying.")
+            elif (config.notification.receiving_number is None
+                or config.notification.receiving_number == ""):
+                print("No recipient number specified in notification settings in settings "
+                    "file. Not notifying.")
             else:
-                if config.notification is None:
-                    print("No config notification settings in settings file. Not notifying.")
-                elif (config.notification.receiving_number is None
-                    or config.notification.receiving_number == ""):
-                    print("No recipient number specified in notification settings in settings "
-                        "file. Not notifying.")
-                else:
-                    notifier = Notifier.create_default_notifier(config)
-                    if notifier is not None:
-                        notifier.notify(config.notification.receiving_number,
-                                        f"Conversion of {args.source} complete.")
+                notifier = Notifier.create_default_notifier(config)
+                if notifier is not None:
+                    notifier.notify(config.notification.receiving_number,
+                                    f"Conversion of {args.source} complete.")
 
 def show_job(args, config):
     """Deletes a new queued job"""

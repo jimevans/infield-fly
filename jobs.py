@@ -12,9 +12,8 @@ from time import perf_counter
 
 from deluge_client import DelugeRPCClient
 
-from conversion import Converter
+from conversion import ConversionSettings, Converter
 from database import EpisodeDatabase
-from search import TorrentDataProvider
 
 
 class JobQueue:
@@ -157,7 +156,7 @@ class JobQueue:
                     self.copy_downloaded_files(job, is_unattended_mode)
                 else:
                     self.convert_downloaded_files(job, is_unattended_mode)
-            except Exception as ex:
+            except Exception as ex:  # pylint: disable=broad-exception-caught
                 # Return the job to pending so it is retried on the next run,
                 # rather than leaving it stuck in the converting state.
                 self.logger.error("Processing job %s failed: %s", job.job_id, ex)
@@ -235,8 +234,8 @@ class JobQueue:
                 if is_unattended_mode:
                     self.logger.info("Starting conversion")
                 start_time = perf_counter()
-                converter.convert_file(
-                    convert_video=False, convert_audio=True, convert_subtitles=True)
+                converter.convert_file(ConversionSettings(
+                    convert_video=False, convert_audio=True, convert_subtitles=True))
                 end_time = perf_counter()
                 if is_unattended_mode:
                     self.logger.info(

@@ -9,6 +9,8 @@ from time import perf_counter
 
 import requests
 
+REQUEST_TIMEOUT_SECONDS = 30
+
 
 class EpisodeDatabase:
 
@@ -291,7 +293,8 @@ class TVMetadataProvider:
 
         self.logger.debug("Authorizing to TV metadata provider")
         authentication_payload = { "apikey": self.api_key, "pin": self.pin }
-        response = requests.post(self.base_url + "login", json = authentication_payload)
+        response = requests.post(self.base_url + "login", json = authentication_payload,
+                                 timeout = REQUEST_TIMEOUT_SECONDS)
         if not response.status_code == 200:
             self.logger.warning("Authorization failed")
             self.token = None
@@ -313,14 +316,16 @@ class TVMetadataProvider:
 
         headers = { "Authorization": "Bearer " + self.token }
         self.logger.debug("Making data request to %s", self.base_url + url)
-        response = requests.get(self.base_url + url, headers = headers, params = params)
+        response = requests.get(self.base_url + url, headers = headers, params = params,
+                                timeout = REQUEST_TIMEOUT_SECONDS)
         if response.status_code == 401:
             # If receive Unauthorized response, authenticate and try again.
             self.authenticate()
             if self.token is None:
                 return None
             headers = { "Authorization": "Bearer " + self.token }
-            response = requests.get(self.base_url + url, headers = headers, params = params)
+            response = requests.get(self.base_url + url, headers = headers, params = params,
+                                    timeout = REQUEST_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
             self.logger.warning("Received error response (%s): %s",

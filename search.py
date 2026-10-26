@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+REQUEST_TIMEOUT_SECONDS = 30
+
 
 class TorrentDataProvider:
 
@@ -53,8 +55,9 @@ class TorrentDataProvider:
         self.logger.debug("Sending request to %s with parameters %s", self.base_url, params)
         headers = { "User-Agent": self.user_agent, "Accept": "application/json" }
         try:
-            response = requests.get(self.base_url, params = params, headers = headers)
-        except Exception as ex:
+            response = requests.get(self.base_url, params = params, headers = headers,
+                                    timeout = REQUEST_TIMEOUT_SECONDS)
+        except requests.RequestException as ex:
             return {"error": f"Unknown error: {ex}"}
 
         self.last_request = datetime.now()
@@ -63,7 +66,7 @@ class TorrentDataProvider:
             self.logger.debug("Received Cloudflare throttling response")
             return { "error": "Cloudflare error" }
 
-        if response.status_code != 200 and response.status_code != 520:
+        if response.status_code not in (200, 520):
             self.logger.debug("Received response with unexpected status code: %s",
                               response.status_code)
             return None
