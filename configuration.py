@@ -241,8 +241,8 @@ class MetadataSettings:
                         keywords.append(additional_keyword.lower())
 
                 searches = []
-                enable_torrent_search = series_dict.get("enable_torrent_search", False)
-                if enable_torrent_search:
+                enable_search = series_dict.get("enable_search", False)
+                if enable_search:
                     primary_search_term = series_dict.get("primary_search_term", series_keyword)
                     if "search_configs" in series_dict:
                         for search_config in series_dict["search_configs"]:
