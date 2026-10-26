@@ -222,14 +222,15 @@ def update_job(args, config):
     if job is None:
         print(f"No existing job with ID '{args.id}'")
     else:
-        if args.status not in set(item.value for item in JobStatus):
+        status = parse_job_status(args.status)
+        if status is None:
             print(f"Unknown status value '{args.status}'")
         else:
-            if args.status.lower() == "adding" and args.update_data is not None:
+            if status == JobStatus.ADDING and args.update_data is not None:
                 torrent_provider = TorrentDataProvider()
                 search_result = torrent_provider.create_torrent_result(args.update_data)
                 job_queue.set_job_search_result(job, search_result)
-            elif args.status.lower() == "pending" and args.update_data is not None:
+            elif status == JobStatus.PENDING and args.update_data is not None:
                 if not os.path.isfile(args.update_data):
                     print("Update to pending must include a path a to valid file")
                 else:
@@ -239,7 +240,7 @@ def update_job(args, config):
                         os.path.basename(args.update_data),
                         os.path.dirname(args.update_data))
             else:
-                job.status = JobStatus(args.status)
+                job.status = status
                 job.save(logging.getLogger())
 
 def parse_job_status(status_value):
