@@ -12,8 +12,8 @@ from time import perf_counter
 
 from deluge_client import DelugeRPCClient
 
-from conversion import ConversionSettings, Converter
-from database import EpisodeDatabase
+from infield_fly.conversion import ConversionSettings, Converter
+from infield_fly.database import EpisodeDatabase
 
 
 class JobQueue:

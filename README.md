@@ -9,6 +9,37 @@ directory operations. It performs stream copies where possible, and converts to
 common formats (audio to AAC and AC-3, or subtitle to txg3) when required so as
 to play back natively on Apple devices without transcoding.
 
+## Installation
+Infield Fly requires Python 3.9 or later. From a clone of this repository:
+
+```
+python -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+```
+
+This installs an `infield-fly` command (also runnable as `python -m infield_fly`).
+
+## Configuration
+Settings are read from a JSON file, located by the first of the following that
+is set:
+
+1. The `--config` command line option
+2. The `INFIELD_FLY_CONFIG` environment variable
+3. `~/.config/infield-fly/settings.json`
+
+Unless overridden in the settings file, the working directories (`staging`,
+`completed`, `logs`, `.jobs`) and the episode database cache (`.dbcache`) are
+created in the same directory as the settings file.
+
+## Development
+Run the tests with coverage, and lint the source and tests, using:
+
+```
+.venv/bin/pytest --cov
+.venv/bin/pylint src
+.venv/bin/pylint --rcfile=tests/pylintrc tests
+```
+
 ## Support
 This library is provided as-is, and will be updated only at the whim of the
 author. It is provided with no promises of suppport or maintenance. It is designed

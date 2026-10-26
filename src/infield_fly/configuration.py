@@ -5,6 +5,9 @@ import os
 from dataclasses import dataclass
 from typing import List
 
+DEFAULT_CONFIG_DIRECTORY = os.path.join(os.path.expanduser("~"), ".config", "infield-fly")
+CONFIG_FILE_ENVIRONMENT_VARIABLE = "INFIELD_FLY_CONFIG"
+
 
 class Configuration:
 
@@ -53,7 +56,7 @@ class ConversionSettings:
         self.settings = raw_settings if raw_settings is not None else {}
         self.infield_fly_dir = (infield_fly_dir
                                 if infield_fly_dir is not None
-                                else os.path.dirname(os.path.realpath(__file__)))
+                                else DEFAULT_CONFIG_DIRECTORY)
 
     @property
     def string_substitutions(self):
@@ -139,7 +142,10 @@ class ConversionSettings:
 
     @property
     def infield_fly_directory(self):
-        """Gets the path of the tool installation directory"""
+        """
+        Gets the path of the directory containing the settings file, against which
+        default data directories are resolved
+        """
 
         return self.infield_fly_dir
 

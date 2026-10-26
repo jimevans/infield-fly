@@ -8,12 +8,13 @@ import sys
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
-from configuration import Configuration
-from conversion import ConversionSettings, Converter, FileMapper
-from database import EpisodeDatabase
-from jobs import JobQueue, JobStatus
-from notification import Notifier
-from search import TorrentDataProvider
+from infield_fly.configuration import (CONFIG_FILE_ENVIRONMENT_VARIABLE,
+                                       DEFAULT_CONFIG_DIRECTORY, Configuration)
+from infield_fly.conversion import ConversionSettings, Converter, FileMapper
+from infield_fly.database import EpisodeDatabase
+from infield_fly.jobs import JobQueue, JobStatus
+from infield_fly.notification import Notifier
+from infield_fly.search import TorrentDataProvider
 
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
@@ -478,13 +479,15 @@ def load_config(config_file):
     """Loads configuration from the specified file"""
 
     settings_dict = None
-    infield_fly_directory = os.path.dirname(os.path.realpath(__file__))
 
-    # If unspecified, default to reading config from settings.json in the
-    # same directory as this file.
+    # If unspecified, read the config file named by the environment variable,
+    # falling back to settings.json in the user's config directory. Default
+    # data directories are resolved relative to the config file's directory.
     config_file_path = (config_file
-                        if config_file is not None
-                        else os.path.join(infield_fly_directory, "settings.json"))
+                        or os.environ.get(CONFIG_FILE_ENVIRONMENT_VARIABLE)
+                        or os.path.join(DEFAULT_CONFIG_DIRECTORY, "settings.json"))
+    config_file_path = os.path.abspath(os.path.expanduser(config_file_path))
+    infield_fly_directory = os.path.dirname(config_file_path)
 
     if os.path.exists(config_file_path):
         with open(config_file_path, encoding='utf-8') as settings_file:
@@ -495,12 +498,14 @@ def load_config(config_file):
 def main():
     """Main entry point"""
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog="infield-fly")
     parser.add_argument("-u", "--unattended", action="store_true", default=False,
                         help="Run Infield Fly in unattended mode.")
     parser.add_argument("-c", "--config", nargs="?", default=None,
                         help="Path to the JSON file containing configuration values " +
-                        "(defaults to settings.json in the same directory as infieldfly.py)")
+                        f"(defaults to ${CONFIG_FILE_ENVIRONMENT_VARIABLE}, then " +
+                        "~/.config/infield-fly/settings.json); default data directories " +
+                        "are created alongside it")
     subparsers = parser.add_subparsers(dest="command", required=True,
                                        help="Command to use")
     add_convert_subparser(subparsers)
@@ -511,6 +516,3 @@ def main():
     config = load_config(args.config)
     setup_logging(config, args.unattended)
     args.func(args, config)
-
-if __name__ == "__main__":
-    main()

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infield-fly"
+version = "1.0.0"
+description = "An ffmpeg wrapper for media file container conversion"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "deluge_client==1.9.0",
+    "requests==2.26.0",
+    "twilio==7.3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pylint==3.3.9",
+    "pytest==8.3.5",
+    "pytest-cov==6.1.1",
+]
+
+[project.scripts]
+infield-fly = "infield_fly.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["infield_fly"]
+
+[tool.coverage.report]
+show_missing = true

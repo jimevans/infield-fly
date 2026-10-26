@@ -1,0 +1,16 @@
+# Pylint settings for the test suite. Run from the repository root with:
+#   pylint --rcfile=tests/pylintrc tests
+
+[MESSAGES CONTROL]
+# Test names describe their behavior, and pytest fixtures are injected by
+# parameter name, which pylint reports as redefined or unused. Comparing to
+# empty literals is deliberate, as it also asserts the type of the value.
+disable=missing-function-docstring,
+        use-implicit-booleaness-not-comparison,
+        missing-class-docstring,
+        redefined-outer-name,
+        unused-argument,
+        protected-access,
+        too-many-arguments,
+        too-many-positional-arguments,
+        too-few-public-methods
