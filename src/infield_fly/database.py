@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import urllib
 from datetime import datetime, timedelta
 from time import perf_counter
 
@@ -337,28 +336,6 @@ class TVMetadataProvider:
         self.logger.debug("Response from data request: %s", response_value)
         return response_value
 
-    def search_for_series(self, search_term, status=None):
-        """Searches for a series using the thetvdb.com API"""
-
-        series = []
-        params = { "q": search_term, "type": "series" }
-        relative_url = f"search?{urllib.parse.urlencode(params)}"
-        result = self.get_data(relative_url)
-        search_object = result["data"] if result is not None else None
-        if search_object is not None:
-            for search_result in search_object:
-                if ("primary_language" in search_result
-                        and search_result["primary_language"] == "eng"):
-                    if status is None or search_result["status"].lower() == status.lower():
-                        series_info = {}
-                        series_info["id"] = search_result["tvdb_id"]
-                        series_info["title"] = search_result["name"]
-                        series_info["status"] = search_result["status"]["name"]
-                        if "year" in search_result:
-                            series_info["year"] = search_result["year"]
-                        series.append(series_info)
-        return series
-
     def get_series(self, series_id, is_unattended_mode=False):
         """Retrieves metadata for a series and its episodes using the thetvdb.com API"""
 
@@ -400,39 +377,6 @@ class TVMetadataProvider:
 
         return series_info
 
-    def get_series_extended(self, series_id):
-        """
-        Retrieves metadata for a series and its episodes using the thetvdb.com API, but this
-        method uses a far more chatty protocol than get_series(), which should be preferred
-        """
-
-        relative_url = f"series/{series_id}/extended"
-        page_index = 0
-        params = { "page": page_index }
-        result = self.get_data(relative_url, params)
-        if result is None or result["data"] is None:
-            return None
-
-        data = result["data"]
-
-        series_info = SeriesInfo.from_dictionary(data)
-        episodes = self._get_episodes_extended(data)
-
-        progress_bar = None
-        if len(episodes) > 0:
-            progress_bar = ProgressBar(len(episodes), prefix="Get episodes:")
-        for episode in episodes:
-            episode_info = EpisodeInfo.from_dictionary(series_info.title, episode)
-            progress_bar.increment()
-            if episode_info.airdate is None and episode_info.season_number > 0:
-                episode_info.airdate = self.get_episode_airdate(episode_info.episode_id)
-
-            series_info.add_episode(episode_info)
-        if progress_bar is not None:
-            progress_bar.clear()
-
-        return series_info
-
     def get_episode_airdate(self, episode_id):
         """Retrieves metadata for an episode and gets its air date using the thetvdb.com API"""
 
@@ -447,36 +391,6 @@ class TVMetadataProvider:
                   if "aired" in data and data["aired"] is not None
                   else None)
         return airdate
-
-    def _get_episodes_extended(self, data):
-        season_ids = []
-        seasons = []
-        for raw_season in data["seasons"]:
-            if raw_season["type"]["id"] == 1 and raw_season["id"] not in season_ids:
-                season_ids.append(raw_season["id"])
-                seasons.append(raw_season)
-
-        progress_bar = None
-        if len(seasons) > 0:
-            progress_bar = ProgressBar(len(seasons), prefix="Get seasons:")
-        episode_ids = []
-        episodes = []
-        for season in seasons:
-            season_url = f"seasons/{season['id']}/extended"
-            progress_bar.increment()
-            season_result = self.get_data(season_url)
-            if season_result is None or season_result["data"] is None:
-                continue
-            season_data = season_result["data"]
-            for episode_object in season_data["episodes"]:
-                if episode_object["id"] not in episode_ids:
-                    episode_ids.append(episode_object["id"])
-                    episodes.append(episode_object)
-        if progress_bar is not None:
-            progress_bar.clear()
-
-        episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
-        return episodes
 
 
 class ProgressBar:

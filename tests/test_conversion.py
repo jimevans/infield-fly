@@ -344,20 +344,6 @@ class TestFileStreamInfo:
     def test_select_audio_stream_with_no_streams(self):
         assert FileStreamInfo._select_audio_stream([]) is None
 
-    def test_show(self, capsys):
-        video, audio, subtitle, forced = stream_info(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE)
-        info = FileStreamInfo({"video": video, "audio": audio, "subtitle": subtitle,
-                               "forced_subtitle": forced})
-
-        info.show()
-
-        assert capsys.readouterr().out == (
-            "Stream Info:\n"
-            "video stream: index=0, codec=h264\n"
-            "audio stream: index=1, codec=aac, channels=2\n"
-            "subtitle stream: index=2, codec=subrip\n"
-            "forced subtitle stream: index=3, codec=subrip\n")
-
 
 class TestStreamInfo:
 

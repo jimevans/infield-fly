@@ -49,7 +49,9 @@ is set:
 2. The `INFIELD_FLY_CONFIG` environment variable
 3. `~/.config/infield-fly/settings.json`
 
-If no settings file is found, Infield Fly runs with default settings. Unless
+A settings file named by `--config` or `INFIELD_FLY_CONFIG` must exist, or
+Infield Fly exits with an error. If there is no settings file in the default
+location, Infield Fly runs with default settings. Unless
 overridden in the settings file, the working directories (`staging`,
 `completed`, `logs`, `.jobs`) and the episode database cache (`.dbcache`) are
 created in the same directory as the settings file.
@@ -175,13 +177,13 @@ infield-fly search [options] [fromdate] [todate]
 ```
 
 Finds episodes of tracked series that aired between `fromdate` and `todate`
-(`YYYY-MM-DD`, defaulting to yesterday and today), and builds the search
-strings for them from each series' `search_configs`.
+(`YYYY-MM-DD`, defaulting to yesterday and today), and prints the search
+strings for them built from each series' `search_configs`.
 
 * `-u`, `--update-metadata`: update the episode database first
-* `-x`, `--dry-run`: print the search strings without searching
 * `-c`, `--create-jobs`: add a job to the job queue for each search string
-  instead of searching
+  instead of printing them
+* `-x`, `--dry-run`: with `-c`, print the search strings without creating jobs
 
 Note that `-u` and `-c` mean something different here than before the command.
 
@@ -200,10 +202,13 @@ infield-fly jobs clear [status]                  # remove all jobs, or those wit
 infield-fly jobs process                         # run the processing phases
 ```
 
-`jobs update` accepts additional data for two statuses:
+Infield Fly doesn't search for downloads itself. Find a download for a job's
+search string, then give the job its magnet link with `jobs update`, which
+accepts additional data for two statuses:
 
 * `adding` with a magnet link queues that download for the job
-* `pending` with the path of a downloaded file queues that file for conversion
+* `pending` with the path of a downloaded file or directory queues it for
+  conversion
 
 `jobs process` runs each of the following phases, which can be skipped with
 `--no-search`, `--no-add-downloads`, `--no-query-downloads`, or `--no-convert`:
@@ -213,7 +218,9 @@ infield-fly jobs process                         # run the processing phases
 2. **Add downloads:** adds the magnet links of `adding` jobs to Deluge.
 3. **Query downloads:** marks finished Deluge downloads as `pending`.
 4. **Convert:** converts `pending` downloads into the final directory (or copies
-   them, for download-only jobs).
+   them, for download-only jobs). When a download contains more than one episode
+   file (`.mkv` or `.mp4`), such as a sample alongside the episode, only the
+   largest is converted.
 
 To process jobs on a schedule, run the command from the virtual environment
 with the unattended and config options, for example with this crontab entry:

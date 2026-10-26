@@ -314,19 +314,6 @@ class FileStreamInfo:
 
         return self.forced_subtitle_stream is not None
 
-    def show(self):
-        """Displays the file stream information"""
-
-        print("Stream Info:")
-        print(f"video stream: index={self.video_stream.index}, codec={self.video_stream.codec}")
-        print((f"audio stream: index={self.audio_stream.index}, codec={self.audio_stream.codec}, "
-               f"channels={self.audio_stream.channel_count}"))
-        print((f"subtitle stream: index={self.subtitle_stream.index}, "
-               f"codec={self.subtitle_stream.codec}"))
-        print((f"forced subtitle stream: index={self.forced_subtitle_stream.index}, "
-               f"codec={self.forced_subtitle_stream.codec}"))
-
-
     class StreamInfo:
 
         """Gets information about an individual stream within a file"""

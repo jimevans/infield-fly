@@ -51,8 +51,11 @@ class JobQueue:
         jobs = self.load_jobs()
         return [x for x in jobs if x.status == status]
 
-    def perform_searches(self, airdate, is_unattended_mode=False):
-        """Executes all pending search jobs, searching for available downloads"""
+    def refresh_jobs(self, airdate):
+        """
+        Removes completed jobs added before the airdate, updates the converted file names of
+        waiting jobs, and creates jobs for episodes of tracked series aired on the airdate
+        """
 
         completed_job_list = [x for x in self.get_jobs_by_status(JobStatus.COMPLETED)
                               if x.added != airdate.strftime("%Y-%m-%d")]
@@ -60,27 +63,10 @@ class JobQueue:
             job.delete()
 
         for job in self.get_jobs_by_status(JobStatus.WAITING):
-            job.status = JobStatus.SEARCHING
             job.update_converted_file_name(self.config)
             job.save(self.logger)
 
         self.create_new_search_jobs(airdate)
-
-        search_jobs_list = self.get_jobs_by_status(JobStatus.SEARCHING)
-        if len(search_jobs_list) == 0:
-            self.logger.info("No queries to search during job processing")
-            return
-
-        if is_unattended_mode:
-            self.logger.info("Starting search")
-        start_time = perf_counter()
-        for job in search_jobs_list:
-            # TODO: Redo search functionality
-            job.status = JobStatus.WAITING
-            job.save(self.logger)
-        end_time=perf_counter()
-        if is_unattended_mode:
-            self.logger.info("Search completed in %s seconds", end_time - start_time)
 
     def add_torrents(self):
         """Adds found torrents to the Deluse client"""
@@ -99,11 +85,17 @@ class JobQueue:
             for job in job_list:
                 encoded_id, metadata = client.core.prefetch_magnet_metadata(job.magnet_link)
                 if encoded_id is None:
-                    self.logger.error("Magnet metadata prefetch failed, no ID returned")
-                    return
+                    # Leave the job in the adding state so it is retried on the next run.
+                    self.logger.error(
+                        "Magnet metadata prefetch failed for job %s, no ID returned", job.job_id)
+                    continue
                 if metadata is None:
-                    self.logger.error("Magnet metadata prefetch failed, no metadata returned")
-                encoded_name = metadata.get("name".encode(), None)
+                    self.logger.warning(
+                        "Magnet metadata prefetch returned no metadata for job %s; "
+                        "using torrent name", job.job_id)
+                encoded_name = (metadata.get("name".encode(), None)
+                                if metadata is not None
+                                else None)
                 torrent_id = encoded_id.decode()
                 client.core.add_torrent_magnet(job.magnet_link, {})
                 torrent = client.core.get_torrent_status(
@@ -181,7 +173,6 @@ class JobQueue:
                     search_string = " ".join(search_terms)
                     if not self.is_existing_job(tracked_series.main_keyword, search_string):
                         job = self.create_job(tracked_series.main_keyword, search_string)
-                        job.status = JobStatus.SEARCHING
                         job.is_download_only = stored_search.is_download_only
                         if not stored_search.is_download_only:
                             job.converted_file_name = "".join(
@@ -215,43 +206,43 @@ class JobQueue:
             src_dir = os.path.dirname(src_path)
             file_list = [os.path.basename(src_path)]
 
-        file_list.sort()
-        os.makedirs(self.config.conversion.staging_directory, exist_ok=True)
-        os.makedirs(self.config.conversion.final_directory, exist_ok=True)
-        is_file_converted = False
-        for input_file in file_list:
-            match = re.match(
-                r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)", input_file, re.IGNORECASE)
-            if match is not None:
-                is_file_converted = True
-                src_file = os.path.join(src_dir, match.group(0))
-                dest_file = os.path.join(self.config.conversion.staging_directory,
-                                        f"{job.converted_file_name}.mp4")
-                converter = Converter(src_file,
-                                      dest_file,
-                                      self.config.conversion.ffmpeg_location,
-                                      is_unattended_mode)
-                if is_unattended_mode:
-                    self.logger.info("Starting conversion")
-                start_time = perf_counter()
-                converter.convert_file(ConversionSettings(
-                    convert_video=False, convert_audio=True, convert_subtitles=True))
-                end_time = perf_counter()
-                if is_unattended_mode:
-                    self.logger.info(
-                        "Conversion completed in %s seconds", end_time - start_time)
-
-                # Move before marking complete, so a failed move leaves the job retryable.
-                # shutil.move handles staging and final directories on different volumes.
-                shutil.move(dest_file,
-                            os.path.join(self.config.conversion.final_directory,
-                                         os.path.basename(dest_file)))
-                self.mark_job_complete(job)
-
-        if not is_file_converted:
+        episode_files = [
+            x for x in file_list
+            if re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)$", x, re.IGNORECASE)
+            and os.path.isfile(os.path.join(src_dir, x))]
+        if len(episode_files) == 0:
             self.logger.warning("No episode files found to convert in %s", src_path)
             job.status = JobStatus.PENDING
             job.save(self.logger)
+            return
+
+        # Downloads can include samples or other extras whose names also match the
+        # episode file pattern, so convert only the largest matching file.
+        src_file = max((os.path.join(src_dir, x) for x in episode_files), key=os.path.getsize)
+        os.makedirs(self.config.conversion.staging_directory, exist_ok=True)
+        os.makedirs(self.config.conversion.final_directory, exist_ok=True)
+        dest_file = os.path.join(self.config.conversion.staging_directory,
+                                 f"{job.converted_file_name}.mp4")
+        converter = Converter(src_file,
+                              dest_file,
+                              self.config.conversion.ffmpeg_location,
+                              is_unattended_mode)
+        if is_unattended_mode:
+            self.logger.info("Starting conversion")
+        start_time = perf_counter()
+        converter.convert_file(ConversionSettings(
+            convert_video=False, convert_audio=True, convert_subtitles=True))
+        end_time = perf_counter()
+        if is_unattended_mode:
+            self.logger.info(
+                "Conversion completed in %s seconds", end_time - start_time)
+
+        # Move before marking complete, so a failed move leaves the job retryable.
+        # shutil.move handles staging and final directories on different volumes.
+        shutil.move(dest_file,
+                    os.path.join(self.config.conversion.final_directory,
+                                 os.path.basename(dest_file)))
+        self.mark_job_complete(job)
 
     def set_job_search_result(self, job, search_result):
         """Sets the search result for a job"""
@@ -542,6 +533,7 @@ class Job:
         if not os.path.isdir(self.directory):
             logger.warning(
                 "Cannot save job; path '%s' exists, but is not a directory.", self.directory)
+            return
 
         with open(self.file_path, "w", encoding='utf-8') as job_file:
             json.dump(self.dictionary, job_file, indent=2, default=lambda x: x.value)

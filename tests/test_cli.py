@@ -18,7 +18,6 @@ from infield_fly import cli
 from infield_fly.configuration import DEFAULT_CONFIG_DIRECTORY
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobQueue, JobStatus
-from infield_fly.search import TorrentResult
 
 MAGNET = "magnet:?xt=urn:btih:ABCDEF&dn=Show.S01E02"
 
@@ -75,59 +74,37 @@ class TestGetSearchStrings:
             "Episodes found:\nThe Show - s01e01 - Pilot (airdate 2020-01-01)\n")
 
 
-class TestSearchForTorrents:
-
-    SEARCHES = [{"query": "found"}, {"query": "not found"}]
-
-    @pytest.fixture
-    def finder(self):
-        with mock.patch("infield_fly.cli.TorrentDataProvider") as provider_class:
-            provider_class.return_value.search.side_effect = lambda query, retry_count: (
-                [TorrentResult("Show.S01E02", MAGNET)] if query == "found" else [])
-            yield provider_class.return_value
-
-    def test_prints_results(self, finder, capsys):
-        cli.search_for_torrents(self.SEARCHES, 2, None)
-
-        finder.search.assert_any_call("found", retry_count=2)
-        output = capsys.readouterr().out
-        assert "Torrent title: Show.S01E02\n" in output
-        assert f"Magnet link: {MAGNET}\n" in output
-        assert "No results found after retries" in output
-
-    def test_prints_results_when_directory_missing(self, finder, tmp_path, capsys):
-        cli.search_for_torrents(self.SEARCHES, 2, str(tmp_path / "missing"))
-
-        assert "Torrent title" in capsys.readouterr().out
-
-    def test_writes_magnet_files(self, finder, tmp_path, capsys):
-        cli.search_for_torrents(self.SEARCHES, 2, str(tmp_path))
-
-        assert (tmp_path / "Show.S01E02.magnet").read_text(encoding="utf-8") == MAGNET
-        assert "Writing magnet link" in capsys.readouterr().out
-
-
 def search_args(**overrides):
     values = {"fromdate": "2020-01-01", "todate": "2020-01-31", "update_metadata": False,
-              "dry_run": False, "create_jobs": False, "retry_count": 4, "directory": None}
+              "dry_run": False, "create_jobs": False}
     return Namespace(**{**values, **overrides})
 
 
 class TestFindDownloads:
 
-    def test_dry_run(self, config, episode_db, capsys):
+    def test_prints_search_strings(self, config, episode_db, capsys):
         with mock.patch.object(episode_db, "update_all_tracked_series") as update:
-            cli.find_downloads(search_args(dry_run=True), config)
+            cli.find_downloads(search_args(), config)
 
         update.assert_not_called()
         output = capsys.readouterr().out
-        assert "Searching for downloads between 2020-01-01 and 2020-01-31" in output
-        assert "Dry run requested" in output
-        assert "show 1080p s01e02\n" in output
+        assert "Finding episodes aired between 2020-01-01 and 2020-01-31" in output
+        assert "Dry run requested" not in output
+        assert output.endswith("Search strings:\n"
+                               "show 1080p s01e01\nshow s01e01\n"
+                               "show 1080p s01e02\nshow s01e02\n")
+        assert load_jobs(config) == []
+
+    def test_dry_run_does_not_create_jobs(self, config, episode_db, capsys):
+        cli.find_downloads(search_args(create_jobs=True, dry_run=True), config)
+
+        output = capsys.readouterr().out
+        assert "Dry run requested. Not creating jobs.\nSearch strings:\n" in output
+        assert load_jobs(config) == []
 
     def test_updates_metadata(self, config, episode_db, capsys):
         with mock.patch.object(episode_db, "update_all_tracked_series") as update:
-            cli.find_downloads(search_args(update_metadata=True, dry_run=True), config)
+            cli.find_downloads(search_args(update_metadata=True), config)
 
         update.assert_called_once_with()
         assert os.path.exists(episode_db.cache_file_path)
@@ -139,16 +116,7 @@ class TestFindDownloads:
         jobs = sorted((x.query, x.is_download_only) for x in load_jobs(config))
         assert jobs == [("show 1080p s01e01", False), ("show 1080p s01e02", False),
                         ("show s01e01", True), ("show s01e02", True)]
-        capsys.readouterr()
-
-    def test_searches_for_torrents(self, config, episode_db, capsys):
-        with mock.patch("infield_fly.cli.search_for_torrents") as search:
-            cli.find_downloads(search_args(retry_count=1, directory="/out"), config)
-
-        searches, retry_count, directory = search.call_args[0]
-        assert len(searches) == 4
-        assert (retry_count, directory) == (1, "/out")
-        capsys.readouterr()
+        assert "Search strings" not in capsys.readouterr().out
 
 
 class TestListSeries:
@@ -390,13 +358,27 @@ class TestUpdateJob:
         assert (job.status, job.name, job.download_directory) == (
             JobStatus.PENDING, "Show.S01E01.mkv", str(tmp_path))
 
-    @pytest.mark.parametrize("status", ["completed", "adding", "pending"])
-    def test_sets_status_without_update_data(self, config, status):
+    @pytest.mark.parametrize("status, expected", [
+        ("completed", JobStatus.COMPLETED),
+        ("adding", JobStatus.ADDING),
+        ("pending", JobStatus.PENDING),
+        ("Completed", JobStatus.COMPLETED),
+        ("PENDING", JobStatus.PENDING),
+    ])
+    def test_sets_status_without_update_data(self, config, status, expected):
         job = add_job(config)
 
         cli.update_job(update_args(job.job_id, status), config)
 
-        assert load_jobs(config)[0].status == JobStatus(status)
+        assert load_jobs(config)[0].status == expected
+
+    def test_status_with_update_data_is_case_insensitive(self, config):
+        job = add_job(config)
+
+        cli.update_job(update_args(job.job_id, "ADDING", MAGNET), config)
+
+        job = load_jobs(config)[0]
+        assert (job.status, job.magnet_link) == (JobStatus.ADDING, MAGNET)
 
 
 class TestParseJobStatus:
@@ -461,8 +443,8 @@ class TestProcessJobs:
         cli.process_jobs(args, config)
 
         today = datetime.now()
-        job_queue.perform_searches.assert_called_once_with(
-            datetime(today.year, today.month, today.day), True)
+        job_queue.refresh_jobs.assert_called_once_with(
+            datetime(today.year, today.month, today.day))
         job_queue.add_torrents.assert_called_once_with()
         job_queue.query_torrents_status.assert_called_once_with()
         job_queue.perform_conversions.assert_called_once_with(True)
@@ -516,13 +498,8 @@ class TestLoadConfig:
         assert config.conversion.infield_fly_directory == str(tmp_path)
         assert config.conversion.job_directory == str(tmp_path / ".jobs")
 
-    def test_missing_file_uses_defaults(self, tmp_path):
-        config = cli.load_config(str(tmp_path / "missing.json"))
-
-        assert config.conversion.settings == {}
-        assert config.conversion.infield_fly_directory == str(tmp_path)
-
     def test_relative_path_is_made_absolute(self, tmp_path, monkeypatch):
+        (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
 
         config = cli.load_config("settings.json")
@@ -530,6 +507,7 @@ class TestLoadConfig:
         assert config.conversion.infield_fly_directory == str(tmp_path)
 
     def test_expands_home_directory(self, tmp_path, monkeypatch):
+        (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
         monkeypatch.setenv("HOME", str(tmp_path))
 
         config = cli.load_config("~/settings.json")
@@ -537,24 +515,40 @@ class TestLoadConfig:
         assert config.conversion.infield_fly_directory == str(tmp_path)
 
     def test_uses_environment_variable(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("INFIELD_FLY_CONFIG", str(tmp_path / "env.json"))
+        config_file = tmp_path / "env.json"
+        config_file.write_text(json.dumps({"conversion": {"ffmpeg_location": "/env"}}),
+                               encoding="utf-8")
+        monkeypatch.setenv("INFIELD_FLY_CONFIG", str(config_file))
 
         config = cli.load_config(None)
 
+        assert config.conversion.ffmpeg_location == "/env"
         assert config.conversion.infield_fly_directory == str(tmp_path)
 
     def test_argument_overrides_environment_variable(self, tmp_path, monkeypatch):
+        (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
         monkeypatch.setenv("INFIELD_FLY_CONFIG", "/elsewhere/env.json")
 
         config = cli.load_config(str(tmp_path / "settings.json"))
 
         assert config.conversion.infield_fly_directory == str(tmp_path)
 
-    def test_defaults_to_user_config_directory(self):
+    def test_missing_specified_file_is_an_error(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="missing.json' does not exist"):
+            cli.load_config(str(tmp_path / "missing.json"))
+
+    def test_missing_environment_variable_file_is_an_error(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INFIELD_FLY_CONFIG", str(tmp_path / "missing.json"))
+
+        with pytest.raises(FileNotFoundError, match="missing.json' does not exist"):
+            cli.load_config(None)
+
+    def test_missing_default_file_uses_defaults(self):
         with mock.patch("infield_fly.cli.os.path.exists", return_value=False) as exists:
             config = cli.load_config(None)
 
         exists.assert_called_once_with(os.path.join(DEFAULT_CONFIG_DIRECTORY, "settings.json"))
+        assert config.conversion.settings == {}
         assert config.conversion.infield_fly_directory == DEFAULT_CONFIG_DIRECTORY
 
 
@@ -595,19 +589,19 @@ class TestMain:
             "show", True, 2.4, 20.0, False, False, True, True, True, "conf.json")
 
     def test_search(self):
-        args = self.run_main("search", "2020-01-01", "2020-01-31", "-u", "-r", "2", "-d", "out",
-                             "-x", "-c", command="find_downloads")
+        args = self.run_main("search", "2020-01-01", "2020-01-31", "-u", "-x", "-c",
+                             command="find_downloads")
 
-        assert (args.fromdate, args.todate, args.update_metadata, args.retry_count,
-                args.directory, args.dry_run, args.create_jobs) == (
-            "2020-01-01", "2020-01-31", True, 2, "out", True, True)
+        assert (args.fromdate, args.todate, args.update_metadata, args.dry_run,
+                args.create_jobs) == ("2020-01-01", "2020-01-31", True, True, True)
 
     def test_search_defaults(self):
         args = self.run_main("search", command="find_downloads")
 
         assert args.todate == datetime.now().strftime("%Y-%m-%d")
         assert args.fromdate < args.todate
-        assert args.retry_count == 4
+        assert not args.dry_run
+        assert not args.create_jobs
 
     def test_database_commands(self):
         assert self.run_main("database", "list", "show", command="list_series").keyword == "show"
@@ -639,6 +633,17 @@ class TestMain:
         args = self.run_main("jobs", *argv, command=command)
 
         assert {name: getattr(args, name) for name in expected} == expected
+
+    def test_missing_settings_file_is_reported(self, tmp_path, capsys):
+        missing = str(tmp_path / "missing.json")
+        with mock.patch.object(sys, "argv", ["infield-fly", "-c", missing, "jobs", "list"]), \
+                mock.patch("infield_fly.cli.list_jobs") as list_jobs, \
+                pytest.raises(SystemExit) as exit_info:
+            cli.main()
+
+        assert exit_info.value.code == 2
+        assert f"Settings file '{missing}' does not exist" in capsys.readouterr().err
+        list_jobs.assert_not_called()
 
     def test_requires_command(self, capsys):
         with mock.patch.object(sys, "argv", ["infield-fly"]), pytest.raises(SystemExit):

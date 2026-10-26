@@ -14,7 +14,7 @@ from infield_fly.conversion import ConversionSettings, Converter, FileMapper
 from infield_fly.database import EpisodeDatabase
 from infield_fly.jobs import JobQueue, JobStatus
 from infield_fly.notification import Notifier
-from infield_fly.search import TorrentDataProvider
+from infield_fly.search import TorrentResult
 
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
@@ -45,29 +45,8 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
 
     return searches_to_perform
 
-def search_for_torrents(searches_to_perform, search_retry_count, output_directory):
-    """Searches for torrents using the specified search strings"""
-
-    finder = TorrentDataProvider()
-    print("Performing searches")
-    for search in searches_to_perform:
-        search_results = finder.search(search["query"], retry_count=search_retry_count)
-        if len(search_results) == 0:
-            print("No results found after retries")
-        for search_result in search_results:
-            if output_directory is not None and os.path.isdir(output_directory):
-                magnet_file_path = os.path.join(output_directory,
-                                                search_result.title + ".magnet")
-                print(f"Writing magnet link to {magnet_file_path}")
-                with open(magnet_file_path, "w", encoding='utf-8') as magnet_file:
-                    magnet_file.write(search_result.magnet_link)
-                    magnet_file.flush()
-            else:
-                print(f"Torrent title: {search_result.title}")
-                print(f"Magnet link: {search_result.magnet_link}")
-
 def find_downloads(args, config):
-    """Finds available downloads"""
+    """Finds episodes aired in a date range, and prints or creates jobs for their search strings"""
 
     episode_db = EpisodeDatabase.load_from_cache(config)
     from_date = datetime.strptime(args.fromdate, "%Y-%m-%d")
@@ -77,21 +56,20 @@ def find_downloads(args, config):
         episode_db.update_all_tracked_series()
         episode_db.save_to_cache()
 
-    print(f"Searching for downloads between {from_date:%Y-%m-%d} and {to_date:%Y-%m-%d}")
+    print(f"Finding episodes aired between {from_date:%Y-%m-%d} and {to_date:%Y-%m-%d}")
     searches_to_perform = get_search_strings(from_date, to_date, episode_db, config.metadata)
 
     print("")
-    if args.dry_run:
-        print("Dry run requested. Not performing searches. Searches to perform:")
+    if args.create_jobs and not args.dry_run:
+        job_queue = JobQueue(config)
         for search in searches_to_perform:
-            print(search["query"])
+            job_queue.create_job(search["keyword"], search["query"], search["download_only"])
     else:
         if args.create_jobs:
-            job_queue = JobQueue(config)
-            for search in searches_to_perform:
-                job_queue.create_job(search["keyword"], search["query"], search["download_only"])
-        else:
-            search_for_torrents(searches_to_perform, args.retry_count, args.directory)
+            print("Dry run requested. Not creating jobs.")
+        print("Search strings:")
+        for search in searches_to_perform:
+            print(search["query"])
 
 def list_series(args, config):
     """Lists the episodes of a series in the cached dataabase."""
@@ -227,8 +205,7 @@ def update_job(args, config):
             print(f"Unknown status value '{args.status}'")
         else:
             if status == JobStatus.ADDING and args.update_data is not None:
-                torrent_provider = TorrentDataProvider()
-                search_result = torrent_provider.create_torrent_result(args.update_data)
+                search_result = TorrentResult.from_magnet_link(args.update_data)
                 job_queue.set_job_search_result(job, search_result)
             elif status == JobStatus.PENDING and args.update_data is not None:
                 if not os.path.isfile(args.update_data):
@@ -288,8 +265,7 @@ def process_jobs(args, config):
     job_queue = JobQueue(config)
     if args.search:
         airdate = datetime.now()
-        job_queue.perform_searches(
-            datetime(month=airdate.month, day=airdate.day, year=airdate.year), args.unattended)
+        job_queue.refresh_jobs(datetime(month=airdate.month, day=airdate.day, year=airdate.year))
 
     if args.add_downloads:
         job_queue.add_torrents()
@@ -360,14 +336,10 @@ def add_search_subparser(subparsers):
                                   action="store_true", help="Update metadata cache from online " +
                                   "sources")
 
-    search_subparser.add_argument("-r", "--retry-count", type=int, default=4,
-                                  help="Number of times to retry to find torrents")
-    search_subparser.add_argument("-d", "--directory",
-                                  help="Directory to which to write magnet links to files")
     search_subparser.add_argument("-x", "--dry-run", action="store_true",
-                                  help="Perform a dry run, printing data, but do not convert")
+                                  help="Print the search strings, but do not create jobs")
     search_subparser.add_argument("-c", "--create-jobs", dest="create_jobs", action="store_true",
-                                  help="Create jobs for searches in the job queue")
+                                  help="Create jobs for the search strings in the job queue")
     search_subparser.set_defaults(func=find_downloads)
 
 def add_database_subparser(subparsers):
@@ -430,10 +402,10 @@ def add_jobs_subparser(subparsers):
     search_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     search_parser.add_argument(
         "--search", dest="search", action = "store_true",
-        help="Perform the search phase of job processing")
+        help="Create jobs for episodes of tracked series airing today")
     search_parser.add_argument(
         "--no-search", dest="search", action="store_false",
-        help="Skip the search phase of job processing")
+        help="Skip creating jobs for episodes airing today")
     add_downloads_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)
     add_downloads_parser.add_argument(
         "--add-downloads", dest="add_downloads", action = "store_true",
@@ -484,8 +456,8 @@ def load_config(config_file):
     # If unspecified, read the config file named by the environment variable,
     # falling back to settings.json in the user's config directory. Default
     # data directories are resolved relative to the config file's directory.
-    config_file_path = (config_file
-                        or os.environ.get(CONFIG_FILE_ENVIRONMENT_VARIABLE)
+    explicit_config_file = config_file or os.environ.get(CONFIG_FILE_ENVIRONMENT_VARIABLE)
+    config_file_path = (explicit_config_file
                         or os.path.join(DEFAULT_CONFIG_DIRECTORY, "settings.json"))
     config_file_path = os.path.abspath(os.path.expanduser(config_file_path))
     infield_fly_directory = os.path.dirname(config_file_path)
@@ -493,6 +465,10 @@ def load_config(config_file):
     if os.path.exists(config_file_path):
         with open(config_file_path, encoding='utf-8') as settings_file:
             settings_dict = json.load(settings_file)
+    elif explicit_config_file:
+        # A missing default settings file means default settings, but a missing
+        # explicitly specified one is almost certainly a mistake.
+        raise FileNotFoundError(f"Settings file '{config_file_path}' does not exist")
 
     return Configuration(infield_fly_directory, settings_dict)
 
@@ -514,6 +490,9 @@ def main():
     add_database_subparser(subparsers)
     add_jobs_subparser(subparsers)
     args = parser.parse_args()
-    config = load_config(args.config)
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as ex:
+        parser.error(str(ex))
     setup_logging(config, args.unattended)
     args.func(args, config)

@@ -135,51 +135,42 @@ class TestJobQueueBasics:
         assert queue.get_job_by_id(job.job_id) is None
 
 
-class TestPerformSearches:
+class TestRefreshJobs:
 
     AIRDATE = datetime(2020, 1, 2)
 
-    def test_creates_jobs_and_cleans_up_queue(self, queue, episode_db, caplog):
-        caplog.set_level("INFO")
+    def test_creates_jobs_and_cleans_up_queue(self, queue, episode_db):
         old_completed = add_job(queue, JobStatus.COMPLETED, query="old", added="2020-01-01")
         add_job(queue, JobStatus.COMPLETED, query="current", added="2020-01-02")
         add_job(queue, JobStatus.WAITING, keyword="show", query="show s01e01")
+        stale = add_job(queue, JobStatus.WAITING, keyword="show", query="show 720p s01e02",
+                        converted_file_name="Old name")
 
-        queue.perform_searches(self.AIRDATE)
+        queue.refresh_jobs(self.AIRDATE)
 
         assert queue.get_job_by_id(old_completed.job_id) is None
         assert job_statuses(queue) == [
             ("current", JobStatus.COMPLETED),
             ("show 1080p s01e02", JobStatus.WAITING),
+            ("show 720p s01e02", JobStatus.WAITING),
             ("show s01e01", JobStatus.WAITING),
             ("show s01e02", JobStatus.WAITING),
         ]
         jobs = {(x.query, x.is_download_only): x for x in queue.load_jobs()}
         assert jobs[("show 1080p s01e02", False)].converted_file_name == PLEX_NAME
         assert jobs[("show s01e02", True)].converted_file_name == PLEX_NAME
-        assert "Starting search" not in caplog.text
+        assert queue.get_job_by_id(stale.job_id).converted_file_name == PLEX_NAME
 
     def test_does_not_duplicate_existing_jobs(self, queue, episode_db):
-        queue.perform_searches(self.AIRDATE)
-        queue.perform_searches(self.AIRDATE)
+        queue.refresh_jobs(self.AIRDATE)
+        queue.refresh_jobs(self.AIRDATE)
 
         assert len(queue.load_jobs()) == 2
 
-    def test_unattended_mode_logs_timing(self, queue, episode_db, caplog):
-        caplog.set_level("INFO")
-
-        queue.perform_searches(self.AIRDATE, is_unattended_mode=True)
-
-        assert "Starting search" in caplog.text
-        assert "Search completed" in caplog.text
-
-    def test_no_episodes_on_airdate(self, queue, episode_db, caplog):
-        caplog.set_level("INFO")
-
-        queue.perform_searches(datetime(2021, 1, 1))
+    def test_no_episodes_on_airdate(self, queue, episode_db):
+        queue.refresh_jobs(datetime(2021, 1, 1))
 
         assert queue.load_jobs() == []
-        assert "No queries to search" in caplog.text
 
 
 class TestAddTorrents:
@@ -211,27 +202,35 @@ class TestAddTorrents:
         deluge_client.core.get_torrent_status.assert_any_call(
             "id1", ["name", "download_location", "is_finished"])
 
-    def test_stops_when_prefetch_returns_no_id(self, queue, deluge_client, caplog):
-        job = add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
-        deluge_client.core.prefetch_magnet_metadata.return_value = (None, None)
+    def test_skips_job_when_prefetch_returns_no_id(self, queue, deluge_client, caplog):
+        failed = add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
+        added = add_job(queue, JobStatus.ADDING, magnet_link="magnet:2")
+        metadata = {failed.magnet_link: (None, None),
+                    added.magnet_link: (b"id2", {b"name": b"Metadata name"})}
+        deluge_client.core.prefetch_magnet_metadata.side_effect = lambda link: metadata[link]
+        deluge_client.core.get_torrent_status.return_value = {
+            b"name": b"Torrent name", b"download_location": b"/downloads"}
 
         queue.add_torrents()
 
-        assert "no ID returned" in caplog.text
-        deluge_client.core.add_torrent_magnet.assert_not_called()
-        assert queue.get_job_by_id(job.job_id).status == JobStatus.ADDING
+        assert f"failed for job {failed.job_id}, no ID returned" in caplog.text
+        deluge_client.core.add_torrent_magnet.assert_called_once_with("magnet:2", {})
+        assert queue.get_job_by_id(failed.job_id).status == JobStatus.ADDING
+        assert queue.get_job_by_id(added.job_id).status == JobStatus.DOWNLOADING
 
-    @pytest.mark.xfail(raises=AttributeError, strict=True,
-                       reason="add_torrents logs missing metadata but then calls metadata.get()")
-    def test_handles_prefetch_with_no_metadata(self, queue, deluge_client, caplog):
-        add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
+    def test_uses_torrent_name_when_prefetch_returns_no_metadata(self, queue, deluge_client,
+                                                                 caplog):
+        job = add_job(queue, JobStatus.ADDING, magnet_link="magnet:1")
         deluge_client.core.prefetch_magnet_metadata.return_value = (b"id1", None)
         deluge_client.core.get_torrent_status.return_value = {
             b"name": b"Torrent name", b"download_location": b"/downloads"}
 
         queue.add_torrents()
 
-        assert "no metadata returned" in caplog.text
+        job = queue.get_job_by_id(job.job_id)
+        assert (job.status, job.torrent_hash, job.name) == (
+            JobStatus.DOWNLOADING, "id1", "Torrent name")
+        assert "returned no metadata" in caplog.text
 
 
 class TestQueryTorrentsStatus:
@@ -374,6 +373,33 @@ class TestConvertDownloadedFiles:
         assert "Starting conversion" in caplog.text
         assert "Conversion completed" in caplog.text
 
+    def test_converts_only_largest_episode_file(self, queue, config, tmp_path,
+                                                converter_class):
+        download = tmp_path / "Show.S01E02"
+        download.mkdir()
+        (download / "Show.S01E02.1080p.mkv").write_bytes(b"x" * 100)
+        (download / "Show.S01E02.sample.mkv").write_bytes(b"x" * 10)
+        (download / "Show.S01E02.1080p.mkv.part").write_bytes(b"x" * 1000)
+        (download / "Show.S01E02.extras.mkv").mkdir()
+        job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02",
+                      download_directory=str(tmp_path), converted_file_name=PLEX_NAME)
+
+        queue.convert_downloaded_files(job, False)
+
+        converter_class.assert_called_once()
+        assert converter_class.call_args[0][0] == str(download / "Show.S01E02.1080p.mkv")
+        assert queue.get_job_by_id(job.job_id).status == JobStatus.COMPLETED
+
+    def test_missing_single_file_returns_job_to_pending(self, queue, tmp_path,
+                                                        converter_class):
+        job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mkv",
+                      download_directory=str(tmp_path))
+
+        queue.convert_downloaded_files(job, False)
+
+        converter_class.assert_not_called()
+        assert queue.get_job_by_id(job.job_id).status == JobStatus.PENDING
+
     def test_no_episode_files_returns_job_to_pending(self, queue, tmp_path, converter_class,
                                                      caplog):
         download = tmp_path / "downloads" / "Show"
@@ -442,15 +468,14 @@ class TestJob:
         job.delete()
         assert Job.load(directory, job.job_id) is None
 
-    @pytest.mark.xfail(raises=NotADirectoryError, strict=True,
-                       reason="save warns that the path is not a directory but still writes")
-    def test_save_to_non_directory_path_warns(self, tmp_path, caplog):
+    def test_save_to_non_directory_path_warns_without_writing(self, tmp_path, caplog):
         not_a_directory = tmp_path / "file"
         not_a_directory.touch()
 
         Job(str(not_a_directory), {}).save(logging.getLogger())
 
         assert "is not a directory" in caplog.text
+        assert not_a_directory.read_text(encoding="utf-8") == ""
 
     def test_copy_has_new_id(self, tmp_path):
         job = Job(str(tmp_path), {"query": "q", "status": "pending"})

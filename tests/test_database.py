@@ -350,45 +350,6 @@ class TestGetData:
         assert "Received error response (500): Server error" in caplog.text
 
 
-class TestSearchForSeries:
-
-    def test_returns_english_results(self, provider):
-        response = {"data": [
-            {"tvdb_id": "1", "name": "Show", "primary_language": "eng",
-             "status": {"name": "Ended"}, "year": "2001"},
-            {"tvdb_id": "2", "name": "Show (no year)", "primary_language": "eng",
-             "status": {"name": "Continuing"}},
-            {"tvdb_id": "3", "name": "Französisch", "primary_language": "deu",
-             "status": {"name": "Ended"}},
-            {"tvdb_id": "4", "name": "No language", "status": {"name": "Ended"}},
-        ]}
-        with mock.patch.object(provider, "get_data", return_value=response) as get_data:
-            results = provider.search_for_series("show & tell")
-
-        get_data.assert_called_once_with("search?q=show+%26+tell&type=series")
-        assert results == [
-            {"id": "1", "title": "Show", "status": "Ended", "year": "2001"},
-            {"id": "2", "title": "Show (no year)", "status": "Continuing"}
-        ]
-
-    def test_returns_empty_on_failure(self, provider):
-        with mock.patch.object(provider, "get_data", return_value=None):
-            assert provider.search_for_series("show") == []
-
-    @pytest.mark.xfail(raises=AttributeError, strict=True,
-                       reason="status filter calls lower() on the status object")
-    def test_status_filter_includes_matching(self, provider):
-        response = {"data": [{"tvdb_id": "1", "name": "Show", "primary_language": "eng",
-                              "status": {"name": "Ended"}}]}
-        with mock.patch.object(provider, "get_data", return_value=response):
-            assert len(provider.search_for_series("show", status="ended")) == 1
-
-    def test_status_filter_excludes_non_matching(self, provider):
-        response = {"data": [{"primary_language": "eng", "status": "Ended"}]}
-        with mock.patch.object(provider, "get_data", return_value=response):
-            assert provider.search_for_series("show", status="continuing") == []
-
-
 SERIES_DATA = {"id": 1, "name": "The Show", "status": {"name": "Continuing"}, "year": "2020"}
 
 
@@ -447,57 +408,6 @@ class TestGetSeries:
         pages = [{"data": {"series": SERIES_DATA, "episodes": [episode_dict(1, 1, 1)]}}, response]
         with mock.patch.object(provider, "get_data", side_effect=pages):
             assert provider.get_series(1) is None
-
-
-class TestGetSeriesExtended:
-
-    def test_retrieves_regular_season_episodes(self, provider, capsys):
-        series_data = {**SERIES_DATA, "seasons": [
-            {"id": 100, "type": {"id": 1}},
-            {"id": 100, "type": {"id": 1}},
-            {"id": 101, "type": {"id": 2}},
-            {"id": 102, "type": {"id": 1}},
-            {"id": 103, "type": {"id": 1}},
-        ]}
-        responses = {
-            "series/1/extended": {"data": series_data},
-            "seasons/100/extended": {"data": {"episodes": [
-                episode_dict(2, 1, 2, "2020-01-08"), episode_dict(1, 1, 1)]}},
-            "seasons/102/extended": {"data": {"episodes": [
-                episode_dict(1, 1, 1), episode_dict(3, 0, 1)]}},
-            "seasons/103/extended": None,
-        }
-        with mock.patch.object(provider, "get_data",
-                               side_effect=lambda url, params=None: responses[url]), \
-                mock.patch.object(provider, "get_episode_airdate",
-                                  return_value=datetime(2020, 1, 1)) as get_airdate:
-            series = provider.get_series_extended(1)
-
-        assert [x.episode_id for x in series.episodes] == [3, 1, 2]
-        get_airdate.assert_called_once_with(1)
-        output = capsys.readouterr().out
-        assert "Get seasons:" in output
-        assert "Get episodes:" in output
-
-    def test_series_without_seasons(self, provider, capsys):
-        with mock.patch.object(provider, "get_data",
-                               return_value={"data": {**SERIES_DATA, "seasons": []}}):
-            series = provider.get_series_extended(1)
-
-        assert series.episodes == []
-        assert capsys.readouterr().out == ""
-
-    def test_season_with_null_data_is_skipped(self, provider, capsys):
-        responses = [{"data": {**SERIES_DATA, "seasons": [{"id": 100, "type": {"id": 1}}]}},
-                     {"data": None}]
-        with mock.patch.object(provider, "get_data", side_effect=responses):
-            assert provider.get_series_extended(1).episodes == []
-        capsys.readouterr()
-
-    @pytest.mark.parametrize("response", [None, {"data": None}])
-    def test_returns_none_on_failure(self, provider, response):
-        with mock.patch.object(provider, "get_data", return_value=response):
-            assert provider.get_series_extended(1) is None
 
 
 class TestGetEpisodeAirdate:
