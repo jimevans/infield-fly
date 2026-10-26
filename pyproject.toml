@@ -11,7 +11,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.9"
 dependencies = [
     "deluge_client==1.9.0",
-    "requests==2.26.0",
+    "requests>=2.32.4,<3",
     "twilio==7.3.1",
 ]
 
