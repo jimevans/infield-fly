@@ -351,14 +351,23 @@ class TestConvertDownloadedFiles:
         converters = []
 
         def create_converter(_src_file, dest_file, *_):
+            def convert_file(_):
+                base_name, _ext = os.path.splitext(dest_file)
+                output_files = [dest_file] + [f"{base_name}{x}" for x in subtitle_files]
+                for output_file in output_files:
+                    Path(output_file).touch()
+                return output_files
+
             converter = mock.Mock()
-            converter.convert_file.side_effect = lambda _: Path(dest_file).touch()
+            converter.convert_file.side_effect = convert_file
             converters.append(converter)
             return converter
 
+        subtitle_files = []
         with mock.patch("infield_fly.jobs.Converter",
                         side_effect=create_converter) as converter_class:
             converter_class.created = converters
+            converter_class.subtitle_files = subtitle_files
             yield converter_class
 
     def test_converts_episode_in_directory(self, queue, config, tmp_path, converter_class,
@@ -400,6 +409,21 @@ class TestConvertDownloadedFiles:
                                            f"{PLEX_NAME}.mp4"))
         assert "Starting conversion" in caplog.text
         assert "Conversion completed" in caplog.text
+
+    def test_moves_subtitle_files_to_final_directory(self, queue, config, tmp_path,
+                                                      converter_class):
+        converter_class.subtitle_files.extend([".eng.forced.srt", ".eng.srt"])
+        (tmp_path / "Show.S01E02.mkv").touch()
+        job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mkv",
+                      download_directory=str(tmp_path), converted_file_name=PLEX_NAME)
+
+        queue.convert_downloaded_files(job, False)
+
+        for extension in (".mp4", ".eng.forced.srt", ".eng.srt"):
+            assert os.path.exists(os.path.join(config.conversion.final_directory,
+                                               f"{PLEX_NAME}{extension}"))
+            assert not os.path.exists(os.path.join(config.conversion.staging_directory,
+                                                   f"{PLEX_NAME}{extension}"))
 
     def test_converts_only_largest_episode_file(self, queue, config, tmp_path,
                                                 converter_class):

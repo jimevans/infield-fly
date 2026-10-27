@@ -191,7 +191,9 @@ Converts a file to the mp4 container. By default, the video stream is copied;
 the audio stream is copied or converted to stereo AAC as the default track,
 with an AC-3 track added alongside it; and an English text subtitle stream is
 converted to `mov_text`. A forced English subtitle stream, if present, is
-written next to the output file as `<name>.eng.forced.srt`.
+written next to the output file as `<name>.eng.forced.srt`. In that case, the
+main English text subtitle stream is also written as `<name>.eng.srt`,
+for remuxing later if ffmpeg has trouble muxing the forced subtitles.
 
 * If `source` is a file, it is converted to `destination`. If `destination` is
   a directory, the output keeps the source file's base name.

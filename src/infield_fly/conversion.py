@@ -44,7 +44,7 @@ class Converter:
         return tool_location
 
     def convert_file(self, settings=None, dry_run=False):
-        """Converts a single file"""
+        """Converts a single file, returning the list of output files written"""
 
         if settings is None:
             settings = ConversionSettings()
@@ -79,27 +79,44 @@ class Converter:
         else:
             subprocess.run(ffmpeg_args, check=True)
 
+        output_files = [self.output_file]
         if is_convert_subtitles:
-            self.convert_forced_subtitles(dry_run)
+            output_files.extend(self.convert_forced_subtitles(dry_run))
+        return output_files
 
     def convert_forced_subtitles(self, dry_run=False):
-        """Converts forced subtitle track, if any"""
+        """
+        Converts forced subtitle track, if any, to a separate file. The main subtitle
+        track is also extracted alongside it for later remuxing, since ffmpeg does not
+        always mux forced subtitles correctly. Returns the list of subtitle files written.
+        """
 
+        subs_files = []
         if self.file_stream_info.has_forced_subtitle_stream:
             base_name, _ = os.path.splitext(self.output_file)
-            forced_subs_file = f"{base_name}.eng.forced.srt"
-            forced_subs_args = []
-            forced_subs_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
-            forced_subs_args.append("-hide_banner")
-            forced_subs_args.append("-i")
-            forced_subs_args.append(self.input_file)
-            forced_subs_args.append("-map")
-            forced_subs_args.append(f"0:{self.file_stream_info.forced_subtitle_stream.index}")
-            forced_subs_args.append(forced_subs_file)
-            if dry_run:
-                self.logger.info("Forced subtitle conversion arguments:\n%s", forced_subs_args)
-            else:
-                subprocess.run(forced_subs_args, check=True)
+            subs_files.append(self._extract_subtitle_stream(
+                self.file_stream_info.forced_subtitle_stream,
+                f"{base_name}.eng.forced.srt", "Forced subtitle", dry_run))
+            if self.file_stream_info.has_subtitle_stream:
+                subs_files.append(self._extract_subtitle_stream(
+                    self.file_stream_info.subtitle_stream,
+                    f"{base_name}.eng.srt", "Main subtitle", dry_run))
+        return subs_files
+
+    def _extract_subtitle_stream(self, stream, subs_file, description, dry_run=False):
+        subs_args = []
+        subs_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
+        subs_args.append("-hide_banner")
+        subs_args.append("-i")
+        subs_args.append(self.input_file)
+        subs_args.append("-map")
+        subs_args.append(f"0:{stream.index}")
+        subs_args.append(subs_file)
+        if dry_run:
+            self.logger.info("%s conversion arguments:\n%s", description, subs_args)
+        else:
+            subprocess.run(subs_args, check=True)
+        return subs_file
 
     def get_video_conversion_args(self, is_convert_video, aspect_ratio=None, crf=17):
         """Gets ffmpeg command line arguments for video streams in the file"""

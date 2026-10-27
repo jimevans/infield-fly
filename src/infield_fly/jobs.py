@@ -260,7 +260,7 @@ class JobQueue:
         if is_unattended_mode:
             self.logger.info("Starting conversion")
         start_time = perf_counter()
-        converter.convert_file(ConversionSettings(
+        output_files = converter.convert_file(ConversionSettings(
             convert_video=False, convert_audio=True, convert_subtitles=True))
         end_time = perf_counter()
         if is_unattended_mode:
@@ -269,9 +269,10 @@ class JobQueue:
 
         # Move before marking complete, so a failed move leaves the job retryable.
         # shutil.move handles staging and final directories on different volumes.
-        shutil.move(dest_file,
-                    os.path.join(self.config.conversion.final_directory,
-                                 os.path.basename(dest_file)))
+        for output_file in output_files:
+            shutil.move(output_file,
+                        os.path.join(self.config.conversion.final_directory,
+                                     os.path.basename(output_file)))
         self.mark_job_complete(job)
 
     def mark_job_complete(self, job):

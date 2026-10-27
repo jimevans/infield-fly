@@ -124,22 +124,28 @@ class TestConvertFile:
         mock_run.assert_not_called()
         assert "Conversion arguments" in caplog.text
         assert "Forced subtitle conversion arguments" in caplog.text
+        assert "Main subtitle conversion arguments" in caplog.text
 
-    def test_converts_forced_subtitles(self, mock_run):
+    def test_converts_forced_and_main_subtitles(self, mock_run):
         converter = make_converter(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE)
 
-        converter.convert_file()
+        output_files = converter.convert_file()
 
-        assert mock_run.call_count == 2
-        mock_run.assert_called_with(
-            ["ffmpeg", "-hide_banner", "-i", "in.mkv", "-map", "0:3", "out.eng.forced.srt"],
-            check=True)
+        assert output_files == ["out.mp4", "out.eng.forced.srt", "out.eng.srt"]
+        assert mock_run.call_count == 3
+        assert mock_run.call_args_list[1:] == [
+            mock.call(["ffmpeg", "-hide_banner", "-i", "in.mkv", "-map", "0:3",
+                       "out.eng.forced.srt"], check=True),
+            mock.call(["ffmpeg", "-hide_banner", "-i", "in.mkv", "-map", "0:2",
+                       "out.eng.srt"], check=True),
+        ]
 
     def test_skips_forced_subtitles_when_not_converting_subtitles(self, mock_run):
         converter = make_converter(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE)
 
-        converter.convert_file(ConversionSettings(convert_subtitles=False))
+        output_files = converter.convert_file(ConversionSettings(convert_subtitles=False))
 
+        assert output_files == ["out.mp4"]
         mock_run.assert_called_once()
 
     def test_skips_forced_subtitles_without_subtitle_stream(self, mock_run):
@@ -155,9 +161,18 @@ class TestConvertForcedSubtitles:
     def test_does_nothing_without_forced_stream(self, mock_run):
         converter = make_converter(VIDEO, SUBTITLE)
 
-        converter.convert_forced_subtitles()
+        assert converter.convert_forced_subtitles() == []
 
         mock_run.assert_not_called()
+
+    def test_skips_main_subtitles_without_subtitle_stream(self, mock_run):
+        converter = make_converter(VIDEO, FORCED_SUBTITLE)
+
+        assert converter.convert_forced_subtitles() == ["out.eng.forced.srt"]
+
+        mock_run.assert_called_once_with(
+            ["ffmpeg", "-hide_banner", "-i", "in.mkv", "-map", "0:3", "out.eng.forced.srt"],
+            check=True)
 
 
 class TestVideoConversionArgs:
