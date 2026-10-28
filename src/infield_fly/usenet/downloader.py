@@ -44,10 +44,6 @@ class NzbDownloader(Downloader):
         remaining_candidates = self.config.search.max_candidates
         for query in job.search_queries:
             results = searcher.search(query, job.rejected, job.release_groups.get(query, []))
-            if len(results) == 0:
-                self.logger.info("No search results found for '%s'", query)
-                continue
-
             for result in results:
                 if remaining_candidates == 0:
                     return False

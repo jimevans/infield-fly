@@ -66,6 +66,12 @@ class TestValidateNzb:
 
         assert result.problems == ["'file 1' is missing 1 of 4 segments"]
 
+    def test_ignores_randomized_part_count_in_subject(self):
+        # Obfuscated posts claim more parts in their subjects than they were posted in.
+        file_element = make_file("a1b2c3d4", 3).replace("(1/3)", "(1/83)")
+
+        assert validate_nzb(make_nzb(file_element, make_file("x.par2", 1))).is_valid
+
     def test_obfuscated_names_are_not_rejected_as_non_video(self):
         result = validate_nzb(make_nzb(make_file("a1b2c3d4", 2), make_file("x.par2", 1)))
 

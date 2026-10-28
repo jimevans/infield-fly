@@ -363,6 +363,22 @@ class TestJobCommands:
         assert capsys.readouterr().out == "No existing job with ID 'nope'\n"
 
 
+    def test_reset_job(self, config, capsys):
+        job = add_job(config, keyword="show", query="show s01e02", rejected=["a"])
+        sibling = add_job(config, keyword="show", query="show 2160p s01e02", rejected=["a"])
+
+        cli.reset_job(Namespace(id=job.job_id), config)
+
+        assert [x.rejected for x in load_jobs(config)] == [[], []]
+        assert sorted(capsys.readouterr().out.splitlines()) == sorted(
+            f"Cleared rejected downloads for job {x.job_id}" for x in (job, sibling))
+
+    def test_reset_missing_job(self, config, capsys):
+        cli.reset_job(Namespace(id="nope"), config)
+
+        assert capsys.readouterr().out == "No existing job with ID 'nope'\n"
+
+
 def update_args(job_id, status, update_data=None):
     return Namespace(id=job_id, status=status, update_data=update_data)
 

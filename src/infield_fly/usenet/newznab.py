@@ -87,26 +87,35 @@ class NewznabSearcher:
         excluded, ranked best first. When release groups are listed, only results from those
         groups are returned, ranked by the order of their group in the list, then newest
         first. The query must be specific enough that the indexer returns only posts of the
-        episode being searched for.
+        episode being searched for. When no results are returned, the reason is logged.
         """
 
-        results = [x for x in self.get_results({"t": "search", "q": query})
-                   if x.guid not in excluded_guids]
-        results.sort(key=lambda x: x.rank_key, reverse=True)
-        if len(release_groups) == 0:
-            return results
+        results = self.get_results({"t": "search", "q": query})
+        if results is None:
+            return []
+        if len(results) == 0:
+            self.logger.info("No search results found for '%s'", query)
+            return []
 
-        ranked_results = [(x.get_release_group_rank(release_groups), x) for x in results]
-        approved_results = [(rank, x) for rank, x in ranked_results if rank is not None]
-        if len(results) > 0 and len(approved_results) == 0:
-            self.logger.info("No search results for '%s' are from release groups %s",
-                             query, ", ".join(release_groups))
-        # The sort is stable, so results from the same group stay newest first.
-        approved_results.sort(key=lambda x: x[0])
-        return [x for _, x in approved_results]
+        results.sort(key=lambda x: x.rank_key, reverse=True)
+        if len(release_groups) > 0:
+            ranked_results = [(x.get_release_group_rank(release_groups), x) for x in results]
+            # The sort is stable, so results from the same group stay newest first.
+            results = [x for _, x in sorted([(rank, x) for rank, x in ranked_results
+                                             if rank is not None], key=lambda x: x[0])]
+            if len(results) == 0:
+                self.logger.info("No search results for '%s' are from release groups %s",
+                                 query, ", ".join(release_groups))
+                return []
+
+        candidates = [x for x in results if x.guid not in excluded_guids]
+        if len(candidates) == 0:
+            self.logger.info("All %d search results for '%s' were rejected previously",
+                             len(results), query)
+        return candidates
 
     def get_results(self, params):
-        """Gets the results of a Newznab API search"""
+        """Gets the results of a Newznab API search, or None if the search failed"""
 
         request_params = {"apikey": self.settings.api_key, "extended": 1, "limit": 100,
                           **params}
@@ -116,23 +125,23 @@ class NewznabSearcher:
                                     timeout=REQUEST_TIMEOUT_SECONDS)
         except requests.RequestException as ex:
             self.logger.warning("Search request failed: %s", ex)
-            return []
+            return None
 
         if response.status_code != 200:
             self.logger.warning("Received error response to search (%s): %s",
                                 response.status_code, response.text)
-            return []
+            return None
 
         try:
             root = ElementTree.fromstring(response.content)
         except ElementTree.ParseError as ex:
             self.logger.warning("Could not parse search response: %s", ex)
-            return []
+            return None
 
         if root.tag == "error":
             self.logger.warning("Search returned error %s: %s",
                                 root.get("code"), root.get("description"))
-            return []
+            return None
 
         return [NzbResult.from_item(x) for x in root.iter("item")]
 

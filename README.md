@@ -258,6 +258,7 @@ infield-fly jobs add <keyword> <search string>   # add a job
 infield-fly jobs list [status]                   # list jobs, optionally only those with a status
 infield-fly jobs show <id>                       # show the details of a job
 infield-fly jobs update <id> <status> [data]     # set the status of a job
+infield-fly jobs reset <id>                      # clear rejected downloads for a job's episode
 infield-fly jobs remove <id>                     # remove a job
 infield-fly jobs clear [status]                  # remove all jobs, or those with a status
 infield-fly jobs process                         # run the processing phases
@@ -283,9 +284,12 @@ To find a download for a job yourself, give the job the download with
    them, without further filtering, so each search config's terms must be
    specific enough to find only the right posts. Results are tried newest first,
    up to `max_candidates` for the job in each run. The NZB file of each result is
-   checked to ensure that it lists every part of every file it contains; the
-   first that passes is used, and those that fail are rejected and not tried
-   again. Jobs with no usable result stay `waiting` until the next run.
+   checked for structural damage, such as gaps in the numbering of a file's
+   parts; the first that passes is used, and those that fail are rejected and not
+   tried again. (Part counts in post subjects are ignored, because obfuscated
+   posts randomize them.) Jobs with no usable result stay `waiting` until the
+   next run. `jobs reset <id>` clears the rejected results of a job's episode, so
+   the next run tries them again.
 3. **Add downloads:** adds the NZB files of `adding` jobs to SABnzbd, and their
    magnet links to Deluge.
 4. **Query downloads:** marks finished downloads as `pending`. A download that

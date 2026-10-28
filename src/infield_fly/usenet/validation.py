@@ -5,9 +5,6 @@ from dataclasses import dataclass, field
 from typing import List
 from xml.etree import ElementTree
 
-# Usenet posts carry the part number and total part count of each file at the end of
-# their subjects, as in '[01/42] - "Show.S01E02.mkv" yEnc (1/3412)'.
-SEGMENT_COUNT_PATTERN = re.compile(r"\((\d+)/(\d+)\)\s*$")
 FILE_NAME_PATTERN = re.compile(r'"([^"]+)"')
 CONTENT_FILE_PATTERN = re.compile(
     r"\.(mkv|mp4|m4v|avi|ts|wmv|rar|r\d{2,3}|7z|zip|\d{3})$", re.IGNORECASE)
@@ -34,9 +31,10 @@ class NzbValidationResult:
 
 def validate_nzb(content, expected_size=0):
     """
-    Validates that an NZB file lists every segment of every file it describes, and that
-    it describes video content. This catches incomplete NZB files, but not articles that
-    are listed in the NZB file but have since been removed from Usenet servers.
+    Validates that an NZB file has no gaps in the segments of the files it describes, and
+    that it describes video content. This catches NZB files that are structurally broken,
+    but not articles that have since been removed from Usenet servers, which the download
+    client detects when the download fails.
     """
 
     result = NzbValidationResult()
@@ -57,7 +55,7 @@ def validate_nzb(content, expected_size=0):
         name_match = FILE_NAME_PATTERN.search(subject)
         name = name_match.group(1) if name_match is not None else None
         file_names.append(name)
-        _validate_segments(file_element, name or f"file {index + 1}", subject, result)
+        _validate_segments(file_element, name or f"file {index + 1}", result)
 
     if all(name is not None and NON_CONTENT_FILE_PATTERN.search(name) for name in file_names):
         result.problems.append("NZB file lists no video or archive files")
@@ -73,7 +71,7 @@ def validate_nzb(content, expected_size=0):
     return result
 
 
-def _validate_segments(file_element, name, subject, result):
+def _validate_segments(file_element, name, result):
     segments = [x for x in file_element.iter() if _local_name(x.tag) == "segment"]
     if len(segments) == 0:
         result.problems.append(f"'{name}' lists no segments")
@@ -94,13 +92,12 @@ def _validate_segments(file_element, name, subject, result):
     if len(set(numbers)) != len(numbers):
         result.problems.append(f"'{name}' lists duplicate segments")
 
-    # Without a part count in the subject, only gaps before the last segment are detectable.
-    count_match = SEGMENT_COUNT_PATTERN.search(subject)
-    expected_count = int(count_match.group(2)) if count_match is not None else max(numbers)
-    missing = set(range(1, expected_count + 1)) - set(numbers)
+    # The part counts in subjects, as in '"Show.S01E02.mkv" yEnc (1/3412)', are not used,
+    # because obfuscated posts randomize them. Only gaps before the last segment are checked.
+    missing = set(range(1, max(numbers) + 1)) - set(numbers)
     if len(missing) > 0:
         result.problems.append(
-            f"'{name}' is missing {len(missing)} of {expected_count} segments")
+            f"'{name}' is missing {len(missing)} of {max(numbers)} segments")
 
 
 def _local_name(tag):

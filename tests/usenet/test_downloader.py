@@ -104,7 +104,6 @@ class TestSearchDownloads:
         assert [(x[0][0], x[0][2]) for x in searcher.search.call_args_list] == [
             ("show 2160p s01e02", []), ("show 1080p s01e02", ["flux", "ntb"])]
         assert load_job(config, job.job_id).nzb_guid == "hd"
-        assert "No search results found for 'show 2160p s01e02'" in caplog.text
         assert "Search result for query string 'show 1080p s01e02'" in caplog.text
 
     def test_candidate_limit_spans_fallback_queries(self, downloader, config, searcher):
@@ -152,7 +151,8 @@ class TestSearchDownloads:
         downloader.search_downloads([job])
 
         assert load_job(config, job.job_id).status == JobStatus.WAITING
-        assert "No search results found for 'q'" in caplog.text
+        # The searcher logs why it returned no results, so the downloader logs nothing more.
+        assert caplog.messages == []
 
 
 class TestSetDownload:

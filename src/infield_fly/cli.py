@@ -262,6 +262,19 @@ def update_job(args, config):
                 job.status = status
                 job.save(logging.getLogger())
 
+def reset_job(args, config):
+    """Clears the downloads rejected for a job, and for the other jobs for the same episode"""
+
+    from infield_fly.jobs import JobQueue
+
+    job_queue = JobQueue(config)
+    job = job_queue.get_job_by_id(args.id)
+    if job is None:
+        print(f"No existing job with ID '{args.id}'")
+    else:
+        for reset in job_queue.reset_rejections(job):
+            print(f"Cleared rejected downloads for job {reset.job_id}")
+
 def set_job_download(job_queue, job, location):
     """Sets a download specified by the user as the download for a job, using its track"""
 
@@ -483,6 +496,12 @@ def add_jobs_subparser(subparsers):
                                    help="Additional data with which to update the job")
     job_update_parser.set_defaults(func=update_job)
 
+    job_reset_parser = job_command_parsers.add_parser(
+        "reset", help="Clear the downloads rejected for a job and others for its episode")
+    job_reset_parser.add_argument(
+        "id", help="ID of the job to reset").completer = complete_job_id
+    job_reset_parser.set_defaults(func=reset_job)
+
     job_remove_parser = job_command_parsers.add_parser("remove", help="Remove the specified job")
     job_remove_parser.add_argument(
         "id", help="ID of the job to remove").completer = complete_job_id
@@ -499,6 +518,11 @@ def add_jobs_subparser(subparsers):
                                   help="Remove only jobs with status"
                                   ).completer = complete_job_status
     clear_jobs_parser.set_defaults(func=clear_jobs)
+
+    add_process_jobs_subparser(job_command_parsers)
+
+def add_process_jobs_subparser(job_command_parsers):
+    """Adds the argument subparser for the 'jobs process' command"""
 
     process_jobs_parser = job_command_parsers.add_parser("process", help="Process current queue")
     search_parser = process_jobs_parser.add_mutually_exclusive_group(required=False)

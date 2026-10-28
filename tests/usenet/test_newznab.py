@@ -123,13 +123,33 @@ class TestNewznabSearcher:
             make_item("Show.S01E02.1080p-OTHER", "unapproved")))
 
         assert searcher.search("show s01e02", release_groups=["flux", "ntb"]) == []
-        assert "No search results for 'show s01e02' are from release groups flux, ntb" in (
-            caplog.text)
+        assert caplog.messages == [
+            "No search results for 'show s01e02' are from release groups flux, ntb"]
 
-    def test_search_without_results(self, searcher, requests_get):
+    def test_search_logs_when_all_results_were_rejected(self, searcher, requests_get,
+                                                        caplog):
+        caplog.set_level("INFO")
+        requests_get.return_value = make_response(content=make_feed(
+            make_item("Show.S01E02.1080p-FLUX", "rejected"),
+            make_item("Show.S01E02.1080p-OTHER", "unapproved")))
+
+        assert searcher.search("show s01e02", ["rejected"], ["flux", "ntb"]) == []
+        assert caplog.messages == [
+            "All 1 search results for 'show s01e02' were rejected previously"]
+
+    def test_search_without_results(self, searcher, requests_get, caplog):
+        caplog.set_level("INFO")
         requests_get.return_value = make_response(content=make_feed())
 
         assert searcher.search("the show s01e02") == []
+        assert caplog.messages == ["No search results found for 'the show s01e02'"]
+
+    def test_failed_search_logs_only_failure(self, searcher, requests_get, caplog):
+        caplog.set_level("INFO")
+        requests_get.return_value = make_response(500, b"oops")
+
+        assert searcher.search("the show s01e02") == []
+        assert caplog.messages == ["Received error response to search (500): oops"]
 
     @pytest.mark.parametrize("response, message", [
         (requests.ConnectionError("down"), "Search request failed: down"),
@@ -142,7 +162,7 @@ class TestNewznabSearcher:
                                               message):
         requests_get.side_effect = [response]
 
-        assert searcher.get_results({"t": "search", "q": "q"}) == []
+        assert searcher.get_results({"t": "search", "q": "q"}) is None
         assert message in caplog.text
 
     def test_fetch_nzb_from_link(self, searcher, requests_get):

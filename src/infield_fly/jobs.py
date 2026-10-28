@@ -19,7 +19,7 @@ from infield_fly.usenet.downloader import NzbDownloader
 DOWNLOADER_CLASSES = (NzbDownloader, TorrentDownloader)
 
 
-class JobQueue:
+class JobQueue:  # pylint: disable=too-many-public-methods
 
     """Queue of jobs being processed"""
 
@@ -123,6 +123,21 @@ class JobQueue:
                 if job.rejected != rejected:
                     job.rejected = rejected[:]
                     job.save(self.logger)
+
+    def reset_rejections(self, job):
+        """
+        Clears the downloads rejected for a job, and for the other jobs for the same episode,
+        so that they are tried again by the next search. Returns the jobs that were reset.
+        """
+
+        reset_jobs = [x for x in self.load_jobs()
+                      if x.job_id == job.job_id
+                      or (job.episode_key is not None and x.episode_key == job.episode_key)]
+        for reset_job in reset_jobs:
+            if len(reset_job.rejected) > 0:
+                reset_job.rejected = []
+                reset_job.save(self.logger)
+        return reset_jobs
 
     def add_downloads(self):
         """Adds the found downloads of adding jobs to the download client of their tracks"""

@@ -124,6 +124,30 @@ class TestJobQueueBasics:
         assert rejected[other_series.job_id] == []
         assert rejected[no_episode.job_id] == ["e"]
 
+    def test_reset_rejections(self, queue):
+        first = add_job(queue, JobStatus.WAITING, keyword="show", query="show s01e02",
+                        rejected=["a", "b"])
+        second = add_job(queue, JobStatus.WAITING, keyword="show",
+                         query="show 2160p S1E2", rejected=["a", "b"])
+        other_episode = add_job(queue, JobStatus.WAITING, keyword="show",
+                                query="show s01e03", rejected=["d"])
+
+        reset_jobs = queue.reset_rejections(first)
+
+        assert sorted(x.job_id for x in reset_jobs) == sorted([first.job_id, second.job_id])
+        rejected = {x.job_id: x.rejected for x in queue.load_jobs()}
+        assert rejected == {first.job_id: [], second.job_id: [], other_episode.job_id: ["d"]}
+
+    def test_reset_rejections_without_episode(self, queue):
+        job = add_job(queue, JobStatus.WAITING, keyword="show", query="show special",
+                      rejected=["e"])
+        other = add_job(queue, JobStatus.WAITING, keyword="show", query="show other",
+                        rejected=["f"])
+
+        assert [x.job_id for x in queue.reset_rejections(job)] == [job.job_id]
+        rejected = {x.job_id: x.rejected for x in queue.load_jobs()}
+        assert rejected == {job.job_id: [], other.job_id: ["f"]}
+
     def test_mark_job_complete_today_keeps_job(self, queue):
         job = add_job(queue, JobStatus.CONVERTING)
 
