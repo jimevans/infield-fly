@@ -124,7 +124,8 @@ All sections and settings are optional. An example:
   "download": {
     "sabnzbd_url": "http://localhost:8080",
     "sabnzbd_api_key": "<SABnzbd API key>",
-    "sabnzbd_category": "tv"
+    "sabnzbd_category": "tv",
+    "delete_completed_downloads": true
   }
 }
 ```
@@ -166,7 +167,10 @@ The `search` section enables searching for downloads when `api_key` is set.
 `newznab_url` is the indexer's API end point (defaulting to NZBPlanet's), and
 `max_candidates` limits how many search results are downloaded and validated
 for a job on each run. The `download` section names the SABnzbd instance to which
-NZB files are added, and optionally the category under which to add them.
+NZB files are added, and optionally the category under which to add them. When
+`delete_completed_downloads` is true (it defaults to false), a download's files
+are deleted from SABnzbd's completed folder, and the download is removed from
+its history, once the download has been converted.
 
 ## Usage
 ```
@@ -298,7 +302,8 @@ To find a download for a job yourself, give the job the download with
 5. **Convert:** converts `pending` downloads into the final directory (or copies
    them, for download-only jobs). When a download contains more than one episode
    file (`.mkv` or `.mp4`), such as a sample alongside the episode, only the
-   largest is converted.
+   largest is converted. With `delete_completed_downloads` set, a converted NZB
+   download is then deleted from SABnzbd's completed folder and history.
 
 Infield Fly checks that an NZB file is complete, but not that its articles are
 still available from your Usenet provider. Enable SABnzbd's

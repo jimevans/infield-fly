@@ -466,6 +466,19 @@ class TestConvertDownloadedFiles:
         assert converter_class.call_args[0][0] == str(download / "Show.S01E02.1080p.mkv")
         assert queue.get_job_by_id(job.job_id).status == JobStatus.COMPLETED
 
+    def test_removes_download_of_its_track(self, queue, tmp_path, converter_class):
+        (tmp_path / "Show.S01E02.mkv").touch()
+        job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mkv", downloader="sabnzbd",
+                      download_directory=str(tmp_path), converted_file_name=PLEX_NAME)
+
+        with mock.patch.object(NzbDownloader, "remove_download") as nzb_remove, \
+                mock.patch.object(TorrentDownloader, "remove_download") as torrent_remove:
+            queue.convert_downloaded_files(job, False)
+
+        nzb_remove.assert_called_once()
+        assert nzb_remove.call_args[0][0].job_id == job.job_id
+        torrent_remove.assert_not_called()
+
     def test_missing_single_file_returns_job_to_pending(self, queue, tmp_path,
                                                         converter_class):
         job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mkv",

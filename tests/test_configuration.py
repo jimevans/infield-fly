@@ -257,13 +257,15 @@ class TestDownloadSettings:
         assert settings.sabnzbd_url == "http://localhost:8080"
         assert settings.sabnzbd_api_key == ""
         assert settings.sabnzbd_category is None
+        assert settings.delete_completed_downloads is False
 
     def test_explicit_values(self):
         settings = DownloadSettings({"sabnzbd_url": "http://sab:9090", "sabnzbd_api_key": "key",
-                                     "sabnzbd_category": "tv"})
+                                     "sabnzbd_category": "tv",
+                                     "delete_completed_downloads": True})
 
-        assert (settings.sabnzbd_url, settings.sabnzbd_api_key, settings.sabnzbd_category) == (
-            "http://sab:9090", "key", "tv")
+        assert (settings.sabnzbd_url, settings.sabnzbd_api_key, settings.sabnzbd_category,
+                settings.delete_completed_downloads) == ("http://sab:9090", "key", "tv", True)
 
 
 class TestGetEpisodeSearches:

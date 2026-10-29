@@ -265,6 +265,15 @@ class DownloadSettings:
 
         return self.settings.get("sabnzbd_category", None)
 
+    @property
+    def delete_completed_downloads(self):
+        """
+        Gets a value indicating whether to delete completed downloads, and remove them from
+        the SABnzbd history, once they have been converted
+        """
+
+        return self.settings.get("delete_completed_downloads", False)
+
 
 class MetadataSettings:
 

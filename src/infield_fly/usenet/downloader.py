@@ -1,6 +1,7 @@
 """Module for finding NZB files for jobs on a Newznab indexer and downloading them using SABnzbd"""
 
 import os
+import shutil
 
 from infield_fly.downloader import Downloader
 from infield_fly.job_status import JobStatus
@@ -186,6 +187,36 @@ class NzbDownloader(Downloader):
                                     job.title, job.job_id,
                                     fail_message or "not found in SABnzbd")
                 self.reject_nzb(job)
+
+    def remove_download(self, job):
+        """
+        Deletes the completed download of a converted job, and removes it from the SABnzbd
+        history, when configured to do so. Failures are logged, leaving the download in place.
+        """
+
+        if not self.config.download.delete_completed_downloads:
+            return
+
+        # SABnzbd only deletes the files of failed jobs from its history, so the files of
+        # the completed download, at the storage path it reported, are deleted directly.
+        download_path = os.path.join(job.download_directory, job.name)
+        self.logger.info("Deleting completed download %s", download_path)
+        try:
+            if os.path.isdir(download_path):
+                shutil.rmtree(download_path)
+            elif os.path.isfile(download_path):
+                os.remove(download_path)
+        except OSError as ex:
+            self.logger.warning("Deleting download for job %s failed: %s", job.job_id, ex)
+            return
+
+        if job.nzo_id is None:
+            return
+        try:
+            SabnzbdClient(self.config.download).delete_history_item(job.nzo_id)
+        except SabnzbdError as ex:
+            self.logger.warning("Removing download for job %s from SABnzbd history failed: %s",
+                                job.job_id, ex)
 
     def reject_nzb(self, job):
         """Rejects the NZB file found for a job, and returns the job to waiting for a search"""

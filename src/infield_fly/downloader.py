@@ -50,3 +50,9 @@ class Downloader:
         """Moves downloading jobs whose downloads have finished in the download client to pending"""
 
         raise NotImplementedError
+
+    def remove_download(self, job):
+        """
+        Removes the finished download of a job whose files have been converted. Tracks that
+        do not remove their downloads leave them unchanged.
+        """

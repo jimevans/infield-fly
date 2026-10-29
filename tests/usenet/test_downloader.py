@@ -317,3 +317,81 @@ class TestQueryDownloads:
 
         assert load_job(config, job.job_id).status == JobStatus.DOWNLOADING
         assert f"Querying download for job {job.job_id} failed: down" in caplog.text
+
+
+class TestRemoveDownload:
+
+    @pytest.fixture
+    def delete_config(self, make_config):
+        return make_config(download={"sabnzbd_api_key": "key",
+                                     "delete_completed_downloads": True})
+
+    @staticmethod
+    def save_converted_job(config, download_directory, name, nzo_id="nzo1"):
+        return save_job(config, JobStatus.COMPLETED, downloader="sabnzbd", nzo_id=nzo_id,
+                        name=name, download_directory=str(download_directory))
+
+    def test_disabled_by_default(self, downloader, config, sabnzbd_client, tmp_path):
+        (tmp_path / "Show.S01E02").mkdir()
+        job = self.save_converted_job(config, tmp_path, "Show.S01E02")
+
+        downloader.remove_download(job)
+
+        assert (tmp_path / "Show.S01E02").exists()
+        sabnzbd_client.delete_history_item.assert_not_called()
+
+    def test_deletes_directory_and_history_item(self, delete_config, sabnzbd_client,
+                                                tmp_path, caplog):
+        caplog.set_level("INFO")
+        download = tmp_path / "Show.S01E02"
+        download.mkdir()
+        (download / "Show.S01E02.mkv").touch()
+        job = self.save_converted_job(delete_config, tmp_path, "Show.S01E02")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not download.exists()
+        sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
+        assert f"Deleting completed download {download}" in caplog.text
+
+    def test_deletes_single_file(self, delete_config, sabnzbd_client, tmp_path):
+        (tmp_path / "Show.S01E02.mkv").touch()
+        job = self.save_converted_job(delete_config, tmp_path, "Show.S01E02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not (tmp_path / "Show.S01E02.mkv").exists()
+        sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
+
+    def test_without_nzo_id_deletes_only_files(self, delete_config, sabnzbd_client, tmp_path):
+        (tmp_path / "Show.S01E02").mkdir()
+        job = self.save_converted_job(delete_config, tmp_path, "Show.S01E02", nzo_id=None)
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not (tmp_path / "Show.S01E02").exists()
+        sabnzbd_client.delete_history_item.assert_not_called()
+
+    def test_failed_file_deletion_keeps_history_item(self, delete_config, sabnzbd_client,
+                                                     tmp_path, caplog):
+        (tmp_path / "Show.S01E02").mkdir()
+        job = self.save_converted_job(delete_config, tmp_path, "Show.S01E02")
+
+        with mock.patch("infield_fly.usenet.downloader.shutil.rmtree",
+                        side_effect=OSError("busy")):
+            NzbDownloader(delete_config).remove_download(job)
+
+        sabnzbd_client.delete_history_item.assert_not_called()
+        assert f"Deleting download for job {job.job_id} failed: busy" in caplog.text
+
+    def test_failed_history_deletion_is_logged(self, delete_config, sabnzbd_client, tmp_path,
+                                               caplog):
+        (tmp_path / "Show.S01E02").mkdir()
+        job = self.save_converted_job(delete_config, tmp_path, "Show.S01E02")
+        sabnzbd_client.delete_history_item.side_effect = SabnzbdError("down")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not (tmp_path / "Show.S01E02").exists()
+        assert (f"Removing download for job {job.job_id} from SABnzbd history failed: down"
+                in caplog.text)

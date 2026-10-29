@@ -289,6 +289,9 @@ class JobQueue:  # pylint: disable=too-many-public-methods
                         os.path.join(self.config.conversion.final_directory,
                                      os.path.basename(output_file)))
         self.mark_job_complete(job)
+        for downloader in self.downloaders:
+            if downloader.name == job.downloader:
+                downloader.remove_download(job)
 
     def mark_job_complete(self, job):
         """Marks a job as completed"""
