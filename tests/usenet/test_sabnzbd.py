@@ -22,7 +22,8 @@ def make_response(json_value=None, status_code=200, text=""):
 
 @pytest.fixture
 def client():
-    return SabnzbdClient(DownloadSettings({"sabnzbd_url": "http://sabnzbd:8080/",
+    return SabnzbdClient(DownloadSettings({"sabnzbd_host": "sabnzbd",
+                                           "sabnzbd_port": 8080,
                                            "sabnzbd_api_key": "key",
                                            "sabnzbd_category": "tv"}))
 
@@ -109,6 +110,15 @@ class TestCallApi:
         assert requests_get.call_args[1]["params"] == {
             "apikey": "key", "output": "json", "mode": "history", "name": "delete",
             "value": "nzo1", "del_files": 1}
+
+    def test_uses_https_when_ssl_configured(self, requests_get):
+        client = SabnzbdClient(DownloadSettings({"sabnzbd_host": "sabnzbd", "sabnzbd_port": 9090,
+                                                 "sabnzbd_use_ssl": True}))
+        requests_get.return_value = make_response({"status": True})
+
+        client.delete_history_item("nzo1")
+
+        assert requests_get.call_args[0] == ("https://sabnzbd:9090/api",)
 
     @pytest.mark.parametrize("response, message", [
         (requests.ConnectionError("down"), "Request to SABnzbd failed: down"),

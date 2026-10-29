@@ -227,10 +227,22 @@ class DownloadSettings:
         self.settings = raw_settings if raw_settings is not None else {}
 
     @property
-    def sabnzbd_url(self):
-        """Gets the base URL of the SABnzbd instance"""
+    def sabnzbd_host(self):
+        """Gets the host name of the host running the SABnzbd instance"""
 
-        return self.settings.get("sabnzbd_url", "http://localhost:8080")
+        return self.settings.get("sabnzbd_host", "localhost")
+
+    @property
+    def sabnzbd_port(self):
+        """Gets the port for the SABnzbd instance"""
+
+        return self.settings.get("sabnzbd_port", 8080)
+
+    @property
+    def sabnzbd_use_ssl(self):
+        """Gets a value indicating whether to connect to the SABnzbd instance using SSL"""
+
+        return self.settings.get("sabnzbd_use_ssl", False)
 
     @property
     def sabnzbd_api_key(self):

@@ -26,7 +26,8 @@ class SabnzbdClient:
     def api_url(self):
         """Gets the URL of the API end point"""
 
-        return self.settings.sabnzbd_url.rstrip("/") + "/api"
+        scheme = "https" if self.settings.sabnzbd_use_ssl else "http"
+        return f"{scheme}://{self.settings.sabnzbd_host}:{self.settings.sabnzbd_port}/api"
 
     def add_nzb(self, nzb_file_path, name):
         """Adds an NZB file to the download queue, returning the ID of the added download"""

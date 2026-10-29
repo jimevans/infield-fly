@@ -20,7 +20,7 @@ INVALID_NZB = b"<nzb/>"
 def config(make_config):
     return make_config(
         search={"api_key": "key", "max_candidates": 2},
-        download={"sabnzbd_url": "http://sabnzbd:8080", "sabnzbd_api_key": "key"})
+        download={"sabnzbd_host": "sabnzbd", "sabnzbd_port": 8080, "sabnzbd_api_key": "key"})
 
 
 @pytest.fixture

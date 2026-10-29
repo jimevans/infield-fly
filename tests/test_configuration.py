@@ -242,7 +242,9 @@ class TestDownloadSettings:
     def test_defaults(self):
         settings = DownloadSettings()
 
-        assert settings.sabnzbd_url == "http://localhost:8080"
+        assert settings.sabnzbd_host == "localhost"
+        assert settings.sabnzbd_port == 8080
+        assert settings.sabnzbd_use_ssl is False
         assert settings.sabnzbd_api_key == ""
         assert settings.sabnzbd_category is None
         assert settings.delete_completed_downloads is False
@@ -252,12 +254,14 @@ class TestDownloadSettings:
         assert settings.deluge_password is None
 
     def test_explicit_values(self):
-        settings = DownloadSettings({"sabnzbd_url": "http://sab:9090", "sabnzbd_api_key": "key",
+        settings = DownloadSettings({"sabnzbd_host": "sab", "sabnzbd_port": 9090,
+                                     "sabnzbd_use_ssl": True, "sabnzbd_api_key": "key",
                                      "sabnzbd_category": "tv",
                                      "delete_completed_downloads": True})
 
-        assert (settings.sabnzbd_url, settings.sabnzbd_api_key, settings.sabnzbd_category,
-                settings.delete_completed_downloads) == ("http://sab:9090", "key", "tv", True)
+        assert (settings.sabnzbd_host, settings.sabnzbd_port, settings.sabnzbd_use_ssl,
+                settings.sabnzbd_api_key, settings.sabnzbd_category,
+                settings.delete_completed_downloads) == ("sab", 9090, True, "key", "tv", True)
 
     def test_deluge_values(self):
         settings = DownloadSettings({"deluge_host": "deluge.local", "deluge_port": 58846,

@@ -133,8 +133,8 @@ class NzbDownloader(Downloader):
             self.logger.info("No NZB files to add during job processing")
             return
 
-        self.logger.info("Adding downloads to SABnzbd instance at %s",
-                         self.config.download.sabnzbd_url)
+        self.logger.info("Adding downloads to SABnzbd instance on %s",
+                         self.config.download.sabnzbd_host)
         client = SabnzbdClient(self.config.download)
         for job in jobs:
             if job.nzb_file is None or not os.path.isfile(job.nzb_file):
@@ -165,7 +165,7 @@ class NzbDownloader(Downloader):
             return
 
         self.logger.info("Marking completed downloads on SABnzbd instance at %s",
-                         self.config.download.sabnzbd_url)
+                         self.config.download.sabnzbd_host)
         client = SabnzbdClient(self.config.download)
         for job in jobs:
             try:

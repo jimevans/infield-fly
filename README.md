@@ -118,7 +118,9 @@ All sections and settings are optional. An example:
     "max_candidates": 5
   },
   "download": {
-    "sabnzbd_url": "http://localhost:8080",
+    "sabnzbd_host": "localhost",
+    "sabnzbd_port": 8080,
+    "sabnzbd_use_ssl": false,
     "sabnzbd_api_key": "<SABnzbd API key>",
     "sabnzbd_category": "tv",
     "delete_completed_downloads": true,
@@ -167,7 +169,9 @@ The `search` section enables searching for downloads when `api_key` is set.
 `newznab_url` is the indexer's API end point (defaulting to NZBPlanet's), and
 `max_candidates` limits how many search results are downloaded and validated
 for a job on each run. The `download` section names the SABnzbd instance to which
-NZB files are added, and optionally the category under which to add them. When
+NZB files are added, with `sabnzbd_host`, `sabnzbd_port`, and `sabnzbd_api_key`,
+and optionally the category under which to add them. Set `sabnzbd_use_ssl` to true
+(it defaults to false) to connect to SABnzbd over HTTPS. When
 `delete_completed_downloads` is true (it defaults to false), a download's files
 are deleted from SABnzbd's completed folder, and the download is removed from
 its history, once the download has been converted. It also names the Deluge
