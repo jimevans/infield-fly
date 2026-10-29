@@ -58,10 +58,6 @@ class TestConversionSettings:
         assert settings.final_directory == os.path.join("/install", "completed")
         assert settings.database_directory == "/install"
         assert settings.database_cache_file == ".dbcache"
-        assert settings.deluge_host == "localhost"
-        assert settings.deluge_port is None
-        assert settings.deluge_user_name is None
-        assert settings.deluge_password is None
         assert settings.log_directory == os.path.join("/install", "logs")
         assert settings.log_level == logging.INFO
         assert settings.job_directory == os.path.join("/install", ".jobs")
@@ -81,10 +77,6 @@ class TestConversionSettings:
             "final_directory": "/final",
             "database_directory": "/db",
             "database_cache_file": "cache.json",
-            "deluge_host": "deluge.local",
-            "deluge_port": 58846,
-            "deluge_user_name": "user",
-            "deluge_password": "pass",
             "log_directory": "/logs",
             "log_level": "debug",
             "job_directory": "/jobs"
@@ -96,10 +88,6 @@ class TestConversionSettings:
         assert settings.final_directory == "/final"
         assert settings.database_directory == "/db"
         assert settings.database_cache_file == "cache.json"
-        assert settings.deluge_host == "deluge.local"
-        assert settings.deluge_port == 58846
-        assert settings.deluge_user_name == "user"
-        assert settings.deluge_password == "pass"
         assert settings.log_directory == "/logs"
         assert settings.log_level == logging.DEBUG
         assert settings.job_directory == "/jobs"
@@ -258,6 +246,10 @@ class TestDownloadSettings:
         assert settings.sabnzbd_api_key == ""
         assert settings.sabnzbd_category is None
         assert settings.delete_completed_downloads is False
+        assert settings.deluge_host == "localhost"
+        assert settings.deluge_port is None
+        assert settings.deluge_user_name is None
+        assert settings.deluge_password is None
 
     def test_explicit_values(self):
         settings = DownloadSettings({"sabnzbd_url": "http://sab:9090", "sabnzbd_api_key": "key",
@@ -266,6 +258,13 @@ class TestDownloadSettings:
 
         assert (settings.sabnzbd_url, settings.sabnzbd_api_key, settings.sabnzbd_category,
                 settings.delete_completed_downloads) == ("http://sab:9090", "key", "tv", True)
+
+    def test_deluge_values(self):
+        settings = DownloadSettings({"deluge_host": "deluge.local", "deluge_port": 58846,
+                                     "deluge_user_name": "user", "deluge_password": "pass"})
+
+        assert (settings.deluge_host, settings.deluge_port, settings.deluge_user_name,
+                settings.deluge_password) == ("deluge.local", 58846, "user", "pass")
 
 
 class TestGetEpisodeSearches:

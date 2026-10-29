@@ -42,7 +42,7 @@ class TorrentDownloader(Downloader):
             return
 
         self.logger.info("Adding downloads to Deluge instance on %s",
-                         self.config.conversion.deluge_host)
+                         self.config.download.deluge_host)
         with self.connect() as client:
             for job in jobs:
                 encoded_id, metadata = client.core.prefetch_magnet_metadata(job.magnet_link)
@@ -80,7 +80,7 @@ class TorrentDownloader(Downloader):
             return
 
         self.logger.info("Marking completed downloads on Deluge instance at %s",
-                         self.config.conversion.deluge_host)
+                         self.config.download.deluge_host)
         with self.connect() as client:
             for job in jobs:
                 torrent = client.core.get_torrent_status(
@@ -92,7 +92,7 @@ class TorrentDownloader(Downloader):
     def connect(self):
         """Creates a client connection to the Deluge daemon"""
 
-        return DelugeRPCClient(self.config.conversion.deluge_host,
-                               self.config.conversion.deluge_port,
-                               self.config.conversion.deluge_user_name,
-                               self.config.conversion.deluge_password)
+        return DelugeRPCClient(self.config.download.deluge_host,
+                               self.config.download.deluge_port,
+                               self.config.download.deluge_user_name,
+                               self.config.download.deluge_password)

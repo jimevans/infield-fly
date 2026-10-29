@@ -88,10 +88,6 @@ All sections and settings are optional. An example:
     "ffmpeg_location": "/usr/local/bin",
     "final_directory": "/media/tv",
     "substitutions": { ":": " -", "?": "" },
-    "deluge_host": "localhost",
-    "deluge_port": 58846,
-    "deluge_user_name": "user",
-    "deluge_password": "password",
     "log_level": "info"
   },
   "metadata": {
@@ -125,7 +121,11 @@ All sections and settings are optional. An example:
     "sabnzbd_url": "http://localhost:8080",
     "sabnzbd_api_key": "<SABnzbd API key>",
     "sabnzbd_category": "tv",
-    "delete_completed_downloads": true
+    "delete_completed_downloads": true,
+    "deluge_host": "localhost",
+    "deluge_port": 58846,
+    "deluge_user_name": "user",
+    "deluge_password": "password"
   }
 }
 ```
@@ -170,7 +170,9 @@ for a job on each run. The `download` section names the SABnzbd instance to whic
 NZB files are added, and optionally the category under which to add them. When
 `delete_completed_downloads` is true (it defaults to false), a download's files
 are deleted from SABnzbd's completed folder, and the download is removed from
-its history, once the download has been converted.
+its history, once the download has been converted. It also names the Deluge
+daemon to which magnet links are added, with `deluge_host`, `deluge_port`,
+`deluge_user_name`, and `deluge_password`.
 
 ## Usage
 ```

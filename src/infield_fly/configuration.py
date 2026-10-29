@@ -58,7 +58,7 @@ class Configuration:
 
     @property
     def download(self):
-        """Gets the settings for downloading NZB files"""
+        """Gets the settings for downloading NZB files and torrents"""
 
         return self.settings["download"]
 
@@ -111,30 +111,6 @@ class ConversionSettings:
         """Gets the name of the episode database cache"""
 
         return self.settings.get("database_cache_file", ".dbcache")
-
-    @property
-    def deluge_host(self):
-        """Gets the host name of the host running the Deluge BitTorrent client"""
-
-        return self.settings.get("deluge_host", "localhost")
-
-    @property
-    def deluge_port(self):
-        """Gets the port for the Deluge BitTorrent client"""
-
-        return self.settings.get("deluge_port", None)
-
-    @property
-    def deluge_user_name(self):
-        """Gets the user name for the Deluge BitTorrent client"""
-
-        return self.settings.get("deluge_user_name", None)
-
-    @property
-    def deluge_password(self):
-        """Gets the user name for the Deluge BitTorrent client"""
-
-        return self.settings.get("deluge_password", None)
 
     @property
     def log_directory(self):
@@ -241,7 +217,10 @@ class SearchSettings:
 
 class DownloadSettings:
 
-    """Settings object containing settings for downloading NZB files with SABnzbd"""
+    """
+    Settings object containing settings for downloading NZB files with SABnzbd and
+    torrents with Deluge
+    """
 
     def __init__(self, raw_settings=None):
         super().__init__()
@@ -264,6 +243,30 @@ class DownloadSettings:
         """Gets the SABnzbd category for downloads, or None to use the default category"""
 
         return self.settings.get("sabnzbd_category", None)
+
+    @property
+    def deluge_host(self):
+        """Gets the host name of the host running the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_host", "localhost")
+
+    @property
+    def deluge_port(self):
+        """Gets the port for the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_port", None)
+
+    @property
+    def deluge_user_name(self):
+        """Gets the user name for the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_user_name", None)
+
+    @property
+    def deluge_password(self):
+        """Gets the password for the Deluge BitTorrent client"""
+
+        return self.settings.get("deluge_password", None)
 
     @property
     def delete_completed_downloads(self):

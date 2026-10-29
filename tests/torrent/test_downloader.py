@@ -13,8 +13,8 @@ MAGNET = "magnet:?xt=urn:btih:ABCDEF&dn=Show.S01E02"
 
 @pytest.fixture
 def config(make_config):
-    return make_config(conversion={"deluge_host": "deluge", "deluge_port": 1,
-                                   "deluge_user_name": "user", "deluge_password": "pass"})
+    return make_config(download={"deluge_host": "deluge", "deluge_port": 1,
+                                 "deluge_user_name": "user", "deluge_password": "pass"})
 
 
 @pytest.fixture
