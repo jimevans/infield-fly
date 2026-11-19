@@ -1,0 +1,4 @@
+# PAM service with which the Infield Fly web interface checks the password of the
+# account running it. Install as /etc/pam.d/infield-fly.
+@include common-auth
+@include common-account

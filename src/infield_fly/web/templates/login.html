@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<form class="login" method="post" action="{{ app_path(request, 'login') }}?next={{ next | urlencode }}">
+  <h1>Log in</h1>
+  <p class="muted">Use your server account's user name and password.</p>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <label for="user_name">User name</label>
+  <input id="user_name" name="user_name" autocomplete="username" autocapitalize="none"
+         spellcheck="false" required value="{{ user_name or '' }}"{% if not user_name %} autofocus{% endif %}>
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password"
+         required{% if user_name %} autofocus{% endif %}>
+  <button type="submit">Log in</button>
+</form>
+{% endblock %}

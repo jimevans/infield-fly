@@ -330,6 +330,46 @@ in progress logs a warning naming the other run, and exits without processing. T
 lock is held through the `.lock` file in the job directory, and is released when the
 run exits, even if it crashes.
 
+## Web interface
+Infield Fly includes a web interface showing the job queue and the status of tracked
+series. It requires additional dependencies, installed with:
+
+```
+.venv/bin/pip install -e ".[web]"
+```
+
+```
+infield-fly [-c CONFIG] web [--host HOST] [--port PORT] [--root-path PATH]
+```
+
+The web interface listens on `127.0.0.1:8642` by default, and is meant to be served
+over HTTPS by a reverse proxy, with `--root-path` naming the URL path under which the
+proxy serves it. It reads the settings file on each request, so changes to it apply
+without restarting.
+
+Logging in uses the user name and password of the account on the host that runs the
+web interface, checked with PAM. Only that account may log in; `--allowed-user` names
+another, but PAM can only check the password of another account when the web interface
+runs as root, which it should not. After five failed logins from an address, or twenty
+from all addresses, within 15 minutes, logins are refused until failures age out. Each
+failed login is logged, for fail2ban to ban the address. Sessions last seven days, and
+are signed with a key stored in `.web_secret` alongside the settings file.
+
+The `deploy` directory contains the configuration to serve the web interface at
+`/infield-fly/` on a host running Apache, systemd, and fail2ban. On the host:
+
+1. Install the PAM service: `sudo cp deploy/pam.d/infield-fly /etc/pam.d/`
+2. Install the systemd unit as `/etc/systemd/system/infield-fly-web.service`, replacing
+   `YOUR_USER` and the paths in `deploy/infield-fly-web.service`, and start it with
+   `sudo systemctl daemon-reload && sudo systemctl enable --now infield-fly-web`
+3. Add the lines in `deploy/apache-infield-fly.conf` to the site's HTTPS virtual host,
+   then run `sudo apache2ctl configtest && sudo systemctl reload apache2`
+4. Install fail2ban if needed (`sudo apt install fail2ban`), copy the files in
+   `deploy/fail2ban` to the matching directories under `/etc/fail2ban`, and run
+   `sudo systemctl reload fail2ban`
+
+The web interface logs to the journal, viewed with `journalctl -u infield-fly-web`.
+
 ## Development
 Each way of downloading episodes is a download track, in its own package under
 `src/infield_fly`, with its tests in the matching directory under `tests`:

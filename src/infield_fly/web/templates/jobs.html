@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% set active = "jobs" %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+{% if processing %}
+<p class="notice">Job processing is running ({{ processing.description }}, process
+  {{ processing.pid }}, started {{ processing.started }}).</p>
+{% endif %}
+<nav class="filters" aria-label="Filter by status">
+  <a href="{{ app_path(request, 'jobs') }}"{% if status is none %} aria-current="page"{% endif %}>All <span class="count">{{ total }}</span></a>
+  {% for job_status, count in counts.items() %}
+  <a href="{{ app_path(request, 'jobs') }}?status={{ job_status.value }}"{% if status == job_status %} aria-current="page"{% endif %}>{{ job_status.value | capitalize }} <span class="count">{{ count }}</span></a>
+  {% endfor %}
+</nav>
+{% if jobs %}
+<ul class="cards">
+  {% for job in jobs %}
+  <li>
+    <a class="card" href="{{ app_path(request, 'job', job_id=job.job_id) }}">
+      <span class="status status-{{ job.status.value }}">{{ job.status.value }}</span>
+      <span class="card-title">{{ job.status_description }}</span>
+      <span class="muted">{{ job.keyword }} · added {{ job.added }}{% if job.is_download_only %} · download only{% endif %}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No {% if status %}{{ status.value }} {% endif %}jobs.</p>
+{% endif %}
+{% endblock %}

@@ -8,6 +8,7 @@ import sys
 from argparse import Namespace
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -610,6 +611,47 @@ class TestProcessJobsLock:
         assert "is still in progress" in caplog.text
 
 
+class TestRunWeb:
+
+    @staticmethod
+    def web_args(**overrides):
+        return Namespace(**{"config": None, "host": "127.0.0.1", "port": 8642,
+                            "root_path": "/infield-fly", "allowed_user": None,
+                            "pam_service": "infield-fly", "allow_http": False, **overrides})
+
+    def test_runs_app_behind_local_proxy(self, config):
+        with mock.patch("uvicorn.run") as run, \
+                mock.patch("infield_fly.web.app.create_app") as create_app, \
+                mock.patch("getpass.getuser", return_value="me"):
+            cli.run_web(self.web_args(), config)
+
+        load_config, authenticator, secret_key = create_app.call_args[0]
+        assert create_app.call_args[1] == {"https_only": True, "root_path": "/infield-fly"}
+        assert (authenticator.allowed_user, authenticator.pam_service) == ("me", "infield-fly")
+        assert secret_key == Path(config.conversion.infield_fly_directory,
+                                  ".web_secret").read_text(encoding="utf-8")
+        with mock.patch("infield_fly.cli.load_config") as load:
+            assert load_config() is load.return_value
+        load.assert_called_once_with(None)
+        run.assert_called_once_with(create_app.return_value, host="127.0.0.1", port=8642,
+                                    root_path="/infield-fly", proxy_headers=True,
+                                    forwarded_allow_ips="127.0.0.1", log_config=None)
+
+    def test_allowed_user_and_http(self, config):
+        with mock.patch("uvicorn.run"), \
+                mock.patch("infield_fly.web.app.create_app") as create_app:
+            cli.run_web(self.web_args(allowed_user="someone", allow_http=True), config)
+
+        assert create_app.call_args[0][1].allowed_user == "someone"
+        assert create_app.call_args[1]["https_only"] is False
+
+    def test_missing_dependencies_are_reported(self, config, capsys):
+        with mock.patch.dict(sys.modules, {"uvicorn": None}):
+            cli.run_web(self.web_args(), config)
+
+        assert "requires the 'uvicorn' package" in capsys.readouterr().out
+
+
 class TestCompletion:
 
     def test_completes_job_statuses_except_unknown(self):
@@ -849,6 +891,20 @@ class TestMain:
         args = self.run_main("jobs", *argv, command=command)
 
         assert {name: getattr(args, name) for name in expected} == expected
+
+    def test_web_defaults(self):
+        args = self.run_main("web", command="run_web")
+
+        assert (args.host, args.port, args.root_path, args.allowed_user, args.pam_service,
+                args.allow_http) == ("127.0.0.1", 8642, "", None, "infield-fly", False)
+
+    def test_web_options(self):
+        args = self.run_main("web", "--host", "0.0.0.0", "--port", "9000", "--root-path",
+                             "/infield-fly", "--allowed-user", "someone", "--pam-service",
+                             "login", "--allow-http", command="run_web")
+
+        assert (args.host, args.port, args.root_path, args.allowed_user, args.pam_service,
+                args.allow_http) == ("0.0.0.0", 9000, "/infield-fly", "someone", "login", True)
 
     def test_missing_settings_file_is_reported(self, tmp_path, capsys):
         missing = str(tmp_path / "missing.json")

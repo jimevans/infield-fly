@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set active = "series" %}
+{% block title %}Series{% endblock %}
+{% macro episode(item) -%}
+s{{ "%02d" | format(item.season_number) }}e{{ "%02d" | format(item.episode_number) }} · {{ item.title }}
+<span class="muted">({% if item.airdate == today %}today{% elif item.airdate == tomorrow %}tomorrow{% else %}{{ item.airdate.strftime("%Y-%m-%d") }}{% endif %})</span>
+{%- endmacro %}
+{% block content %}
+<h1>Tracked series</h1>
+<p class="muted">Episode database last updated {% if database_updated %}{{ database_updated.strftime("%Y-%m-%d %H:%M") }}{% else %}never{% endif %}.</p>
+{% if series %}
+<ul class="cards">
+  {% for item in series %}
+  <li class="card">
+    <span class="card-title">{{ item.tracked.description or item.tracked.main_keyword }}
+      {% if item.series and item.series.year %}<span class="muted">({{ item.series.year }})</span>{% endif %}</span>
+    {% if item.series %}
+    <span class="status status-{{ item.series.status | lower }}">{{ item.series.status }}</span>
+    {% else %}
+    <span class="status status-missing">not in database</span>
+    {% endif %}
+    <dl class="details compact">
+      <dt>Keywords</dt><dd>{{ item.tracked.keywords | join(", ") or item.tracked.main_keyword }}</dd>
+      <dt>TheTVDB ID</dt><dd>{{ item.tracked.series_id }}</dd>
+      <dt>Searching</dt><dd>{% if item.tracked.stored_searches %}{{ item.tracked.stored_searches | length }} search config{{ "s" if item.tracked.stored_searches | length != 1 }}{% else %}off{% endif %}</dd>
+      {% if item.series %}
+      <dt>Episodes</dt><dd>{{ item.episode_count }}</dd>
+      <dt>Last aired</dt><dd>{% if item.last_aired %}{{ episode(item.last_aired) }}{% else %}none{% endif %}</dd>
+      <dt>Next airing</dt><dd>{% if item.next_airing %}{{ episode(item.next_airing) }}{% else %}none scheduled{% endif %}</dd>
+      {% endif %}
+    </dl>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No tracked series in the settings file.</p>
+{% endif %}
+{% endblock %}
