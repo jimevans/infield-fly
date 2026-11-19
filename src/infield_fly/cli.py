@@ -372,6 +372,33 @@ def run_processing_phases(args, config):
     if args.convert:
         job_queue.perform_conversions(args.unattended)
 
+def run_web(args, config):
+    """Runs the web interface until interrupted"""
+
+    import getpass
+
+    try:
+        import uvicorn
+
+        from infield_fly.web.app import create_app
+        from infield_fly.web.auth import Authenticator, load_or_create_secret_key
+    except ImportError as ex:
+        print(f"The web interface requires the '{ex.name}' package. Install the web "
+              "interface dependencies with: pip install -e \".[web]\"")
+        return
+
+    app = create_app(
+        lambda: load_config(args.config),
+        Authenticator(args.allowed_user or getpass.getuser(), args.pam_service),
+        load_or_create_secret_key(
+            os.path.join(config.conversion.infield_fly_directory, ".web_secret")),
+        https_only=not args.allow_http,
+        root_path=args.root_path)
+    # Proxy headers are trusted only from the local reverse proxy, so that the client
+    # address used to limit failed logins cannot be forged by other clients.
+    uvicorn.run(app, host=args.host, port=args.port, root_path=args.root_path,
+                proxy_headers=True, forwarded_allow_ips="127.0.0.1", log_config=None)
+
 def complete_job_status(**_):
     """Completes a job status argument with the valid job status values"""
 
@@ -579,6 +606,28 @@ def add_process_jobs_subparser(job_command_parsers):
         search=True, search_downloads=True, add_downloads=True, query_downloads=True,
         convert=True, func=process_jobs)
 
+def add_web_subparser(subparsers):
+    """Adds the argument subparser for the 'web' command"""
+
+    web_subparser = subparsers.add_parser("web", help="Run the web interface")
+    web_subparser.add_argument("--host", default="127.0.0.1",
+                               help="Address on which to listen (defaults to 127.0.0.1)")
+    web_subparser.add_argument("--port", type=int, default=8642,
+                               help="Port on which to listen (defaults to 8642)")
+    web_subparser.add_argument("--root-path", default="",
+                               help="URL path under which a reverse proxy serves the web " +
+                               "interface, such as /infield-fly")
+    web_subparser.add_argument("--allowed-user", default=None,
+                               help="User allowed to log in (defaults to the user running " +
+                               "the web interface)")
+    web_subparser.add_argument("--pam-service", default="infield-fly",
+                               help="PAM service with which to check passwords (defaults " +
+                               "to infield-fly)")
+    web_subparser.add_argument("--allow-http", action="store_true",
+                               help="Send the session cookie over plain HTTP; use only for " +
+                               "local testing")
+    web_subparser.set_defaults(func=run_web)
+
 def setup_logging(config, is_unattended):
     """Sets up logging for the Infield Fly library"""
 
@@ -640,6 +689,7 @@ def main():
     add_search_subparser(subparsers)
     add_database_subparser(subparsers)
     add_jobs_subparser(subparsers)
+    add_web_subparser(subparsers)
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
     try:

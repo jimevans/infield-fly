@@ -1,0 +1,25 @@
+# systemd unit running the Infield Fly web interface as the account that runs the
+# scheduled job processing, so both work with the same files.
+#
+# Install as /etc/systemd/system/infield-fly-web.service, replacing YOUR_USER and the
+# paths, then run:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infield-fly-web
+[Unit]
+Description=Infield Fly web interface
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/infield-fly
+ExecStart=/home/YOUR_USER/infield-fly/.venv/bin/infield-fly -c /home/YOUR_USER/.config/infield-fly/settings.json web --root-path /infield-fly
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+ProtectSystem=full
+# Do not set NoNewPrivileges, or other options that imply it: PAM checks the password
+# with the setgid unix_chkpwd helper, which cannot work without gaining privileges.
+
+[Install]
+WantedBy=multi-user.target

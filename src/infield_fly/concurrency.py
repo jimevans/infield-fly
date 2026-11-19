@@ -63,6 +63,40 @@ def describe_lock_holder(holder):
             f"started {holder.get('started')})")
 
 
+def read_lock_holder(path):
+    """
+    Gets the description of the holder of a process lock, or None if it is not held,
+    without trying to acquire it, so that checking cannot make a process wanting the lock
+    give up. The holder of a lock clears its lock file on release, and a holder that
+    crashed is recognized by its process no longer running.
+    """
+
+    try:
+        with open(path, encoding="utf-8") as lock_file:
+            holder = json.loads(lock_file.read())
+    except (OSError, ValueError):
+        return None
+
+    if not isinstance(holder, dict) or not _is_process_running(holder.get("pid")):
+        return None
+    return holder
+
+
+def _is_process_running(pid):
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if fcntl is None:  # pragma: no cover - Windows
+        # On Windows, os.kill terminates the process instead of checking for it.
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class ProcessLock:
 
     """

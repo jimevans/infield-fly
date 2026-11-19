@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · Infield Fly</title>
+  <link rel="stylesheet" href="{{ app_path(request, 'static', path='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="{{ app_path(request, 'home') }}">Infield Fly</a>
+    {% if request.session.get("user") %}
+    <nav>
+      <a href="{{ app_path(request, 'jobs') }}"{% if active == "jobs" %} aria-current="page"{% endif %}>Jobs</a>
+      <a href="{{ app_path(request, 'series') }}"{% if active == "series" %} aria-current="page"{% endif %}>Series</a>
+      <form method="post" action="{{ app_path(request, 'logout') }}">
+        <button type="submit" class="link-button">Log out</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -5,11 +5,12 @@ import os
 import stat
 import subprocess
 import sys
+from unittest import mock
 
 import pytest
 
 from infield_fly.concurrency import (LockHeldError, ProcessLock, atomic_write,
-                                     describe_lock_holder)
+                                     describe_lock_holder, read_lock_holder)
 
 
 class TestAtomicWrite:
@@ -148,3 +149,46 @@ class TestProcessLock:
     ])
     def test_describe_lock_holder(self, holder, expected):
         assert describe_lock_holder(holder) == expected
+
+
+class TestReadLockHolder:
+
+    def test_held_lock(self, tmp_path):
+        path = str(tmp_path / ".lock")
+
+        with ProcessLock(path, "jobs process"):
+            holder = read_lock_holder(path)
+
+        assert (holder["pid"], holder["description"]) == (os.getpid(), "jobs process")
+
+    def test_released_lock(self, tmp_path):
+        path = str(tmp_path / ".lock")
+        with ProcessLock(path, "jobs process"):
+            pass
+
+        assert read_lock_holder(path) is None
+
+    def test_missing_lock_file(self, tmp_path):
+        assert read_lock_holder(str(tmp_path / ".lock")) is None
+
+    @pytest.mark.parametrize("content", ["not json", "[]", '{"pid": "12"}', '{"pid": 0}'])
+    def test_invalid_lock_file(self, tmp_path, content):
+        path = tmp_path / ".lock"
+        path.write_text(content, encoding="utf-8")
+
+        assert read_lock_holder(str(path)) is None
+
+    def test_holder_that_exited_without_releasing(self, tmp_path):
+        with subprocess.Popen([sys.executable, "-c", "pass"]) as exited:
+            exited.wait()
+        path = tmp_path / ".lock"
+        path.write_text(json.dumps({"pid": exited.pid}), encoding="utf-8")
+
+        assert read_lock_holder(str(path)) is None
+
+    def test_holder_running_as_another_user(self, tmp_path):
+        path = tmp_path / ".lock"
+        path.write_text(json.dumps({"pid": 1}), encoding="utf-8")
+
+        with mock.patch("os.kill", side_effect=PermissionError):
+            assert read_lock_holder(str(path)) == {"pid": 1}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set active = "jobs" %}
+{% block title %}Job{% endblock %}
+{% block content %}
+<p><a href="{{ app_path(request, 'jobs') }}">← All jobs</a></p>
+<h1>{{ job.status_description }}</h1>
+<dl class="details">
+  <dt>Status</dt><dd><span class="status status-{{ job.status.value }}">{{ job.status.value }}</span></dd>
+  <dt>ID</dt><dd><code>{{ job.job_id }}</code></dd>
+  <dt>Date added</dt><dd>{{ job.added }}</dd>
+  <dt>Series keyword</dt><dd>{{ job.keyword }}</dd>
+  <dt>Search string</dt><dd>{{ job.query }}{% if job.release_groups.get(job.query) %} <span class="muted">[release groups: {{ job.release_groups.get(job.query) | join(", ") }}]</span>{% endif %}</dd>
+  {% for fallback_query in job.fallback_queries %}
+  <dt>Fallback search string</dt><dd>{{ fallback_query }}{% if job.release_groups.get(fallback_query) %} <span class="muted">[release groups: {{ job.release_groups.get(fallback_query) | join(", ") }}]</span>{% endif %}</dd>
+  {% endfor %}
+  <dt>Download only</dt><dd>{{ "Yes" if job.is_download_only else "No" }}</dd>
+  {% if job.title is not none %}<dt>Download title</dt><dd>{{ job.title }}</dd>{% endif %}
+  {% if job.magnet_link is not none %}<dt>Magnet link</dt><dd class="wrap">{{ job.magnet_link }}</dd>{% endif %}
+  {% if job.torrent_hash is not none %}<dt>Torrent hash</dt><dd><code>{{ job.torrent_hash }}</code></dd>{% endif %}
+  {% if job.nzb_guid is not none %}<dt>NZB indexer ID</dt><dd><code>{{ job.nzb_guid }}</code></dd>{% endif %}
+  {% if job.nzb_file is not none %}<dt>NZB file</dt><dd class="wrap">{{ job.nzb_file }}</dd>{% endif %}
+  {% if job.nzo_id is not none %}<dt>SABnzbd ID</dt><dd><code>{{ job.nzo_id }}</code></dd>{% endif %}
+  {% if job.download_directory is not none %}<dt>Download location</dt><dd class="wrap">{{ job.download_directory }}/{{ job.name }}</dd>{% endif %}
+  {% if job.converted_file_name is not none %}<dt>Converted file name</dt><dd>{{ job.converted_file_name }}.mp4</dd>{% endif %}
+  {% if job.rejected %}<dt>Rejected NZB indexer IDs</dt><dd class="wrap">{{ job.rejected | join(", ") }}</dd>{% endif %}
+</dl>
+{% endblock %}
