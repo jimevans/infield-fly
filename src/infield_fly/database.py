@@ -8,6 +8,8 @@ from time import perf_counter
 
 import requests
 
+from infield_fly.concurrency import atomic_write
+
 REQUEST_TIMEOUT_SECONDS = 30
 
 
@@ -108,7 +110,7 @@ class EpisodeDatabase:
         """Writes this episode database to a cache file"""
 
         dbcache_file_path = self.cache_file_path
-        with open(dbcache_file_path, "w", encoding='utf-8') as dbcache_file:
+        with atomic_write(dbcache_file_path) as dbcache_file:
             json.dump(self, dbcache_file, indent=2, default=lambda x: x.to_json())
 
     def delete_cache(self):

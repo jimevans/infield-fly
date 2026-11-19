@@ -3,6 +3,7 @@
 import os
 import shutil
 
+from infield_fly.concurrency import atomic_write
 from infield_fly.downloader import Downloader
 from infield_fly.job_status import JobStatus
 from infield_fly.usenet.newznab import NewznabSearcher, NzbResult
@@ -122,7 +123,7 @@ class NzbDownloader(Downloader):
 
         os.makedirs(self.config.conversion.nzb_directory, exist_ok=True)
         nzb_file_path = os.path.join(self.config.conversion.nzb_directory, f"{job.job_id}.nzb")
-        with open(nzb_file_path, "wb") as nzb_file:
+        with atomic_write(nzb_file_path, binary=True) as nzb_file:
             nzb_file.write(content)
         return nzb_file_path
 

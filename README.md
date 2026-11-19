@@ -324,6 +324,12 @@ with the unattended and config options, for example with this crontab entry:
 */30 * * * * /path/to/infield-fly/.venv/bin/infield-fly -u -c /path/to/settings.json jobs process
 ```
 
+Only one `jobs process` run processes a job queue at a time, so a scheduled run and
+one started by hand never act on the same jobs. A run started while another is still
+in progress logs a warning naming the other run, and exits without processing. The
+lock is held through the `.lock` file in the job directory, and is released when the
+run exits, even if it crashes.
+
 ## Development
 Each way of downloading episodes is a download track, in its own package under
 `src/infield_fly`, with its tests in the matching directory under `tests`:

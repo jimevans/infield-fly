@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 from time import perf_counter
 
+from infield_fly.concurrency import atomic_write
 from infield_fly.conversion import ConversionSettings, Converter
 from infield_fly.database import EpisodeDatabase
 from infield_fly.job_status import JobStatus
@@ -322,7 +323,13 @@ class JobQueue:  # pylint: disable=too-many-public-methods
 
         jobs = []
         for job_file in os.listdir(self.job_queue_file_path):
-            jobs.append(Job.load(self.job_queue_file_path, job_file))
+            # Job files are named by job ID. Files starting with a dot, such as the lock
+            # file and job files being written, are not jobs.
+            if job_file.startswith("."):
+                continue
+            job = Job.load(self.job_queue_file_path, job_file)
+            if job is not None:
+                jobs.append(job)
 
         return jobs
 
@@ -613,16 +620,22 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
 
     @classmethod
     def load(cls, directory, file_name):
-        """Reads a job file"""
+        """
+        Reads a job file, returning None if it does not exist (for example, because another
+        process deleted it), or cannot be read
+        """
 
-        job = None
         job_file_path = os.path.join(directory, file_name)
-        if os.path.exists(job_file_path):
+        try:
             with open(job_file_path, encoding='utf-8') as job_file:
                 job_queue_dictionary = json.load(job_file)
-                job = Job(directory, job_queue_dictionary)
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as ex:
+            logging.getLogger().warning("Skipping unreadable job file %s: %s", job_file_path, ex)
+            return None
 
-        return job
+        return Job(directory, job_queue_dictionary)
 
     def delete(self):
         """Deletes the file representing this job, and any NZB file waiting to be added"""
@@ -653,7 +666,7 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
                 "Cannot save job; path '%s' exists, but is not a directory.", self.directory)
             return
 
-        with open(self.file_path, "w", encoding='utf-8') as job_file:
+        with atomic_write(self.file_path) as job_file:
             json.dump(self.dictionary, job_file, indent=2, default=lambda x: x.value)
 
     def update_converted_file_name(self, config):
