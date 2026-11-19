@@ -15,6 +15,7 @@ import pytest
 
 from conftest import TRACKED_SERIES, make_episode_db
 from infield_fly import cli
+from infield_fly.concurrency import LockHeldError, ProcessLock
 from infield_fly.configuration import DEFAULT_CONFIG_DIRECTORY, EpisodeSearch
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobQueue, JobStatus
@@ -581,6 +582,34 @@ class TestProcessJobs:
         assert job_queue.method_calls == []
 
 
+class TestProcessJobsLock:
+
+    def test_holds_lock_while_processing(self, config):
+        def check_lock_held(*_):
+            with pytest.raises(LockHeldError):
+                with ProcessLock(config.conversion.job_lock_file, "other"):
+                    pass
+
+        with mock.patch("infield_fly.cli.run_processing_phases",
+                        side_effect=check_lock_held) as run_phases:
+            cli.process_jobs(Namespace(), config)
+
+        run_phases.assert_called_once()
+        with ProcessLock(config.conversion.job_lock_file, "after"):
+            pass
+
+    def test_skips_processing_while_another_run_is_in_progress(self, config, caplog):
+        with mock.patch("infield_fly.jobs.JobQueue") as queue_class:
+            with ProcessLock(config.conversion.job_lock_file, "jobs process"):
+                cli.process_jobs(Namespace(search=True, search_downloads=True,
+                                           add_downloads=True, query_downloads=True,
+                                           convert=True, unattended=True), config)
+
+        queue_class.assert_not_called()
+        assert "Not processing jobs; job processing by 'jobs process' (process " in caplog.text
+        assert "is still in progress" in caplog.text
+
+
 class TestCompletion:
 
     def test_completes_job_statuses_except_unknown(self):
@@ -597,6 +626,14 @@ class TestCompletion:
 
         load_config.assert_called_once_with("/settings.json")
         assert job_ids == sorted([first.job_id, second.job_id])
+
+    def test_completes_job_ids_without_dot_files(self, config):
+        job = add_job(config)
+        with open(config.conversion.job_lock_file, "w", encoding="utf-8"):
+            pass
+
+        with mock.patch("infield_fly.cli.load_config", return_value=config):
+            assert cli.complete_job_id(parsed_args=Namespace(config=None)) == [job.job_id]
 
     def test_missing_job_directory_completes_nothing(self, config):
         with mock.patch("infield_fly.cli.load_config", return_value=config):

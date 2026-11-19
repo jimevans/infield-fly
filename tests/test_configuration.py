@@ -61,6 +61,7 @@ class TestConversionSettings:
         assert settings.log_directory == os.path.join("/install", "logs")
         assert settings.log_level == logging.INFO
         assert settings.job_directory == os.path.join("/install", ".jobs")
+        assert settings.job_lock_file == os.path.join("/install", ".jobs", ".lock")
         assert settings.nzb_directory == os.path.join("/install", ".nzb")
 
     def test_default_directory_is_user_config_directory(self):
@@ -91,6 +92,7 @@ class TestConversionSettings:
         assert settings.log_directory == "/logs"
         assert settings.log_level == logging.DEBUG
         assert settings.job_directory == "/jobs"
+        assert settings.job_lock_file == os.path.join("/jobs", ".lock")
 
     def test_null_substitutions_returns_empty_dict(self):
         settings = ConversionSettings("/install", {"substitutions": None})

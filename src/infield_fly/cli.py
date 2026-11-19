@@ -335,7 +335,23 @@ def clear_jobs(args, config):
             job.delete()
 
 def process_jobs(args, config):
-    """Executes current jobs in the job queue"""
+    """
+    Executes current jobs in the job queue, unless another process, such as a scheduled run,
+    is already processing them
+    """
+
+    from infield_fly.concurrency import LockHeldError, ProcessLock, describe_lock_holder
+
+    try:
+        with ProcessLock(config.conversion.job_lock_file, "jobs process"):
+            run_processing_phases(args, config)
+    except LockHeldError as ex:
+        logging.getLogger().warning(
+            "Not processing jobs; job processing by %s is still in progress",
+            describe_lock_holder(ex.holder))
+
+def run_processing_phases(args, config):
+    """Runs the job processing phases selected by the command line arguments"""
 
     from infield_fly.jobs import JobQueue
 
@@ -368,7 +384,8 @@ def complete_job_id(parsed_args, **_):
     # importing and loading the job queue.
     try:
         config = load_config(parsed_args.config)
-        return sorted(os.listdir(config.conversion.job_directory))
+        return sorted(x for x in os.listdir(config.conversion.job_directory)
+                      if not x.startswith("."))
     except (OSError, ValueError):
         return []
 

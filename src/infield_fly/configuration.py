@@ -133,6 +133,15 @@ class ConversionSettings:
                                  os.path.join(self.infield_fly_directory, ".jobs"))
 
     @property
+    def job_lock_file(self):
+        """
+        Gets the path of the lock file preventing more than one process from processing
+        the jobs in the job directory at a time
+        """
+
+        return os.path.join(self.job_directory, ".lock")
+
+    @property
     def nzb_directory(self):
         """Gets the path of the directory to which NZB files found for jobs are written"""
 

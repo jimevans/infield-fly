@@ -61,6 +61,33 @@ class TestJobQueueBasics:
         assert queue.load_jobs() == []
         assert os.path.isdir(config.conversion.job_directory)
 
+    def test_load_jobs_skips_dot_files(self, queue, config):
+        job = add_job(queue, JobStatus.WAITING)
+        Path(config.conversion.job_lock_file).write_text("{}", encoding="utf-8")
+        Path(config.conversion.job_directory, ".job.tmp").write_text("{", encoding="utf-8")
+
+        assert [x.job_id for x in queue.load_jobs()] == [job.job_id]
+
+    def test_load_jobs_skips_unreadable_job_files(self, queue, config, caplog):
+        job = add_job(queue, JobStatus.WAITING)
+        Path(config.conversion.job_directory, "corrupt").write_text("{", encoding="utf-8")
+
+        assert [x.job_id for x in queue.load_jobs()] == [job.job_id]
+        assert "Skipping unreadable job file" in caplog.text
+
+    def test_load_jobs_skips_jobs_deleted_while_loading(self, queue):
+        job = add_job(queue, JobStatus.WAITING)
+        deleted = add_job(queue, JobStatus.COMPLETED)
+        load = Job.load
+
+        def load_after_deletion(directory, file_name):
+            if file_name == deleted.job_id:
+                deleted.delete()
+            return load(directory, file_name)
+
+        with mock.patch("infield_fly.jobs.Job.load", side_effect=load_after_deletion):
+            assert [x.job_id for x in queue.load_jobs()] == [job.job_id]
+
     def test_get_job_by_id(self, queue):
         job = add_job(queue, JobStatus.WAITING)
 
