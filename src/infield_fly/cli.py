@@ -380,6 +380,7 @@ def run_web(args, config):
     try:
         import uvicorn
 
+        from infield_fly.settings_file import SettingsFile
         from infield_fly.web.app import create_app
         from infield_fly.web.auth import Authenticator, load_or_create_secret_key
     except ImportError as ex:
@@ -393,7 +394,8 @@ def run_web(args, config):
         load_or_create_secret_key(
             os.path.join(config.conversion.infield_fly_directory, ".web_secret")),
         https_only=not args.allow_http,
-        root_path=args.root_path)
+        root_path=args.root_path,
+        settings_file=SettingsFile(resolve_config_path(args.config)[0]))
     # Proxy headers are trusted only from the local reverse proxy, so that the client
     # address used to limit failed logins cannot be forged by other clients.
     uvicorn.run(app, host=args.host, port=args.port, root_path=args.root_path,
@@ -648,18 +650,26 @@ def setup_logging(config, is_unattended):
         handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
 
+def resolve_config_path(config_file):
+    """
+    Gets the absolute path of the settings file, and whether it was specified explicitly
+    rather than being the default
+    """
+
+    # If unspecified, read the config file named by the environment variable,
+    # falling back to settings.json in the user's config directory.
+    explicit_config_file = config_file or os.environ.get(CONFIG_FILE_ENVIRONMENT_VARIABLE)
+    config_file_path = (explicit_config_file
+                        or os.path.join(DEFAULT_CONFIG_DIRECTORY, "settings.json"))
+    return os.path.abspath(os.path.expanduser(config_file_path)), bool(explicit_config_file)
+
 def load_config(config_file):
     """Loads configuration from the specified file"""
 
     settings_dict = None
 
-    # If unspecified, read the config file named by the environment variable,
-    # falling back to settings.json in the user's config directory. Default
-    # data directories are resolved relative to the config file's directory.
-    explicit_config_file = config_file or os.environ.get(CONFIG_FILE_ENVIRONMENT_VARIABLE)
-    config_file_path = (explicit_config_file
-                        or os.path.join(DEFAULT_CONFIG_DIRECTORY, "settings.json"))
-    config_file_path = os.path.abspath(os.path.expanduser(config_file_path))
+    # Default data directories are resolved relative to the config file's directory.
+    config_file_path, explicit_config_file = resolve_config_path(config_file)
     infield_fly_directory = os.path.dirname(config_file_path)
 
     if os.path.exists(config_file_path):

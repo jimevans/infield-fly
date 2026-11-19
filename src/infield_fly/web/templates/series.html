@@ -6,7 +6,20 @@ s{{ "%02d" | format(item.season_number) }}e{{ "%02d" | format(item.episode_numbe
 <span class="muted">({% if item.airdate == today %}today{% elif item.airdate == tomorrow %}tomorrow{% else %}{{ item.airdate.strftime("%Y-%m-%d") }}{% endif %})</span>
 {%- endmacro %}
 {% block content %}
-<h1>Tracked series</h1>
+<div class="page-heading">
+  <h1>Tracked series</h1>
+  <a class="button" href="{{ app_path(request, 'series_add') }}">Add series</a>
+</div>
+{% if ignored %}
+<div class="notice">
+  <p>These entries in the settings file are ignored, because they don't have a valid TheTVDB ID:</p>
+  <ul>
+    {% for keyword in ignored %}
+    <li>{{ keyword }} · <a href="{{ app_path(request, 'series_edit') }}?keyword={{ keyword | urlencode }}">Edit</a></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 <p class="muted">Episode database last updated {% if database_updated %}{{ database_updated.strftime("%Y-%m-%d %H:%M") }}{% else %}never{% endif %}.</p>
 {% if series %}
 <ul class="cards">
@@ -29,6 +42,7 @@ s{{ "%02d" | format(item.season_number) }}e{{ "%02d" | format(item.episode_numbe
       <dt>Next airing</dt><dd>{% if item.next_airing %}{{ episode(item.next_airing) }}{% else %}none scheduled{% endif %}</dd>
       {% endif %}
     </dl>
+    <a href="{{ app_path(request, 'series_edit') }}?keyword={{ item.tracked.main_keyword | urlencode }}">Edit</a>
   </li>
   {% endfor %}
 </ul>

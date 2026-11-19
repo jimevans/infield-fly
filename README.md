@@ -342,6 +342,15 @@ series. It requires additional dependencies, installed with:
 infield-fly [-c CONFIG] web [--host HOST] [--port PORT] [--root-path PATH]
 ```
 
+Tracked series can be added, edited, and removed on the Series page. A new series is
+found by searching TheTVDB by name, which requires the `api_key` metadata setting, and
+its episodes are retrieved into the episode database as soon as it is saved. The
+editor changes only the tracked series it saves, keeping the rest of the settings file,
+including settings it doesn't recognize, and its indentation. If the settings file was
+changed by something else since the editor was opened, such as by hand, saving is
+refused and the editor shows the current settings, so no change is silently lost.
+Removing a series keeps its existing jobs and its episodes in the episode database.
+
 The web interface listens on `127.0.0.1:8642` by default, and is meant to be served
 over HTTPS by a reverse proxy, with `--root-path` naming the URL path under which the
 proxy serves it. It reads the settings file on each request, so changes to it apply

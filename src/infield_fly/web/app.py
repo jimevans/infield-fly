@@ -14,14 +14,14 @@ from starlette.requests import HTTPConnection
 from starlette.responses import PlainTextResponse, RedirectResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
-from starlette.templating import Jinja2Templates
 
 from infield_fly.concurrency import read_lock_holder
 from infield_fly.database import EpisodeDatabase
 from infield_fly.job_status import JobStatus
 from infield_fly.jobs import JobQueue
+from infield_fly.web import series_editor
+from infield_fly.web.templating import WEB_DIRECTORY, app_path, templates
 
-WEB_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 SESSION_COOKIE = "infield_fly_session"
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_PATHS = ("/login", "/static/")
@@ -35,18 +35,6 @@ SECURITY_HEADERS = {
 }
 # The order in which job statuses are listed, following a job through processing.
 STATUS_ORDER = [x for x in JobStatus if x != JobStatus.UNKNOWN] + [JobStatus.UNKNOWN]
-
-templates = Jinja2Templates(directory=os.path.join(WEB_DIRECTORY, "templates"))
-
-
-def app_path(request, name, **path_params):
-    """Gets the path, including the root path of the application, of a named route"""
-
-    return request.url_for(name, **path_params).path
-
-
-templates.env.globals["app_path"] = app_path
-
 
 def get_route_path(scope):
     """Gets the path of a request relative to the root path of the application"""
@@ -252,20 +240,28 @@ async def list_series(request):
     now = datetime.now()
     series, database_updated = describe_tracked_series(
         config, datetime(now.year, now.month, now.day))
+    # Entries the configuration ignores, such as those without a valid TheTVDB ID, are
+    # listed so that they can be fixed.
+    settings, _ = request.app.state.settings_file.read()
+    ignored = [x for x in series_editor.get_tracked_series(settings)
+               if x not in {y.main_keyword for y in config.metadata.tracked_series}]
     return templates.TemplateResponse(request, "series.html", {
         "series": series,
+        "ignored": ignored,
         "database_updated": database_updated,
         "today": datetime(now.year, now.month, now.day),
         "tomorrow": datetime(now.year, now.month, now.day) + timedelta(days=1),
     })
 
 
-def create_app(load_config, authenticator, secret_key, https_only=True, root_path=""):
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
+def create_app(load_config, authenticator, secret_key, *, settings_file, https_only=True,
+               root_path=""):
+    # pylint: disable=too-many-arguments
     """
-    Creates the web interface application. The settings file is read with load_config
-    on each request, so changes to it apply without restarting the application. When
-    https_only is set, the session cookie is only sent over HTTPS.
+    Creates the web interface application. The configuration is loaded with load_config
+    on each request, so changes to the settings file apply without restarting the
+    application, and the settings file is changed with settings_file. When https_only is
+    set, the session cookie is only sent over HTTPS.
     """
 
     app = Starlette(
@@ -276,6 +272,11 @@ def create_app(load_config, authenticator, secret_key, https_only=True, root_pat
             Route("/jobs", list_jobs, name="jobs"),
             Route("/jobs/{job_id}", show_job, name="job"),
             Route("/series", list_series, name="series"),
+            Route("/series/add", series_editor.add_series, name="series_add"),
+            Route("/series/edit", series_editor.edit_series, methods=["GET", "POST"],
+                  name="series_edit"),
+            Route("/series/delete", series_editor.delete_series, methods=["GET", "POST"],
+                  name="series_delete"),
             Mount("/static", StaticFiles(directory=os.path.join(WEB_DIRECTORY, "static")),
                   name="static"),
         ],
@@ -287,4 +288,5 @@ def create_app(load_config, authenticator, secret_key, https_only=True, root_pat
         ])
     app.state.load_config = load_config
     app.state.authenticator = authenticator
+    app.state.settings_file = settings_file
     return app

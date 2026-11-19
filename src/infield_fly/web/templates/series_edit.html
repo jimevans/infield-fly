@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set active = "series" %}
+{% block title %}{{ "Edit series" if original_keyword is not none else "New series" }}{% endblock %}
+{% block content %}
+<p><a href="{{ app_path(request, 'series') }}">← Tracked series</a></p>
+<h1>{% if original_keyword is not none %}Edit {{ form.description or original_keyword }}{% else %}Track {{ form.description or "a new series" }}{% endif %}</h1>
+{% if errors %}
+<div class="error-summary" role="alert">
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+<form class="editor" method="post" action="{{ app_path(request, 'series_edit') }}">
+  {# Pressing Enter submits with the first submit button, so the first one saves. #}
+  <button type="submit" name="action" value="save" class="visually-hidden" tabindex="-1" aria-hidden="true">Save</button>
+  <input type="hidden" name="version" value="{{ version }}">
+  <input type="hidden" name="original_keyword" value="{{ original_keyword or '' }}">
+  <input type="hidden" name="config_count" value="{{ form.search_configs | length }}">
+
+  <fieldset>
+    <legend>Series</legend>
+    <label for="description">Description</label>
+    <input id="description" name="description" value="{{ form.description }}" required>
+    <p class="hint">The series name, used in messages and to name converted files.</p>
+
+    <label for="keyword">Main keyword</label>
+    <input id="keyword" name="keyword" value="{{ form.keyword }}" autocapitalize="none" spellcheck="false" required>
+    <p class="hint">Identifies the series in jobs and commands, and starts each search unless a primary search term is set.{% if original_keyword is not none %} Jobs already created keep the old keyword if you change it.{% endif %}</p>
+
+    <label for="series_id">TheTVDB ID</label>
+    <input id="series_id" name="series_id" value="{{ form.series_id }}" inputmode="numeric" pattern="[0-9]+" required>
+
+    <label for="keywords">Additional keywords</label>
+    <input id="keywords" name="keywords" value="{{ form.keywords }}" autocapitalize="none" spellcheck="false">
+    <p class="hint">Separated by commas. Matched, along with the main keyword, against file names to identify the series.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Searching</legend>
+    <label class="checkbox"><input type="checkbox" name="enable_search"{% if form.enable_search %} checked{% endif %}> Search for new episodes</label>
+
+    <label for="primary_search_term">Primary search term</label>
+    <input id="primary_search_term" name="primary_search_term" value="{{ form.primary_search_term }}" placeholder="{{ form.keyword }}" autocapitalize="none" spellcheck="false">
+    <p class="hint">Starts each search string. Leave empty to use the main keyword.</p>
+
+    <h2>Search configs</h2>
+    <p class="hint">Tried in order for each episode, until one finds a usable download. Download-only configs each make a separate job whose download is copied without converting it.</p>
+    {% for config in form.search_configs %}
+    {% set index = loop.index0 %}
+    <div class="search-config">
+      <div class="search-config-heading">
+        <span>{{ loop.index }}.</span>
+        <span class="row-buttons">
+          {% if not loop.first %}<button type="submit" class="secondary" name="action" value="move-config-up-{{ index }}" formnovalidate>Move up</button>{% endif %}
+          <button type="submit" class="secondary" name="action" value="remove-config-{{ index }}" formnovalidate>Remove</button>
+        </span>
+      </div>
+      <label for="config-{{ index }}-search_terms">Search terms</label>
+      <input id="config-{{ index }}-search_terms" name="config-{{ index }}-search_terms" value="{{ config.search_terms }}" placeholder="e.g. 1080p amzn" autocapitalize="none" spellcheck="false">
+      <label for="config-{{ index }}-release_groups">Release groups</label>
+      <input id="config-{{ index }}-release_groups" name="config-{{ index }}-release_groups" value="{{ config.release_groups }}" placeholder="Any group" autocapitalize="none" spellcheck="false">
+      <label class="checkbox"><input type="checkbox" name="config-{{ index }}-download_only"{% if config.download_only %} checked{% endif %}> Download only</label>
+    </div>
+    {% else %}
+    <p class="muted">No search configs: each episode is searched for with the primary search term alone.</p>
+    {% endfor %}
+    <button type="submit" class="secondary" name="action" value="add-config" formnovalidate>Add search config</button>
+
+    {% if example_searches and form.enable_search %}
+    <div class="example">
+      <h3>Searches for episode s01e01</h3>
+      {% for search in example_searches %}
+      <ol>
+        {% for query in search.queries %}
+        <li><code>{{ query }}</code>{% if search.release_groups.get(query) %} <span class="muted">from {{ search.release_groups.get(query) | join(", ") }}</span>{% endif %}{% if loop.first and search.is_download_only %} <span class="muted">(download only)</span>{% endif %}</li>
+        {% endfor %}
+      </ol>
+      {% endfor %}
+      <p class="hint">Updated when you add, move, or remove a search config, or save.</p>
+    </div>
+    {% endif %}
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit" name="action" value="save">{{ "Save" if original_keyword is not none else "Start tracking" }}</button>
+    <a href="{{ app_path(request, 'series') }}">Cancel</a>
+    {% if original_keyword is not none %}
+    <a class="danger-link" href="{{ app_path(request, 'series_delete') }}?keyword={{ original_keyword | urlencode }}">Stop tracking…</a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

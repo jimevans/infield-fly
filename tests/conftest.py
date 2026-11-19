@@ -19,6 +19,19 @@ TRACKED_SERIES = {
 }
 
 
+def working_directories(tmp_path):
+    """Gets the conversion settings placing the working directories in a temporary directory"""
+
+    return {
+        "database_directory": str(tmp_path),
+        "job_directory": str(tmp_path / "jobs"),
+        "staging_directory": str(tmp_path / "staging"),
+        "final_directory": str(tmp_path / "final"),
+        "log_directory": str(tmp_path / "logs"),
+        "nzb_directory": str(tmp_path / "nzb"),
+    }
+
+
 @pytest.fixture
 def make_config(tmp_path):
     """Returns a factory creating a Configuration rooted in a temporary directory"""
@@ -26,15 +39,7 @@ def make_config(tmp_path):
     def _make_config(conversion=None, metadata=None, notification=None, search=None,
                      download=None):
         config_dict = {
-            "conversion": {
-                "database_directory": str(tmp_path),
-                "job_directory": str(tmp_path / "jobs"),
-                "staging_directory": str(tmp_path / "staging"),
-                "final_directory": str(tmp_path / "final"),
-                "log_directory": str(tmp_path / "logs"),
-                "nzb_directory": str(tmp_path / "nzb"),
-                **(conversion or {})
-            },
+            "conversion": {**working_directories(tmp_path), **(conversion or {})},
             "metadata": metadata or {},
             "notification": notification or {},
             "search": search or {},
