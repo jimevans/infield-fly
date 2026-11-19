@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set active = "series" %}
+{% block title %}Add series{% endblock %}
+{% block content %}
+<p><a href="{{ app_path(request, 'series') }}">← Tracked series</a></p>
+<h1>Add a series</h1>
+<form class="search-form" method="get" action="{{ app_path(request, 'series_add') }}">
+  <label for="q">Search TheTVDB</label>
+  <div class="inline-fields">
+    <input id="q" name="q" type="search" value="{{ query }}" placeholder="Series name" required{% if not query %} autofocus{% endif %}>
+    <button type="submit">Search</button>
+  </div>
+</form>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if results is not none %}
+  {% if results %}
+  <ul class="cards">
+    {% for result in results %}
+    <li class="card">
+      <span class="card-title">{{ result.name }}{% if result.year %} <span class="muted">({{ result.year }})</span>{% endif %}</span>
+      <span class="muted">{{ [result.network, result.status, "TheTVDB ID " ~ result.series_id] | select | join(" · ") }}</span>
+      {% if result.overview %}<p class="overview">{{ result.overview | truncate(240) }}</p>{% endif %}
+      {% if result.series_id in tracked_ids %}
+      <span>Already tracked as “{{ tracked_ids[result.series_id] }}” · <a href="{{ app_path(request, 'series_edit') }}?keyword={{ tracked_ids[result.series_id] | urlencode }}">Edit</a></span>
+      {% else %}
+      <a class="button" href="{{ app_path(request, 'series_edit') }}?{{ {'series_id': result.series_id, 'name': result.name} | urlencode }}">Track this series</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No series found for “{{ query }}”.</p>
+  {% endif %}
+{% endif %}
+<details class="manual-entry"{% if error %} open{% endif %}>
+  <summary>Add by TheTVDB ID instead</summary>
+  <form method="get" action="{{ app_path(request, 'series_edit') }}">
+    <label for="series_id">TheTVDB ID</label>
+    <div class="inline-fields">
+      <input id="series_id" name="series_id" inputmode="numeric" pattern="[0-9]+" required>
+      <button type="submit">Continue</button>
+    </div>
+  </form>
+</details>
+{% endblock %}

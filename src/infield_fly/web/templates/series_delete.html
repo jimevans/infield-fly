@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% set active = "series" %}
+{% block title %}Stop tracking{% endblock %}
+{% block content %}
+<p><a href="{{ app_path(request, 'series') }}">← Tracked series</a></p>
+<h1>Stop tracking {{ series.description or keyword }}?</h1>
+<p>The series is removed from the settings file, so no new jobs are created for it. Its existing jobs, and its episodes in the episode database, are kept.</p>
+<form class="form-actions" method="post" action="{{ app_path(request, 'series_delete') }}">
+  <input type="hidden" name="keyword" value="{{ keyword }}">
+  <input type="hidden" name="version" value="{{ version }}">
+  <button type="submit" class="danger">Stop tracking</button>
+  <a href="{{ app_path(request, 'series_edit') }}?keyword={{ keyword | urlencode }}">Cancel</a>
+</form>
+{% endblock %}

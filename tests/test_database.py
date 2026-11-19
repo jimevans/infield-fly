@@ -9,7 +9,8 @@ import pytest
 
 from infield_fly.configuration import MetadataSettings, TrackedSeries
 from infield_fly.database import (REQUEST_TIMEOUT_SECONDS, EpisodeDatabase, EpisodeInfo,
-                                  ProgressBar, SeriesInfo, TVMetadataProvider)
+                                  ProgressBar, SeriesInfo, SeriesSearchResult,
+                                  TVMetadataProvider)
 
 
 def make_response(status_code=200, json_value=None, text=""):
@@ -408,6 +409,32 @@ class TestGetSeries:
         pages = [{"data": {"series": SERIES_DATA, "episodes": [episode_dict(1, 1, 1)]}}, response]
         with mock.patch.object(provider, "get_data", side_effect=pages):
             assert provider.get_series(1) is None
+
+
+class TestSearchSeries:
+
+    def test_search_results(self, provider):
+        results = {"data": [
+            {"tvdb_id": "12", "name": "La Serie", "translations": {"eng": "The Series"},
+             "year": "2020", "network": "Net", "status": "Ended",
+             "overviews": {"eng": "English overview"}, "overview": "Resumen"},
+            {"tvdb_id": "13", "name": "Plain", "overview": "Only overview"},
+            {"tvdb_id": "series-14", "name": "No numeric ID"},
+            {"name": "No ID"},
+        ]}
+        with mock.patch.object(provider, "get_data", return_value=results) as get_data:
+            found = provider.search_series("serie")
+
+        get_data.assert_called_once_with("search", {"query": "serie", "type": "series"})
+        assert found == [
+            SeriesSearchResult(12, "The Series", "2020", "Net", "Ended", "English overview"),
+            SeriesSearchResult(13, "Plain", "", "", "", "Only overview"),
+        ]
+
+    @pytest.mark.parametrize("result", [None, {"data": None}])
+    def test_failed_search(self, provider, result):
+        with mock.patch.object(provider, "get_data", return_value=result):
+            assert provider.search_series("serie") is None
 
 
 class TestGetEpisodeAirdate:

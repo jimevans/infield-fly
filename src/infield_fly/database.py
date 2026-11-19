@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from time import perf_counter
 
@@ -276,6 +277,35 @@ class EpisodeInfo:
                 f"{self.title}")
 
 
+@dataclass
+class SeriesSearchResult:
+
+    """A series found by searching thetvdb.com"""
+
+    series_id: int
+    name: str
+    year: str
+    network: str
+    status: str
+    overview: str
+
+    @classmethod
+    def from_dictionary(cls, result_dict):
+        """
+        Creates a search result from a thetvdb.com search result, preferring its English
+        name and overview
+        """
+
+        return cls(int(result_dict["tvdb_id"]),
+                   (result_dict.get("translations") or {}).get("eng")
+                   or result_dict.get("name") or "",
+                   result_dict.get("year") or "",
+                   result_dict.get("network") or "",
+                   result_dict.get("status") or "",
+                   (result_dict.get("overviews") or {}).get("eng")
+                   or result_dict.get("overview") or "")
+
+
 class TVMetadataProvider:
 
     """The provider to retrieve metadata from thetvdb.com"""
@@ -378,6 +408,18 @@ class TVMetadataProvider:
             progress_bar.clear()
 
         return series_info
+
+    def search_series(self, query):
+        """
+        Searches for series by name using the thetvdb.com API, returning the matching
+        series, or None if the search failed
+        """
+
+        result = self.get_data("search", {"query": query, "type": "series"})
+        if result is None or result.get("data") is None:
+            return None
+        return [SeriesSearchResult.from_dictionary(x) for x in result["data"]
+                if str(x.get("tvdb_id", "")).isdigit()]
 
     def get_episode_airdate(self, episode_id):
         """Retrieves metadata for an episode and gets its air date using the thetvdb.com API"""

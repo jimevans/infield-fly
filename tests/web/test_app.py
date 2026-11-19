@@ -1,5 +1,6 @@
 """Tests for the web interface application"""
 
+import json
 import logging
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
@@ -9,63 +10,18 @@ import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from conftest import TRACKED_SERIES, make_episode_db
+from conftest import make_episode_db
+from web.conftest import ROOT, SAME_ORIGIN, make_settings
+from infield_fly.cli import load_config
 from infield_fly.concurrency import ProcessLock
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobStatus
+from infield_fly.settings_file import SettingsFile
 from infield_fly.web.app import create_app
 
-ROOT = "/infield-fly"
-SAME_ORIGIN = {"Origin": "https://seed.example"}
 # The test client connects WebSockets to an absolute URL, ignoring its base URL.
 WEBSOCKET_URL = f"wss://seed.example{ROOT}/ws"
 TODAY = datetime.combine(datetime.now().date(), datetime.min.time())
-
-
-class FakeAuthenticator:
-
-    def __init__(self):
-        self.limited = False
-        self.calls = []
-
-    def authenticate(self, user_name, password, client):
-        self.calls.append((user_name, password, client))
-        return user_name == "me" and password == "secret"
-
-    def is_limited(self, _):
-        return self.limited
-
-
-@pytest.fixture
-def config(make_config):
-    return make_config(metadata={"tracked_series": TRACKED_SERIES})
-
-
-@pytest.fixture
-def authenticator():
-    return FakeAuthenticator()
-
-
-@pytest.fixture
-def app(config, authenticator):
-    return create_app(lambda: config, authenticator, "test-secret", root_path=ROOT)
-
-
-@pytest.fixture
-def client(app):
-    # As behind the reverse proxy, where uvicorn adds the root path back to the path of
-    # each request, requests are made to paths under the root path.
-    with TestClient(app, base_url=f"https://seed.example{ROOT}",
-                    root_path=ROOT) as test_client:
-        yield test_client
-
-
-@pytest.fixture
-def logged_in(client):
-    response = client.post("/login", data={"user_name": "me", "password": "secret"},
-                           headers=SAME_ORIGIN, follow_redirects=False)
-    assert response.status_code == 303
-    return client
 
 
 def add_job(config, status, **values):
@@ -306,8 +262,11 @@ class TestSeries:
         assert "Episode database last updated never." in text
         assert text.count("not in database") == 2
 
-    def test_no_tracked_series(self, make_config, authenticator):
-        app = create_app(make_config, authenticator, "test-secret")
+    def test_no_tracked_series(self, tmp_path, authenticator):
+        settings_path = tmp_path / "empty.json"
+        settings_path.write_text(json.dumps(make_settings(tmp_path, {})), encoding="utf-8")
+        app = create_app(lambda: load_config(str(settings_path)), authenticator,
+                         "test-secret", settings_file=SettingsFile(str(settings_path)))
         with TestClient(app, base_url="https://seed.example") as client:
             client.post("/login", data={"user_name": "me", "password": "secret"},
                         headers=SAME_ORIGIN)

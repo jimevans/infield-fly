@@ -626,6 +626,8 @@ class TestRunWeb:
             cli.run_web(self.web_args(), config)
 
         load_config, authenticator, secret_key = create_app.call_args[0]
+        settings_file = create_app.call_args[1].pop("settings_file")
+        assert settings_file.path == cli.resolve_config_path(None)[0]
         assert create_app.call_args[1] == {"https_only": True, "root_path": "/infield-fly"}
         assert (authenticator.allowed_user, authenticator.pam_service) == ("me", "infield-fly")
         assert secret_key == Path(config.conversion.infield_fly_directory,
