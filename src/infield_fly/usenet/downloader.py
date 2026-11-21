@@ -192,21 +192,27 @@ class NzbDownloader(Downloader):
     def remove_download(self, job):
         """
         Deletes the completed download of a converted job, and removes it from the SABnzbd
-        history, when configured to do so. Failures are logged, leaving the download in place.
+        history, when configured to do so. When the download is in a folder of its own in
+        SABnzbd's completed directory, as SABnzbd's history confirms, the whole folder is
+        deleted, with any other files left in it. Failures are logged, leaving the download
+        in place.
         """
 
         if not self.config.download.delete_completed_downloads:
             return
 
+        client = SabnzbdClient(self.config.download)
         # SABnzbd only deletes the files of failed jobs from its history, so the files of
-        # the completed download, at the storage path it reported, are deleted directly.
+        # the completed download are deleted directly.
         download_path = os.path.join(job.download_directory, job.name)
-        self.logger.info("Deleting completed download %s", download_path)
+        folder = self.find_download_folder(client, job, download_path)
+        delete_path = folder if folder is not None else download_path
+        self.logger.info("Deleting completed download %s", delete_path)
         try:
-            if os.path.isdir(download_path):
-                shutil.rmtree(download_path)
-            elif os.path.isfile(download_path):
-                os.remove(download_path)
+            if os.path.isdir(delete_path):
+                shutil.rmtree(delete_path)
+            elif os.path.isfile(delete_path):
+                os.remove(delete_path)
         except OSError as ex:
             self.logger.warning("Deleting download for job %s failed: %s", job.job_id, ex)
             return
@@ -214,10 +220,39 @@ class NzbDownloader(Downloader):
         if job.nzo_id is None:
             return
         try:
-            SabnzbdClient(self.config.download).delete_history_item(job.nzo_id)
+            client.delete_history_item(job.nzo_id)
         except SabnzbdError as ex:
             self.logger.warning("Removing download for job %s from SABnzbd history failed: %s",
                                 job.job_id, ex)
+
+    def find_download_folder(self, client, job, download_path):
+        """
+        Gets the folder SABnzbd's history records as the location of a job's download, when
+        it is a folder inside SABnzbd's completed directory, but not the directory itself,
+        and contains the job's download path, so that the whole folder can be deleted; or
+        None if SABnzbd doesn't confirm such a folder. A job's download path is the file in
+        the folder when the job was given its download by hand.
+        """
+
+        if job.nzo_id is None:
+            return None
+        try:
+            _, storage, _ = client.get_download_status(job.nzo_id)
+            complete_directory = client.get_complete_directory()
+        except SabnzbdError as ex:
+            self.logger.warning("Could not find the folder of the download for job %s: %s",
+                                job.job_id, ex)
+            return None
+        if not storage or not complete_directory:
+            return None
+
+        folder = os.path.realpath(storage)
+        complete_directory = os.path.realpath(complete_directory)
+        if (not os.path.isdir(folder) or folder == complete_directory
+                or os.path.commonpath([complete_directory, folder]) != complete_directory
+                or os.path.commonpath([folder, os.path.realpath(download_path)]) != folder):
+            return None
+        return folder
 
     def reject_nzb(self, job):
         """Rejects the NZB file found for a job, and returns the job to waiting for a search"""

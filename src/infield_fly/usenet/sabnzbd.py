@@ -62,6 +62,17 @@ class SabnzbdClient:
 
         return None, None, None
 
+    def get_complete_directory(self):
+        """
+        Gets the absolute path of the directory into which SABnzbd moves completed
+        downloads, or None if SABnzbd doesn't report it
+        """
+
+        status = self.call_api({"mode": "fullstatus", "skip_dashboard": 1}).get("status")
+        if not isinstance(status, dict):
+            return None
+        return status.get("completedir") or None
+
     def delete_history_item(self, nzo_id):
         """Deletes a finished download, and its files, from the download history"""
 

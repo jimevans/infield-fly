@@ -176,7 +176,10 @@ and optionally the category under which to add them. Set `sabnzbd_use_ssl` to tr
 (it defaults to false) to connect to SABnzbd over HTTPS. When
 `delete_completed_downloads` is true (it defaults to false), a download's files
 are deleted from SABnzbd's completed folder, and the download is removed from
-its history, once the download has been converted. It also names the Deluge
+its history, once the download has been converted. When the download is in a
+folder of its own there, as SABnzbd's history records, the whole folder is
+deleted, with any other files in it, even if the job was given only the episode
+file in it by hand. It also names the Deluge
 daemon to which magnet links are added, with `deluge_host`, `deluge_port`,
 `deluge_user_name`, and `deluge_password`.
 
