@@ -9,6 +9,8 @@ from xml.etree import ElementTree
 
 import requests
 
+logger = logging.getLogger(__name__)
+
 REQUEST_TIMEOUT_SECONDS = 30
 NEWZNAB_NAMESPACE = "http://www.newznab.com/DTD/2010/feeds/attributes/"
 
@@ -79,7 +81,6 @@ class NewznabSearcher:
     def __init__(self, search_settings):
         super().__init__()
         self.settings = search_settings
-        self.logger = logging.getLogger()
 
     def search(self, query, excluded_guids=(), release_groups=()):
         """
@@ -94,7 +95,7 @@ class NewznabSearcher:
         if results is None:
             return []
         if len(results) == 0:
-            self.logger.info("No search results found for '%s'", query)
+            logger.info("No search results found for '%s'", query)
             return []
 
         results.sort(key=lambda x: x.rank_key, reverse=True)
@@ -104,13 +105,13 @@ class NewznabSearcher:
             results = [x for _, x in sorted([(rank, x) for rank, x in ranked_results
                                              if rank is not None], key=lambda x: x[0])]
             if len(results) == 0:
-                self.logger.info("No search results for '%s' are from release groups %s",
+                logger.info("No search results for '%s' are from release groups %s",
                                  query, ", ".join(release_groups))
                 return []
 
         candidates = [x for x in results if x.guid not in excluded_guids]
         if len(candidates) == 0:
-            self.logger.info("All %d search results for '%s' were rejected previously",
+            logger.info("All %d search results for '%s' were rejected previously",
                              len(results), query)
         return candidates
 
@@ -119,27 +120,27 @@ class NewznabSearcher:
 
         request_params = {"apikey": self.settings.api_key, "extended": 1, "limit": 100,
                           **params}
-        self.logger.debug("Searching %s with %s", self.settings.newznab_url, params)
+        logger.debug("Searching %s with %s", self.settings.newznab_url, params)
         try:
             response = requests.get(self.settings.newznab_url, params=request_params,
                                     timeout=REQUEST_TIMEOUT_SECONDS)
         except requests.RequestException as ex:
-            self.logger.warning("Search request failed: %s", ex)
+            logger.warning("Search request failed: %s", ex)
             return None
 
         if response.status_code != 200:
-            self.logger.warning("Received error response to search (%s): %s",
+            logger.warning("Received error response to search (%s): %s",
                                 response.status_code, response.text)
             return None
 
         try:
             root = ElementTree.fromstring(response.content)
         except ElementTree.ParseError as ex:
-            self.logger.warning("Could not parse search response: %s", ex)
+            logger.warning("Could not parse search response: %s", ex)
             return None
 
         if root.tag == "error":
-            self.logger.warning("Search returned error %s: %s",
+            logger.warning("Search returned error %s: %s",
                                 root.get("code"), root.get("description"))
             return None
 
@@ -156,11 +157,11 @@ class NewznabSearcher:
         try:
             response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
         except requests.RequestException as ex:
-            self.logger.warning("Downloading NZB for '%s' failed: %s", result.title, ex)
+            logger.warning("Downloading NZB for '%s' failed: %s", result.title, ex)
             return None
 
         if response.status_code != 200 or len(response.content) == 0:
-            self.logger.warning("Downloading NZB for '%s' failed (%s)",
+            logger.warning("Downloading NZB for '%s' failed (%s)",
                                 result.title, response.status_code)
             return None
 

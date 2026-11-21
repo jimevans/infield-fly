@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from infield_fly.concurrency import ProcessLock, atomic_write
 from infield_fly.conversion import Converter
 
+logger = logging.getLogger(__name__)
+
 STAGING_SUBDIRECTORY = "adhoc"
 
 
@@ -111,7 +113,7 @@ def move_to_destination(output_file, destination_directory):
     final_path = os.path.join(destination_directory, os.path.basename(output_file))
     os.makedirs(destination_directory, exist_ok=True)
     shutil.move(output_file, final_path)
-    logging.getLogger().info("Moved converted file to %s", final_path)
+    logger.info("Moved converted file to %s", final_path)
 
 
 def remove_staged_files(converter, settings):

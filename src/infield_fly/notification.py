@@ -4,6 +4,8 @@ import logging
 
 from twilio.rest import Client
 
+logger = logging.getLogger(__name__)
+
 
 class Notifier:
     """Notifies a user via SMS using the Twilio API"""
@@ -18,7 +20,6 @@ class Notifier:
     def create_default_notifier(cls, config):
         """Creates a notifier using the specified notification settings"""
 
-        logger = logging.getLogger()
         if config.notification.sid is None or config.notification.sid == "":
             logger.warning("Twilio account SID not set. Not notifying.")
             return None

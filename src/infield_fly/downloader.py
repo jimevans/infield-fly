@@ -1,7 +1,5 @@
 """Module containing the interface of a download track, such as BitTorrent or Usenet"""
 
-import logging
-
 
 class Downloader:
 
@@ -16,7 +14,6 @@ class Downloader:
     def __init__(self, configuration):
         super().__init__()
         self.config = configuration
-        self.logger = logging.getLogger()
 
     def search_downloads(self, jobs):
         """

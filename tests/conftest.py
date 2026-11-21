@@ -70,7 +70,7 @@ def save_job(config, status, **values):
     """Saves a job with the specified status and values to the configured job directory"""
 
     job = Job(config.conversion.job_directory, {"status": status.value, **values})
-    job.save(logging.getLogger())
+    job.save()
     return job
 
 

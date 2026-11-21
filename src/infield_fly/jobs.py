@@ -17,6 +17,8 @@ from infield_fly.job_status import JobStatus
 from infield_fly.torrent.downloader import TorrentDownloader
 from infield_fly.usenet.downloader import NzbDownloader
 
+logger = logging.getLogger(__name__)
+
 # The download tracks, in the order in which they search for downloads for waiting jobs.
 DOWNLOADER_CLASSES = (NzbDownloader, TorrentDownloader)
 
@@ -26,7 +28,6 @@ class JobQueue:  # pylint: disable=too-many-public-methods
     """Queue of jobs being processed"""
 
     def __init__(self, configuration):
-        self.logger = logging.getLogger()
         self.config = configuration
 
     def get_job_by_id(self, job_id):
@@ -47,7 +48,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         job.query = query
         job.is_download_only = is_download_only
         job.update_converted_file_name(self.config)
-        job.save(self.logger)
+        job.save()
         return job
 
     def get_jobs_by_status(self, status):
@@ -69,7 +70,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
 
         for job in self.get_jobs_by_status(JobStatus.WAITING):
             job.update_converted_file_name(self.config)
-            job.save(self.logger)
+            job.save()
 
         self.create_new_search_jobs(airdate)
 
@@ -98,7 +99,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         job_list = [x for x in all_jobs
                     if x.status in (JobStatus.WAITING, JobStatus.SEARCHING)]
         if len(job_list) == 0:
-            self.logger.info("No waiting jobs to search for during job processing")
+            logger.info("No waiting jobs to search for during job processing")
             return
 
         for downloader in self.downloaders:
@@ -124,7 +125,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
             for job in episode_jobs:
                 if job.rejected != rejected:
                     job.rejected = rejected[:]
-                    job.save(self.logger)
+                    job.save()
 
     def reset_rejections(self, job):
         """
@@ -138,7 +139,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         for reset_job in reset_jobs:
             if len(reset_job.rejected) > 0:
                 reset_job.rejected = []
-                reset_job.save(self.logger)
+                reset_job.save()
         return reset_jobs
 
     def add_downloads(self):
@@ -164,7 +165,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         downloaders = self.downloaders
         for job in job_list:
             if job.downloader not in [x.name for x in downloaders]:
-                self.logger.warning("Job %s has unknown downloader '%s'",
+                logger.warning("Job %s has unknown downloader '%s'",
                                     job.job_id, job.downloader)
         return [(x, [job for job in job_list if job.downloader == x.name])
                 for x in downloaders]
@@ -174,12 +175,12 @@ class JobQueue:  # pylint: disable=too-many-public-methods
 
         pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
         if len(pending_job_list) == 0:
-            self.logger.info("No files to convert during job processing")
+            logger.info("No files to convert during job processing")
             return
 
         for job in pending_job_list:
             job.status = JobStatus.CONVERTING
-            job.save(self.logger)
+            job.save()
         for job in pending_job_list:
             try:
                 if job.is_download_only:
@@ -189,9 +190,9 @@ class JobQueue:  # pylint: disable=too-many-public-methods
             except Exception as ex:  # pylint: disable=broad-exception-caught
                 # Return the job to pending so it is retried on the next run,
                 # rather than leaving it stuck in the converting state.
-                self.logger.error("Processing job %s failed: %s", job.job_id, ex)
+                logger.error("Processing job %s failed: %s", job.job_id, ex)
                 job.status = JobStatus.PENDING
-                job.save(self.logger)
+                job.save()
 
     def create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""
@@ -211,7 +212,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
                         job.converted_file_name = "".join(
                             self.config.conversion.string_substitutions.get(c, c)
                             for c in series_episode.plex_title).strip()
-                        job.save(self.logger)
+                        job.save()
 
     def create_search_job(self, keyword, search):
         """
@@ -224,7 +225,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         job = self.create_job(keyword, search.queries[0], search.is_download_only)
         job.fallback_queries = search.queries[1:]
         job.release_groups = dict(search.release_groups)
-        job.save(self.logger)
+        job.save()
         return job
 
     def copy_downloaded_files(self, job, is_unattended_mode):
@@ -233,12 +234,12 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         src_dir = os.path.join(job.download_directory, job.name)
         dest_dir = os.path.join(self.config.conversion.final_directory, job.name)
 
-        self.logger.info("Copying downloaded files from %s to %s", src_dir, dest_dir)
+        logger.info("Copying downloaded files from %s to %s", src_dir, dest_dir)
         start_time = perf_counter()
         shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
         end_time = perf_counter()
         if is_unattended_mode:
-            self.logger.info("Copy completed in %s seconds", end_time - start_time)
+            logger.info("Copy completed in %s seconds", end_time - start_time)
 
         self.mark_job_complete(job)
 
@@ -248,9 +249,9 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         src_path = os.path.join(job.download_directory, job.name)
         src_file = find_episode_file(src_path)
         if src_file is None:
-            self.logger.warning("No episode files found to convert in %s", src_path)
+            logger.warning("No episode files found to convert in %s", src_path)
             job.status = JobStatus.PENDING
-            job.save(self.logger)
+            job.save()
             return
 
         os.makedirs(self.config.conversion.staging_directory, exist_ok=True)
@@ -262,13 +263,13 @@ class JobQueue:  # pylint: disable=too-many-public-methods
                               self.config.conversion.ffmpeg_location,
                               is_unattended_mode)
         if is_unattended_mode:
-            self.logger.info("Starting conversion")
+            logger.info("Starting conversion")
         start_time = perf_counter()
         output_files = converter.convert_file(ConversionSettings(
             convert_video=False, convert_audio=True, convert_subtitles=True))
         end_time = perf_counter()
         if is_unattended_mode:
-            self.logger.info(
+            logger.info(
                 "Conversion completed in %s seconds", end_time - start_time)
 
         # Move before marking complete, so a failed move leaves the job retryable.
@@ -286,7 +287,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         """Marks a job as completed"""
 
         job.status = JobStatus.COMPLETED
-        job.save(self.logger)
+        job.save()
         if datetime.now().strftime("%Y-%m-%d") != job.added:
             job.delete()
 
@@ -620,7 +621,7 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
         except FileNotFoundError:
             return None
         except (OSError, ValueError) as ex:
-            logging.getLogger().warning("Skipping unreadable job file %s: %s", job_file_path, ex)
+            logger.warning("Skipping unreadable job file %s: %s", job_file_path, ex)
             return None
 
         return Job(directory, job_queue_dictionary)
@@ -643,7 +644,7 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
 
         return job_copy
 
-    def save(self, logger):
+    def save(self):
         """Writes this job to a file"""
 
         if not os.path.exists(self.directory):

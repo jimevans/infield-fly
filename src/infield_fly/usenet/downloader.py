@@ -1,5 +1,6 @@
 """Module for finding NZB files for jobs on a Newznab indexer and downloading them using SABnzbd"""
 
+import logging
 import os
 import re
 import shutil
@@ -11,6 +12,8 @@ from infield_fly.job_status import JobStatus
 from infield_fly.usenet.newznab import NewznabSearcher, NzbResult
 from infield_fly.usenet.sabnzbd import SabnzbdClient, SabnzbdError
 from infield_fly.usenet.validation import validate_nzb
+
+logger = logging.getLogger(__name__)
 
 
 class NzbDownloader(Downloader):
@@ -26,16 +29,16 @@ class NzbDownloader(Downloader):
         """Searches the Newznab indexer for NZB files for waiting jobs"""
 
         if not self.config.search.is_enabled:
-            self.logger.info("No Newznab API key configured; not searching for downloads")
+            logger.info("No Newznab API key configured; not searching for downloads")
             return
 
         searcher = NewznabSearcher(self.config.search)
         for job in jobs:
             job.status = JobStatus.SEARCHING
-            job.save(self.logger)
+            job.save()
             if not self.find_nzb(job, searcher, jobs):
                 job.status = JobStatus.WAITING
-                job.save(self.logger)
+                job.save()
 
     def find_nzb(self, job, searcher, jobs):
         """
@@ -58,15 +61,15 @@ class NzbDownloader(Downloader):
                     continue
                 validation = validate_nzb(content, result.size)
                 for warning in validation.warnings:
-                    self.logger.warning("NZB file for '%s': %s", result.title, warning)
+                    logger.warning("NZB file for '%s': %s", result.title, warning)
                 if not validation.is_valid:
-                    self.logger.warning("Rejecting search result '%s' for job %s: %s",
+                    logger.warning("Rejecting search result '%s' for job %s: %s",
                                         result.title, job.job_id,
                                         "; ".join(validation.problems))
                     self.reject_result(job, result.guid, jobs)
                     continue
 
-                self.logger.info(
+                logger.info(
                     "Search result for query string '%s'. Job ID: %s, Title: '%s'",
                     query, job.job_id, result.title)
                 self.set_nzb_result(job, result, self.save_nzb(job, content))
@@ -83,7 +86,7 @@ class NzbDownloader(Downloader):
             if guid not in episode_job.rejected:
                 episode_job.rejected = episode_job.rejected + [guid]
                 if episode_job is not job:
-                    episode_job.save(self.logger)
+                    episode_job.save()
 
     def recognizes_download(self, location):
         """Gets a value indicating whether a download is the path or URL of an NZB file"""
@@ -118,7 +121,7 @@ class NzbDownloader(Downloader):
         job.title = search_result.title
         job.nzb_guid = search_result.guid
         job.nzb_file = nzb_file_path
-        job.save(self.logger)
+        job.save()
 
     def save_nzb(self, job, content):
         """Saves the contents of the NZB file for a job, returning the path to the file"""
@@ -133,15 +136,15 @@ class NzbDownloader(Downloader):
         """Adds the NZB files of jobs to the SABnzbd client"""
 
         if len(jobs) == 0:
-            self.logger.info("No NZB files to add during job processing")
+            logger.info("No NZB files to add during job processing")
             return
 
-        self.logger.info("Adding downloads to SABnzbd instance on %s",
+        logger.info("Adding downloads to SABnzbd instance on %s",
                          self.config.download.sabnzbd_host)
         client = SabnzbdClient(self.config.download)
         for job in jobs:
             if job.nzb_file is None or not os.path.isfile(job.nzb_file):
-                self.logger.warning("NZB file for job %s is missing; searching again",
+                logger.warning("NZB file for job %s is missing; searching again",
                                     job.job_id)
                 self.reject_nzb(job)
                 continue
@@ -149,12 +152,12 @@ class NzbDownloader(Downloader):
                 job.nzo_id = client.add_nzb(job.nzb_file, job.title or job.job_id)
             except (SabnzbdError, OSError) as ex:
                 # Leave the job in the adding state so it is retried on the next run.
-                self.logger.error("Adding NZB file for job %s failed: %s", job.job_id, ex)
+                logger.error("Adding NZB file for job %s failed: %s", job.job_id, ex)
                 continue
             os.remove(job.nzb_file)
             job.nzb_file = None
             job.set_download_status(JobStatus.DOWNLOADING, job.title)
-            job.save(self.logger)
+            job.save()
 
     def query_downloads(self, jobs):
         """
@@ -163,11 +166,11 @@ class NzbDownloader(Downloader):
         """
 
         if len(jobs) == 0:
-            self.logger.info("No downloading NZB files to query for status during job "
+            logger.info("No downloading NZB files to query for status during job "
                              "processing")
             return
 
-        self.logger.info("Marking completed downloads on SABnzbd instance at %s",
+        logger.info("Marking completed downloads on SABnzbd instance at %s",
                          self.config.download.sabnzbd_host)
         client = SabnzbdClient(self.config.download)
         for job in jobs:
@@ -176,7 +179,7 @@ class NzbDownloader(Downloader):
                 if download.status == "Failed":
                     client.delete_history_item(job.nzo_id)
             except SabnzbdError as ex:
-                self.logger.error("Querying download for job %s failed: %s", job.job_id, ex)
+                logger.error("Querying download for job %s failed: %s", job.job_id, ex)
                 continue
 
             if download.status == "Completed":
@@ -184,11 +187,11 @@ class NzbDownloader(Downloader):
                 job.set_download_status(JobStatus.PENDING,
                                         os.path.basename(storage),
                                         os.path.dirname(storage))
-                job.save(self.logger)
+                job.save()
             elif download.status is None and self.recover_finished_download(client, job):
                 continue
             elif download.status in ("Failed", None):
-                self.logger.warning("Download of '%s' for job %s failed (%s); searching again",
+                logger.warning("Download of '%s' for job %s failed (%s); searching again",
                                     job.title, job.job_id,
                                     download.fail_message or "not found in SABnzbd")
                 self.reject_nzb(job)
@@ -205,20 +208,20 @@ class NzbDownloader(Downloader):
         try:
             complete_directory = client.get_complete_directory()
         except SabnzbdError as ex:
-            self.logger.warning("Could not look for the download of job %s: %s",
+            logger.warning("Could not look for the download of job %s: %s",
                                 job.job_id, ex)
             return False
         folder = find_job_folder(complete_directory, job.title, get_episode_number(job.query))
         if folder is None:
             return False
 
-        self.logger.warning("Download of '%s' for job %s is no longer in SABnzbd, but was "
+        logger.warning("Download of '%s' for job %s is no longer in SABnzbd, but was "
                             "found in %s; converting it", job.title, job.job_id, folder)
         # SABnzbd no longer has the download, so there is no history item to remove later.
         job.nzo_id = None
         job.set_download_status(JobStatus.PENDING, os.path.basename(folder),
                                 os.path.dirname(folder))
-        job.save(self.logger)
+        job.save()
         return True
 
     def remove_download(self, job):
@@ -239,14 +242,14 @@ class NzbDownloader(Downloader):
         download_path = os.path.join(job.download_directory, job.name)
         folder = self.find_download_folder(client, job, download_path)
         delete_path = folder if folder is not None else download_path
-        self.logger.info("Deleting completed download %s", delete_path)
+        logger.info("Deleting completed download %s", delete_path)
         try:
             if os.path.isdir(delete_path):
                 shutil.rmtree(delete_path)
             elif os.path.isfile(delete_path):
                 os.remove(delete_path)
         except OSError as ex:
-            self.logger.warning("Deleting download for job %s failed: %s", job.job_id, ex)
+            logger.warning("Deleting download for job %s failed: %s", job.job_id, ex)
             return
 
         if job.nzo_id is None:
@@ -254,7 +257,7 @@ class NzbDownloader(Downloader):
         try:
             client.delete_history_item(job.nzo_id)
         except SabnzbdError as ex:
-            self.logger.warning("Removing download for job %s from SABnzbd history failed: %s",
+            logger.warning("Removing download for job %s from SABnzbd history failed: %s",
                                 job.job_id, ex)
 
     def find_download_folder(self, client, job, download_path):
@@ -275,7 +278,7 @@ class NzbDownloader(Downloader):
             download = client.get_download_status(job.nzo_id)
             complete_directory = client.get_complete_directory()
         except SabnzbdError as ex:
-            self.logger.warning("Could not find the folder of the download for job %s: %s",
+            logger.warning("Could not find the folder of the download for job %s: %s",
                                 job.job_id, ex)
             return None
         if not download.storage or not complete_directory:
@@ -300,7 +303,7 @@ class NzbDownloader(Downloader):
         job.nzb_guid = None
         job.nzo_id = None
         job.status = JobStatus.WAITING
-        job.save(self.logger)
+        job.save()
 
 
 def is_job_folder(folder, job_name):
