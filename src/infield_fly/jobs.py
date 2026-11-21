@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import re
 import shutil
 import uuid
 from dataclasses import MISSING, dataclass, field, fields, replace
@@ -14,7 +13,8 @@ from typing import Optional
 from infield_fly.concurrency import atomic_write
 from infield_fly.conversion import ConversionSettings, Converter
 from infield_fly.database import EpisodeDatabase
-from infield_fly.episodes import find_episode_file, get_episode_number
+from infield_fly.episodes import (find_episode_file, find_episode_number,
+                                  get_converted_file_name, get_episode_number)
 from infield_fly.job_status import JobStatus
 from infield_fly.torrent.downloader import TorrentDownloader
 from infield_fly.usenet.downloader import NzbDownloader
@@ -206,9 +206,8 @@ class JobQueue:
                         series_episode.season_number, series_episode.episode_number):
                     job = self.create_search_job(tracked_series.main_keyword, search)
                     if job is not None and not search.is_download_only:
-                        job.converted_file_name = "".join(
-                            self.config.conversion.string_substitutions.get(c, c)
-                            for c in series_episode.plex_title).strip()
+                        job.converted_file_name = get_converted_file_name(
+                            series_episode.plex_title, self.config.conversion.string_substitutions)
                         job.save()
 
     def create_search_job(self, keyword, search):
@@ -529,18 +528,17 @@ class Job:  # pylint: disable=too-many-instance-attributes
     def update_converted_file_name(self, config):
         """Updates converted file name with latest name from cached episode database"""
 
-        match = re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)", self.query, re.IGNORECASE)
-        if match is not None:
-            episode_db = EpisodeDatabase.load_from_cache(config)
-            series = episode_db.get_tracked_series_by_keyword(self.keyword)
-            if series is not None:
-                episode = series.get_episode(int(match.group(2)), int(match.group(3)))
-                if episode is not None:
-                    candidate_converted_file_name = "".join(
-                        config.conversion.string_substitutions.get(c, c)
-                        for c in episode.plex_title).strip()
-                    if self.converted_file_name != candidate_converted_file_name:
-                        self.converted_file_name = candidate_converted_file_name
+        episode_number = find_episode_number(self.query)
+        if episode_number is None:
+            return
+        series = EpisodeDatabase.load_from_cache(config).get_tracked_series_by_keyword(
+            self.keyword)
+        if series is None:
+            return
+        episode = series.get_episode(episode_number.season, episode_number.episode)
+        if episode is not None:
+            self.converted_file_name = get_converted_file_name(
+                episode.plex_title, config.conversion.string_substitutions)
 
 
 def saved_fields():

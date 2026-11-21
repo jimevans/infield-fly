@@ -4,10 +4,11 @@ import json
 import logging
 import os
 import platform
-import re
 import subprocess
 from dataclasses import dataclass
 from typing import Optional
+
+from infield_fly.episodes import find_episode_number, get_converted_file_name
 
 logger = logging.getLogger(__name__)
 
@@ -570,11 +571,10 @@ class FileMapper:
 
     """Maps file names to a Plex-friendly format"""
 
-    def __init__(self,
-                 episode_db,
-                 file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4|\.avi)",
-                 file_name_substitutions=None):
-        self.file_name_match_regex = file_name_match_regex
+    # The extensions of the episode files converted from a folder.
+    EPISODE_FILE_EXTENSIONS = (".mkv", ".mp4", ".avi")
+
+    def __init__(self, episode_db, file_name_substitutions=None):
         self.episode_db = episode_db
         self.file_name_substitutions = file_name_substitutions or {}
 
@@ -591,24 +591,28 @@ class FileMapper:
     def get_mapped_file_name(self, input_file, keyword=None):
         """Gets the Plex-friendly name for a file, or None if it cannot be mapped"""
 
-        match = re.match(self.file_name_match_regex, input_file, re.IGNORECASE)
-        if match is None:
+        name, extension = os.path.splitext(input_file)
+        episode_number = find_episode_number(name)
+        if extension.lower() not in self.EPISODE_FILE_EXTENSIONS or episode_number is None:
             return None
 
+        # The series is matched by the part of the name before the episode number.
         file_keyword = (keyword
                         if keyword is not None
-                        else self.find_keyword_match(match.group(1)))
+                        else self.find_keyword_match(name[:episode_number.start]))
         series_metadata = self.episode_db.get_tracked_series_by_keyword(file_keyword)
         if series_metadata is None:
             logger.warning("No tracked series found for %s; skipping", input_file)
             return None
 
-        episode_metadata = series_metadata.get_episode(int(match.group(2)), int(match.group(3)))
+        episode_metadata = series_metadata.get_episode(episode_number.season,
+                                                       episode_number.episode)
         if episode_metadata is None:
             return None
 
-        dest_file_name = f"{episode_metadata.plex_title}.mp4"
-        return "".join(self.file_name_substitutions.get(c, c) for c in dest_file_name)
+        converted_name = get_converted_file_name(episode_metadata.plex_title,
+                                                 self.file_name_substitutions)
+        return f"{converted_name}.mp4"
 
     def map_files(self, source, destination, keyword=None):
         """Maps a file given a source and destination, handling individual files and directories"""
