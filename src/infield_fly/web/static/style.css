@@ -318,3 +318,20 @@ select {
 .substitution input { flex: 1; min-width: 0; }
 .check { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; }
 .check .flash { margin: 0; }
+
+/* Processing page */
+.status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.log {
+  margin: 0 0 0.5rem;
+  padding: 0.75rem;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.editor fieldset[disabled] { opacity: 0.6; }

@@ -5,7 +5,7 @@
 <h1>Jobs</h1>
 {% if processing %}
 <p class="notice">Job processing is running ({{ processing.description }}, process
-  {{ processing.pid }}, started {{ processing.started }}).</p>
+  {{ processing.pid }}, started {{ processing.started }}). <a href="{{ app_path(request, 'processing') }}">Follow it</a></p>
 {% endif %}
 <nav class="filters" aria-label="Filter by status">
   <a href="{{ app_path(request, 'jobs') }}"{% if status is none %} aria-current="page"{% endif %}>All <span class="count">{{ total }}</span></a>

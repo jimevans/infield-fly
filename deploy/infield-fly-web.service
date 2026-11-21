@@ -24,6 +24,9 @@ Restart=on-failure
 RestartSec=5
 PrivateTmp=true
 ProtectSystem=full
+# Stop only the web interface itself, so that job processing runs started from it keep
+# running, rather than being interrupted mid-conversion, when it is restarted.
+KillMode=process
 # Do not set NoNewPrivileges, or other options that imply it: PAM checks the password
 # with the setgid unix_chkpwd helper, which cannot work without gaining privileges.
 
