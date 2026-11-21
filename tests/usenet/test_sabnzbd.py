@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from infield_fly.configuration import DownloadSettings
-from infield_fly.usenet.sabnzbd import SabnzbdClient, SabnzbdError
+from infield_fly.usenet.sabnzbd import DownloadStatus, SabnzbdClient, SabnzbdError
 
 API_URL = "http://sabnzbd:8080/api"
 
@@ -78,9 +78,13 @@ class TestGetDownloadStatus:
         requests_get.return_value = make_response({"history": {"slots": [
             {"nzo_id": "other", "status": "Completed"},
             {"nzo_id": "nzo1", "status": "Failed", "storage": "/dl/Show",
-             "fail_message": "Repair failed"}]}})
+             "fail_message": "Repair failed", "name": "Show.S01E02"}]}})
 
-        assert client.get_download_status("nzo1") == ("Failed", "/dl/Show", "Repair failed")
+        status = client.get_download_status("nzo1")
+
+        assert status == DownloadStatus("Failed", "/dl/Show", "Repair failed", "Show.S01E02")
+        assert (status.status, status.storage, status.fail_message, status.name) == (
+            "Failed", "/dl/Show", "Repair failed", "Show.S01E02")
         requests_get.assert_called_once_with(API_URL, params={
             "apikey": "key", "output": "json", "mode": "history", "nzo_ids": "nzo1"},
             timeout=30)
@@ -91,13 +95,13 @@ class TestGetDownloadStatus:
             make_response({"queue": {"slots": [{"nzo_id": "other", "status": "Queued"},
                                                {"nzo_id": "nzo1", "status": "Downloading"}]}})]
 
-        assert client.get_download_status("nzo1") == ("Downloading", None, None)
+        assert client.get_download_status("nzo1") == DownloadStatus("Downloading")
         assert requests_get.call_args[1]["params"]["mode"] == "queue"
 
     def test_unknown_download(self, client, requests_get):
         requests_get.return_value = make_response({})
 
-        assert client.get_download_status("nzo1") == (None, None, None)
+        assert client.get_download_status("nzo1") == DownloadStatus(None, None, None, None)
 
 
 class TestGetCompleteDirectory:

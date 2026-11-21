@@ -12,6 +12,7 @@ from time import perf_counter
 from infield_fly.concurrency import atomic_write
 from infield_fly.conversion import ConversionSettings, Converter
 from infield_fly.database import EpisodeDatabase
+from infield_fly.episodes import find_episode_file, get_episode_number
 from infield_fly.job_status import JobStatus
 from infield_fly.torrent.downloader import TorrentDownloader
 from infield_fly.usenet.downloader import NzbDownloader
@@ -245,26 +246,13 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         """Converts downloaded job files"""
 
         src_path = os.path.join(job.download_directory, job.name)
-        if os.path.isdir(src_path):
-            src_dir = src_path
-            file_list = os.listdir(src_path)
-        else:
-            src_dir = os.path.dirname(src_path)
-            file_list = [os.path.basename(src_path)]
-
-        episode_files = [
-            x for x in file_list
-            if re.match(r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)$", x, re.IGNORECASE)
-            and os.path.isfile(os.path.join(src_dir, x))]
-        if len(episode_files) == 0:
+        src_file = find_episode_file(src_path)
+        if src_file is None:
             self.logger.warning("No episode files found to convert in %s", src_path)
             job.status = JobStatus.PENDING
             job.save(self.logger)
             return
 
-        # Downloads can include samples or other extras whose names also match the
-        # episode file pattern, so convert only the largest matching file.
-        src_file = max((os.path.join(src_dir, x) for x in episode_files), key=os.path.getsize)
         os.makedirs(self.config.conversion.staging_directory, exist_ok=True)
         os.makedirs(self.config.conversion.final_directory, exist_ok=True)
         dest_file = os.path.join(self.config.conversion.staging_directory,
@@ -442,10 +430,10 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
         the episode this job downloads, or None if the query string has no episode number
         """
 
-        match = re.search(r"s([0-9]+)e([0-9]+)", self.query or "", re.IGNORECASE)
-        if match is None:
+        episode_number = get_episode_number(self.query)
+        if episode_number is None:
             return None
-        return (self.keyword, f"s{int(match.group(1)):02d}e{int(match.group(2)):02d}")
+        return (self.keyword, episode_number)
 
     @property
     def status(self):

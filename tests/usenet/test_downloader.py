@@ -9,7 +9,7 @@ from conftest import load_job, save_job
 from infield_fly.job_status import JobStatus
 from infield_fly.usenet.downloader import NzbDownloader
 from infield_fly.usenet.newznab import NzbResult
-from infield_fly.usenet.sabnzbd import SabnzbdError
+from infield_fly.usenet.sabnzbd import DownloadStatus, SabnzbdError
 
 VALID_NZB = (b'<nzb><file subject=\'"Show.S01E02.mkv" yEnc (1/1)\'><segments>'
              b'<segment bytes="10" number="1">a@b</segment></segments></file></nzb>')
@@ -32,7 +32,7 @@ def downloader(config):
 def sabnzbd_client():
     with mock.patch("infield_fly.usenet.downloader.SabnzbdClient") as client_class:
         client = client_class.return_value
-        client.get_download_status.return_value = (None, None, None)
+        client.get_download_status.return_value = DownloadStatus(None)
         client.get_complete_directory.return_value = None
         yield client
 
@@ -291,10 +291,10 @@ class TestQueryDownloads:
         failed = self.save_downloading_job(config, "failed", nzb_guid="guid", rejected=["old"])
         missing = self.save_downloading_job(config, "missing")
         running = self.save_downloading_job(config, "running")
-        statuses = {"completed": ("Completed", "/dl/complete/Show.S01E02/", None),
-                    "failed": ("Failed", "/dl/incomplete/Show", "Repair failed"),
-                    "missing": (None, None, None),
-                    "running": ("Downloading", None, None)}
+        statuses = {"completed": DownloadStatus("Completed", "/dl/complete/Show.S01E02/"),
+                    "failed": DownloadStatus("Failed", "/dl/incomplete/Show", "Repair failed"),
+                    "missing": DownloadStatus(None),
+                    "running": DownloadStatus("Downloading")}
         sabnzbd_client.get_download_status.side_effect = lambda nzo_id: statuses[nzo_id]
 
         downloader.query_downloads([completed, failed, missing, running])
@@ -320,6 +320,108 @@ class TestQueryDownloads:
 
         assert load_job(config, job.job_id).status == JobStatus.DOWNLOADING
         assert f"Querying download for job {job.job_id} failed: down" in caplog.text
+
+
+class TestRecoverFinishedDownload:
+
+    TITLE = "Show.S01E02.1080p-GROUP"
+
+    @pytest.fixture
+    def complete(self, tmp_path, sabnzbd_client):
+        """SABnzbd's completed directory, which no longer has the download in its history"""
+
+        complete = tmp_path / "complete"
+        complete.mkdir()
+        sabnzbd_client.get_complete_directory.return_value = str(complete)
+        return complete
+
+    @staticmethod
+    def make_download(parent, name, episode_file="show.s01e02.mkv"):
+        folder = parent / name
+        folder.mkdir(parents=True)
+        if episode_file:
+            (folder / episode_file).write_bytes(b"episode")
+        return folder
+
+    def save_job(self, config):
+        return save_job(config, JobStatus.DOWNLOADING, downloader="sabnzbd", nzo_id="nzo1",
+                        title=self.TITLE, query="show 1080p s01e02", nzb_guid="guid")
+
+    def test_finished_download_is_converted(self, downloader, config, complete, caplog):
+        folder = self.make_download(complete, self.TITLE)
+        job = self.save_job(config)
+
+        downloader.query_downloads([job])
+
+        job = load_job(config, job.job_id)
+        assert (job.status, job.name, job.download_directory, job.nzo_id, job.rejected) == (
+            JobStatus.PENDING, self.TITLE, str(complete), None, [])
+        assert f"is no longer in SABnzbd, but was found in {folder}" in caplog.text
+
+    def test_download_in_category_folder(self, downloader, config, complete):
+        self.make_download(complete / "tv", self.TITLE)
+        job = self.save_job(config)
+
+        downloader.query_downloads([job])
+
+        assert load_job(config, job.job_id).download_directory == str(complete / "tv")
+
+    def test_most_recent_copy_is_used(self, downloader, config, complete):
+        older = self.make_download(complete, self.TITLE)
+        self.make_download(complete, f"{self.TITLE}.1")
+        os.utime(older, (0, 0))
+
+        job = self.save_job(config)
+        downloader.query_downloads([job])
+
+        assert load_job(config, job.job_id).name == f"{self.TITLE}.1"
+
+    @pytest.mark.parametrize("name, episode_file", [
+        ("Other.Download", "show.s01e02.mkv"),
+        (f"{TITLE}.extra", "show.s01e02.mkv"),
+        (TITLE, "show.s01e03.mkv"),
+        (TITLE, None),
+    ])
+    def test_unsuitable_folders_are_not_used(self, downloader, config, complete, caplog,
+                                             name, episode_file):
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self.make_download(complete, name, episode_file)
+        job = self.save_job(config)
+
+        downloader.query_downloads([job])
+
+        job = load_job(config, job.job_id)
+        assert (job.status, job.rejected) == (JobStatus.WAITING, ["guid"])
+        assert "(not found in SABnzbd); searching again" in caplog.text
+
+    def test_job_without_episode_number_accepts_any_episode(self, downloader, config,
+                                                             complete):
+        self.make_download(complete, self.TITLE, "show.special.s00e01.mkv")
+        job = save_job(config, JobStatus.DOWNLOADING, downloader="sabnzbd", nzo_id="nzo1",
+                       title=self.TITLE, query="show special")
+
+        downloader.query_downloads([job])
+
+        assert load_job(config, job.job_id).status == JobStatus.PENDING
+
+    @pytest.mark.parametrize("complete_directory", [None, "/missing/complete"])
+    def test_no_completed_directory(self, downloader, config, sabnzbd_client,
+                                    complete_directory):
+        sabnzbd_client.get_complete_directory.return_value = complete_directory
+        job = self.save_job(config)
+
+        downloader.query_downloads([job])
+
+        assert load_job(config, job.job_id).status == JobStatus.WAITING
+
+    def test_failed_lookup(self, downloader, config, sabnzbd_client, caplog):
+        sabnzbd_client.get_complete_directory.side_effect = SabnzbdError("down")
+        job = self.save_job(config)
+
+        downloader.query_downloads([job])
+
+        assert load_job(config, job.job_id).status == JobStatus.WAITING
+        assert f"Could not look for the download of job {job.job_id}: down" in caplog.text
 
 
 class TestRemoveDownload:
@@ -348,7 +450,8 @@ class TestRemoveDownload:
         (folder / "show.s01e02.nfo").touch()
         (folder / "Sample" / "sample.mkv").touch()
         (complete / "Other.Download").mkdir()
-        sabnzbd_client.get_download_status.return_value = ("Completed", str(folder), None)
+        sabnzbd_client.get_download_status.return_value = DownloadStatus("Completed",
+                                                                         str(folder))
         sabnzbd_client.get_complete_directory.return_value = str(complete)
         return complete, folder
 
@@ -365,6 +468,48 @@ class TestRemoveDownload:
         sabnzbd_client.get_download_status.assert_called_once_with("nzo1")
         sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
         assert f"Deleting completed download {os.path.realpath(folder)}" in caplog.text
+
+    @pytest.mark.parametrize("folder_suffix", ["", ".1"])
+    def test_deletes_folder_of_file_recorded_for_job(self, delete_config, sabnzbd_client,
+                                                     completed, folder_suffix):
+        complete, folder = completed
+        if folder_suffix:
+            folder = folder.rename(complete / f"{folder.name}{folder_suffix}")
+        sabnzbd_client.get_download_status.return_value = DownloadStatus(
+            "Completed", str(folder / "show.s01e02.mkv"), None, "Show.S01E02.1080p-GROUP")
+        job = self.save_converted_job(delete_config, folder, "show.s01e02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not folder.exists()
+        assert sorted(os.listdir(complete)) == ["Other.Download"]
+
+    def test_job_title_names_folder_without_history_name(self, delete_config,
+                                                          sabnzbd_client, completed):
+        _, folder = completed
+        sabnzbd_client.get_download_status.return_value = DownloadStatus(
+            "Completed", str(folder / "show.s01e02.mkv"))
+        job = save_job(delete_config, JobStatus.COMPLETED, downloader="sabnzbd",
+                       nzo_id="nzo1", name="show.s01e02.mkv", download_directory=str(folder),
+                       title="Show.S01E02.1080p-GROUP")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not folder.exists()
+
+    def test_keeps_shared_folder_of_file(self, delete_config, sabnzbd_client, completed):
+        complete, _ = completed
+        category = complete / "tv"
+        category.mkdir()
+        (category / "show.s01e02.mkv").touch()
+        (category / "another.download.mkv").touch()
+        sabnzbd_client.get_download_status.return_value = DownloadStatus(
+            "Completed", str(category / "show.s01e02.mkv"), None, "Show.S01E02.1080p-GROUP")
+        job = self.save_converted_job(delete_config, category, "show.s01e02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert sorted(os.listdir(category)) == ["another.download.mkv"]
 
     def test_deletes_folder_recorded_for_job(self, delete_config, sabnzbd_client, completed):
         complete, folder = completed
@@ -391,8 +536,8 @@ class TestRemoveDownload:
         # pylint: disable=too-many-arguments,too-many-positional-arguments
         complete, folder = completed
         (tmp_path / "elsewhere").mkdir()
-        sabnzbd_client.get_download_status.return_value = (
-            "Completed", None if storage is None else str(complete / storage), None)
+        sabnzbd_client.get_download_status.return_value = DownloadStatus(
+            "Completed", None if storage is None else str(complete / storage))
         sabnzbd_client.get_complete_directory.return_value = (
             None if complete_directory is None else str(tmp_path / complete_directory))
         job = self.save_converted_job(delete_config, folder, "show.s01e02.mkv")

@@ -6,6 +6,8 @@ README.md for how to make one.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-21
+
 ### Added
 * A Convert page in the web interface converts a file, such as a movie, or a folder of
   episodes, into the final directory, as the convert command does. For a file, it shows
@@ -20,6 +22,14 @@ README.md for how to make one.
 ### Changed
 * In unattended mode, writing subtitles to separate files no longer prints ffmpeg's
   output.
+
+### Fixed
+* Deleting a converted SABnzbd download left its folder behind when SABnzbd recorded
+  the download's file, rather than its folder, as its location; the folder is now
+  deleted when it is named after the download.
+* A finished download that SABnzbd no longer knew, as when it was removed from
+  SABnzbd's history between checks, was rejected and downloaded again, leaving the
+  first copy behind; it is now found in SABnzbd's completed directory and converted.
 
 ## [1.0.1] - 2026-11-21
 
@@ -90,6 +100,7 @@ The first versioned release, describing everything Infield Fly does as of this v
 * Tests, coverage, and linting run on GitHub Actions with Python 3.9 and 3.10, failing
   the build if any code isn't covered by tests or pylint reports anything.
 
-[Unreleased]: https://github.com/jimevans/infield-fly/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jimevans/infield-fly/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jimevans/infield-fly/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jimevans/infield-fly/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jimevans/infield-fly/releases/tag/v1.0.0
