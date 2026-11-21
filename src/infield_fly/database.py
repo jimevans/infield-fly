@@ -11,6 +11,8 @@ import requests
 
 from infield_fly.concurrency import atomic_write
 
+logger = logging.getLogger(__name__)
+
 REQUEST_TIMEOUT_SECONDS = 30
 
 
@@ -72,7 +74,6 @@ class EpisodeDatabase:
     def update_all_tracked_series(self, force_updates=False, is_unattended_mode=False):
         """Updates all tracked series in this episode database"""
 
-        logger = logging.getLogger()
         if is_unattended_mode:
             logger.info("Starting database update")
         start_time = perf_counter()
@@ -101,7 +102,7 @@ class EpisodeDatabase:
 
         series_info = self.metadata_provider.get_series(series_id, is_unattended_mode)
         if series_info is None:
-            logging.getLogger().warning("Unable to retrieve metadata for series %s", series_id)
+            logger.warning("Unable to retrieve metadata for series %s", series_id)
             return None
 
         self.add_series(series_info)
@@ -317,22 +318,21 @@ class TVMetadataProvider:
         self.base_url = "https://api4.thetvdb.com/v4/"
         self.token = None
         self.token_expiry = None
-        self.logger = logging.getLogger()
 
     def authenticate(self):
         """Authenticates the connection to use the thetvdb.com API"""
 
-        self.logger.debug("Authorizing to TV metadata provider")
+        logger.debug("Authorizing to TV metadata provider")
         authentication_payload = { "apikey": self.api_key, "pin": self.pin }
         response = requests.post(self.base_url + "login", json = authentication_payload,
                                  timeout = REQUEST_TIMEOUT_SECONDS)
         if not response.status_code == 200:
-            self.logger.warning("Authorization failed")
+            logger.warning("Authorization failed")
             self.token = None
             self.token_expiry = None
             return
         authentication_response_json = response.json()
-        self.logger.debug("Response from auth request: %s", authentication_response_json)
+        logger.debug("Response from auth request: %s", authentication_response_json)
         self.token = authentication_response_json["data"]["token"]
         # Tokens are valid for one month; renew a little early to be safe.
         self.token_expiry = datetime.now() + timedelta(days=28)
@@ -346,7 +346,7 @@ class TVMetadataProvider:
                 return None
 
         headers = { "Authorization": "Bearer " + self.token }
-        self.logger.debug("Making data request to %s", self.base_url + url)
+        logger.debug("Making data request to %s", self.base_url + url)
         response = requests.get(self.base_url + url, headers = headers, params = params,
                                 timeout = REQUEST_TIMEOUT_SECONDS)
         if response.status_code == 401:
@@ -359,13 +359,13 @@ class TVMetadataProvider:
                                     timeout = REQUEST_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
-            self.logger.warning("Received error response (%s): %s",
+            logger.warning("Received error response (%s): %s",
                                 response.status_code,
                                 response.text)
             return None
 
         response_value = response.json()
-        self.logger.debug("Response from data request: %s", response_value)
+        logger.debug("Response from data request: %s", response_value)
         return response_value
 
     def get_series(self, series_id, is_unattended_mode=False):

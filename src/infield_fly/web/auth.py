@@ -6,6 +6,8 @@ import secrets
 import time
 from collections import deque
 
+logger = logging.getLogger(__name__)
+
 # Logged on each failed login, and matched by the fail2ban filter in the deploy directory.
 # The user name is logged as a quoted, escaped string, so that a user name containing a
 # line break cannot forge a log line blaming another address.
@@ -53,7 +55,7 @@ class Authenticator:
         """
 
         if self.is_limited(client):
-            logging.getLogger().warning(LIMITED_LOGIN_MESSAGE, user_name, client)
+            logger.warning(LIMITED_LOGIN_MESSAGE, user_name, client)
             return False
 
         # Compare in constant time, and check the password even for the wrong user, so
@@ -65,7 +67,7 @@ class Authenticator:
             return True
 
         self.failures.append((self.clock(), client))
-        logging.getLogger().warning(FAILED_LOGIN_MESSAGE, user_name, client)
+        logger.warning(FAILED_LOGIN_MESSAGE, user_name, client)
         return False
 
     def check_password(self, user_name, password):

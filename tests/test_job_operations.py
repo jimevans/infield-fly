@@ -1,6 +1,5 @@
 """Tests for the job_operations module"""
 
-import logging
 import os
 from unittest import mock
 
@@ -30,7 +29,7 @@ def queue(config):
 def job(config):
     job = Job(config.conversion.job_directory,
               {"status": "waiting", "keyword": "show", "query": "show 1080p s01e02"})
-    job.save(logging.getLogger())
+    job.save()
     return job
 
 
@@ -141,7 +140,7 @@ class TestSetJobStatus:
     def test_pending_for_job_without_episode_number(self, queue, config, tmp_path):
         special = Job(config.conversion.job_directory,
                       {"status": "waiting", "keyword": "show", "query": "show special"})
-        special.save(logging.getLogger())
+        special.save()
         (tmp_path / "show.s00e01.mkv").touch()
 
         set_job_status(queue, special, JobStatus.PENDING, str(tmp_path / "show.s00e01.mkv"))

@@ -1,7 +1,6 @@
 """Tests for the jobs module"""
 
 import json
-import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -47,7 +46,7 @@ def add_job(queue, status, **values):
     """Saves a job with the specified status and values to the queue directory"""
 
     job = Job(queue.job_queue_file_path, {"status": status.value, **values})
-    job.save(logging.getLogger())
+    job.save()
     return job
 
 
@@ -591,7 +590,7 @@ class TestJob:
         directory = str(tmp_path / "new")
         job = Job(directory, {"query": "q"})
 
-        job.save(logging.getLogger())
+        job.save()
 
         with open(job.file_path, encoding="utf-8") as job_file:
             assert json.load(job_file)["status"] == "waiting"
@@ -623,7 +622,7 @@ class TestJob:
         nzb_file = tmp_path / "job.nzb"
         nzb_file.write_bytes(b"<nzb/>")
         job = Job(str(tmp_path / "jobs"), {"nzb_file": str(nzb_file)})
-        job.save(logging.getLogger())
+        job.save()
 
         job.delete()
 
@@ -634,7 +633,7 @@ class TestJob:
         not_a_directory = tmp_path / "file"
         not_a_directory.touch()
 
-        Job(str(not_a_directory), {}).save(logging.getLogger())
+        Job(str(not_a_directory), {}).save()
 
         assert "is not a directory" in caplog.text
         assert not_a_directory.read_text(encoding="utf-8") == ""

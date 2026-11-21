@@ -20,6 +20,8 @@ from infield_fly.configuration import (CONFIG_FILE_ENVIRONMENT_VARIABLE,
                                        DEFAULT_CONFIG_DIRECTORY, Configuration)
 from infield_fly.job_status import JobStatus, parse_job_status
 
+logger = logging.getLogger(__name__)
+
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
     """Gets the set of search strings for all tracked series during the specified date range"""
@@ -140,7 +142,7 @@ def warn_database_update_in_progress(error):
 
     from infield_fly.concurrency import describe_lock_holder
 
-    logging.getLogger().warning(
+    logger.warning(
         "Not updating the episode database; an update by %s is still in progress",
         describe_lock_holder(error.holder))
 
@@ -173,7 +175,7 @@ def convert(args, config):
         crf=(args.crf if args.crf is not None else conversion.ConversionSettings.crf))
 
     if len(file_map) == 0:
-        logging.getLogger().warning("No files to convert in %s", args.source)
+        logger.warning("No files to convert in %s", args.source)
         return
 
     if args.stage and not args.dry_run:
@@ -219,7 +221,6 @@ def convert_staged(args, config, file_map, settings):
     from infield_fly.staged_conversion import ConversionCancelled
     from infield_fly.staged_conversion import convert_staged as convert_in_staging
 
-    logger = logging.getLogger()
     try:
         convert_in_staging(config, file_map, settings, overwrite=args.overwrite,
                            progress_file=args.progress_file,
@@ -409,7 +410,7 @@ def process_jobs(args, config):
         with ProcessLock(config.conversion.job_lock_file, "jobs process"):
             run_processing_phases(args, config)
     except LockHeldError as ex:
-        logging.getLogger().warning(
+        logger.warning(
             "Not processing jobs; job processing by %s is still in progress",
             describe_lock_holder(ex.holder))
 
@@ -713,8 +714,8 @@ def add_web_subparser(subparsers):
 def setup_logging(config, is_unattended):
     """Sets up logging for the Infield Fly library"""
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
     if is_unattended:
         if not os.path.isdir(config.conversion.log_directory):
             os.makedirs(config.conversion.log_directory)
@@ -728,7 +729,7 @@ def setup_logging(config, is_unattended):
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(config.conversion.log_level)
         handler.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(handler)
+    root_logger.addHandler(handler)
 
 def resolve_config_path(config_file):
     """

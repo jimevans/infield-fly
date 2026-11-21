@@ -57,7 +57,7 @@ def episode_db(config):
 
 def add_job(config, status=JobStatus.WAITING, **values):
     job = Job(config.conversion.job_directory, {"status": status.value, **values})
-    job.save(logging.getLogger())
+    job.save()
     return job
 
 

@@ -8,8 +8,10 @@ import os
 from contextlib import ExitStack, contextmanager
 
 from infield_fly.concurrency import LockHeldError, ProcessLock
-from infield_fly.job_status import JobStatus
 from infield_fly.episodes import find_episode_file, get_episode_number
+from infield_fly.job_status import JobStatus
+
+logger = logging.getLogger(__name__)
 
 
 class JobOperationError(Exception):
@@ -48,7 +50,7 @@ def set_job_status(job_queue, job, status, download=None):
         raise JobOperationError("Unknown job status.")
     if not download:
         job.status = status
-        job.save(logging.getLogger())
+        job.save()
         return []
     if status == JobStatus.ADDING:
         return set_found_download(job_queue, job, download)
@@ -94,7 +96,7 @@ def set_finished_download(job, download):
     download = os.path.normpath(download)
     job.set_download_status(JobStatus.PENDING, os.path.basename(download),
                             os.path.dirname(download))
-    job.save(logging.getLogger())
+    job.save()
 
 
 def add_job(job_queue, config, keyword, query):

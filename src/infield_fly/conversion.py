@@ -9,6 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ConversionSettings:
@@ -72,7 +74,6 @@ class Converter:
         self.file_stream_info = FileStreamInfo.read_stream_info(
             input_file, self._get_ffmpeg_tool_location("ffprobe"))
         self.is_unattended_mode = is_unattended_mode
-        self.logger = logging.getLogger()
 
     def _get_ffmpeg_tool_location(self, tool_name="ffmpeg"):
         tool_location = tool_name
@@ -93,9 +94,9 @@ class Converter:
             settings = ConversionSettings()
 
         ffmpeg_args = self.get_conversion_args(settings, overwrite, progress_file)
-        self.logger.info("Convert %s -> %s", self.input_file, self.output_file)
+        logger.info("Convert %s -> %s", self.input_file, self.output_file)
         if dry_run:
-            self.logger.info("Conversion arguments:\n%s", ffmpeg_args)
+            logger.info("Conversion arguments:\n%s", ffmpeg_args)
         else:
             subprocess.run(ffmpeg_args, check=True)
 
@@ -233,7 +234,7 @@ class Converter:
         # pylint: disable=too-many-arguments,too-many-positional-arguments
         subs_args = self.get_subtitle_extraction_args(subtitle_stream, subs_file, overwrite)
         if dry_run:
-            self.logger.info("%s conversion arguments:\n%s", description, subs_args)
+            logger.info("%s conversion arguments:\n%s", description, subs_args)
         else:
             subprocess.run(subs_args, check=True)
         return subs_file
@@ -587,7 +588,6 @@ class FileMapper:
         self.file_name_match_regex = file_name_match_regex
         self.episode_db = episode_db
         self.file_name_substitutions = file_name_substitutions or {}
-        self.logger = logging.getLogger()
 
     def find_keyword_match(self, partial_file_name):
         """Attempts to find a keyword match based on the partial file name"""
@@ -611,7 +611,7 @@ class FileMapper:
                         else self.find_keyword_match(match.group(1)))
         series_metadata = self.episode_db.get_tracked_series_by_keyword(file_keyword)
         if series_metadata is None:
-            self.logger.warning("No tracked series found for %s; skipping", input_file)
+            logger.warning("No tracked series found for %s; skipping", input_file)
             return None
 
         episode_metadata = series_metadata.get_episode(int(match.group(2)), int(match.group(3)))

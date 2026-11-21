@@ -1,7 +1,6 @@
 """Tests for the web interface application"""
 
 import json
-import logging
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
 from unittest import mock
@@ -26,7 +25,7 @@ TODAY = datetime.combine(datetime.now().date(), datetime.min.time())
 
 def add_job(config, status, **values):
     job = Job(config.conversion.job_directory, {"status": status.value, **values})
-    job.save(logging.getLogger())
+    job.save()
     return job
 
 

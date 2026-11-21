@@ -1,7 +1,6 @@
 """Tests for the pages of the web interface that change, remove, and add jobs"""
 
 import json
-import logging
 import os
 import time
 from unittest import mock
@@ -33,7 +32,7 @@ def downloads(app, tmp_path):
 def add_job(config, status=JobStatus.WAITING, **values):
     job = Job(config.conversion.job_directory,
               {"status": status.value, "keyword": "show", "query": "show s01e02", **values})
-    job.save(logging.getLogger())
+    job.save()
     return job
 
 
@@ -253,7 +252,7 @@ class TestUpdateJob:
         job = add_job(config)
         version = job_actions.get_job_version(job)
         job.query = "changed s01e02"
-        job.save(logging.getLogger())
+        job.save()
 
         update(logged_in, job, "completed", version=version)
 

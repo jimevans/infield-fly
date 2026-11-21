@@ -6,6 +6,8 @@ from typing import NamedTuple, Optional
 
 import requests
 
+logger = logging.getLogger(__name__)
+
 REQUEST_TIMEOUT_SECONDS = 30
 
 
@@ -35,7 +37,6 @@ class SabnzbdClient:
     def __init__(self, download_settings):
         super().__init__()
         self.settings = download_settings
-        self.logger = logging.getLogger()
 
     @property
     def api_url(self):
@@ -100,7 +101,7 @@ class SabnzbdClient:
         """Calls the SABnzbd API, returning the JSON response"""
 
         request_params = {"apikey": self.settings.sabnzbd_api_key, "output": "json", **params}
-        self.logger.debug("Calling SABnzbd API with %s", params)
+        logger.debug("Calling SABnzbd API with %s", params)
         try:
             if files is None:
                 response = requests.get(self.api_url, params=request_params,
