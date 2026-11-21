@@ -363,6 +363,14 @@ class TestRemoveDownload:
         assert not (tmp_path / "Show.S01E02.mkv").exists()
         sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
 
+    def test_missing_download_still_removes_history_item(self, delete_config, sabnzbd_client,
+                                                         tmp_path):
+        job = self.save_converted_job(delete_config, tmp_path, "Already.Deleted")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
+
     def test_without_nzo_id_deletes_only_files(self, delete_config, sabnzbd_client, tmp_path):
         (tmp_path / "Show.S01E02").mkdir()
         job = self.save_converted_job(delete_config, tmp_path, "Show.S01E02", nzo_id=None)

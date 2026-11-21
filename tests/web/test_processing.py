@@ -175,8 +175,10 @@ class TestStartRun:
         process = app.state.started_runs["jobs"]["process"]
         assert process.wait(timeout=60) == 0
         assert get_run_status(app, config) == {"state": "idle"}
+        # Libraries may print warnings, such as about the SSL library, but the run must not
+        # crash.
         with open(processing.get_error_file(config), encoding="utf-8") as errors:
-            assert errors.read() == ""
+            assert "Traceback" not in errors.read()
 
 
 def test_real_database_update_completes(logged_in, app, config, settings_path, tmp_path):

@@ -1,4 +1,6 @@
 # infield-fly
+[![CI](https://github.com/jimevans/infield-fly/actions/workflows/ci.yml/badge.svg)](https://github.com/jimevans/infield-fly/actions/workflows/ci.yml)
+
 An ffmpeg wrapper for media file container conversion
 
 ## Description
@@ -463,10 +465,14 @@ interface in a new package and add its class to `DOWNLOADER_CLASSES` in
 Run the tests with coverage, and lint the source and tests, using:
 
 ```
-.venv/bin/pytest --cov
+.venv/bin/pytest --cov --cov-fail-under=100
 .venv/bin/pylint src
 .venv/bin/pylint --rcfile=tests/pylintrc tests
 ```
+
+These also run on GitHub Actions for each push to `main` and each pull request, with
+Python 3.9, the oldest supported version, and 3.10. The build fails if any code is not
+covered by tests, or if pylint reports any message, in the source or the tests.
 
 ## Support
 This library is provided as-is, and will be updated only at the whim of the
