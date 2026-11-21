@@ -2,7 +2,8 @@
 
 import pytest
 
-from infield_fly.episodes import find_episode_file, get_episode_number
+from infield_fly.episodes import (EpisodeNumber, find_episode_file, find_episode_number,
+                                  get_converted_file_name, get_episode_number)
 from infield_fly.usenet.downloader import is_job_folder
 
 
@@ -16,6 +17,31 @@ from infield_fly.usenet.downloader import is_job_folder
 ])
 def test_get_episode_number(text, expected):
     assert get_episode_number(text) == expected
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Show.S01E02.mkv", EpisodeNumber(1, 2, 5)),
+    ("show s1e2", EpisodeNumber(1, 2, 5)),
+    ("Show.S01E02.Recap.S01E01", EpisodeNumber(1, 2, 5)),
+    ("show special", None),
+    (None, None),
+])
+def test_find_episode_number(text, expected):
+    assert find_episode_number(text) == expected
+
+
+def test_episode_number_as_text():
+    assert str(EpisodeNumber(1, 2, 0)) == "s01e02"
+
+
+@pytest.mark.parametrize("title, substitutions, expected", [
+    ("The Show - s01e02 - Part: 2", {":": " -"}, "The Show - s01e02 - Part - 2"),
+    ("What? ", {"?": ""}, "What"),
+    ("Unchanged", {}, "Unchanged"),
+    ("Long keys", {"ys": "x"}, "Long keys"),
+])
+def test_get_converted_file_name(title, substitutions, expected):
+    assert get_converted_file_name(title, substitutions) == expected
 
 
 class TestFindEpisodeFile:

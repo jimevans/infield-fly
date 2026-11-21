@@ -2,21 +2,57 @@
 
 import os
 import re
+from typing import NamedTuple
 
 EPISODE_NUMBER_PATTERN = re.compile(r"s([0-9]+)e([0-9]+)", re.IGNORECASE)
 EPISODE_FILE_PATTERN = re.compile(r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4)$", re.IGNORECASE)
 
 
-def get_episode_number(text):
+class EpisodeNumber(NamedTuple):
+
+    """An episode number found in text, and where in the text it starts"""
+
+    season: int
+    episode: int
+    start: int
+
+    def __str__(self):
+        return f"s{self.season:02d}e{self.episode:02d}"
+
+
+def find_episode_number(text):
     """
-    Gets the episode number in text, such as a search string or file name, in the form
-    "s01e02", or None if it has none
+    Finds the first episode number in text, such as a search string or file name, in the
+    form s01e02, ignoring case, or returns None if it has none
     """
 
     match = EPISODE_NUMBER_PATTERN.search(text or "")
     if match is None:
         return None
-    return f"s{int(match.group(1)):02d}e{int(match.group(2)):02d}"
+    return EpisodeNumber(int(match.group(1)), int(match.group(2)), match.start())
+
+
+def get_episode_number(text):
+    """
+    Gets the first episode number in text, such as a search string or file name, in the
+    form "s01e02", or None if it has none
+    """
+
+    episode_number = find_episode_number(text)
+    return str(episode_number) if episode_number is not None else None
+
+
+def get_converted_file_name(title, substitutions):
+    """
+    Gets the name of a converted episode file, without its extension, from the episode's
+    title, replacing characters as the conversion settings' substitutions say, such as a
+    colon with a dash, since some characters can't be used in file names
+    """
+
+    # str.translate replaces each character with its entry in the table; maketrans only
+    # accepts single characters, which are all a substitution can apply to.
+    table = str.maketrans({key: value for key, value in substitutions.items() if len(key) == 1})
+    return title.translate(table).strip()
 
 
 def find_episode_file(download_path):

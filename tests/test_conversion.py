@@ -582,6 +582,18 @@ class TestFileMapper:
     def test_get_mapped_file_name_no_regex_match(self, mapper):
         assert mapper.get_mapped_file_name("The.Show.S01E02.txt") is None
 
+    def test_get_mapped_file_name_without_episode_number(self, mapper):
+        assert mapper.get_mapped_file_name("The.Show.Special.mkv") is None
+
+    def test_get_mapped_file_name_extension_is_not_substituted(self):
+        mapper = FileMapper(FakeEpisodeDatabase(), file_name_substitutions={".": "_"})
+
+        assert mapper.get_mapped_file_name("The.Show.S01E02.MP4").endswith(".mp4")
+
+    def test_series_is_matched_before_episode_number(self, mapper):
+        # The keyword appears after the episode number, so the series isn't matched.
+        assert mapper.get_mapped_file_name("Unknown.S01E02.the.show.mkv") is None
+
     def test_get_mapped_file_name_untracked_series(self, mapper, caplog):
         assert mapper.get_mapped_file_name("Unknown.S01E02.mkv") is None
         assert "No tracked series found" in caplog.text
