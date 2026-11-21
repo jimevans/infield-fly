@@ -1,6 +1,7 @@
 """Tests for the job processing page of the web interface"""
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -8,7 +9,7 @@ from unittest import mock
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
-from web.conftest import ROOT, SAME_ORIGIN
+from web.conftest import ROOT, SAME_ORIGIN, make_settings
 
 from infield_fly.concurrency import ProcessLock
 from infield_fly.web import processing
@@ -117,22 +118,23 @@ class TestRunStatus:
         assert status["from_web"] is False
 
     def test_run_started_here(self, app, config):
-        app.state.started_run = {"process": FakeProcess(os.getpid()), "pid": os.getpid(),
-                                 "time": time.monotonic()}
+        app.state.started_runs = {"jobs": {"process": FakeProcess(os.getpid()),
+                                           "pid": os.getpid(), "time": time.monotonic()}}
 
         assert get_run_status(app, config) == {"state": "starting"}
         with ProcessLock(config.conversion.job_lock_file, "jobs process"):
             assert get_run_status(app, config)["from_web"] is True
 
     def test_run_that_never_acquired_the_lock(self, app, config):
-        app.state.started_run = {"process": FakeProcess(), "pid": 12345,
-                                 "time": time.monotonic() - processing.STARTING_SECONDS - 1}
+        app.state.started_runs = {"jobs": {
+            "process": FakeProcess(), "pid": 12345,
+            "time": time.monotonic() - processing.STARTING_SECONDS - 1}}
 
         assert get_run_status(app, config) == {"state": "idle"}
 
     def test_run_that_exited(self, app, config):
-        app.state.started_run = {"process": FakeProcess(return_code=0), "pid": 12345,
-                                 "time": time.monotonic()}
+        app.state.started_runs = {"jobs": {"process": FakeProcess(return_code=0),
+                                           "pid": 12345, "time": time.monotonic()}}
 
         assert get_run_status(app, config) == {"state": "idle"}
 
@@ -141,29 +143,53 @@ class TestStartRun:
 
     def test_starts_detached_run(self, app, config):
         previous = FakeProcess()
-        app.state.started_run = {"process": previous, "pid": 1, "time": 0}
+        app.state.started_runs = {"jobs": {"process": previous, "pid": 1, "time": 0}}
 
         with mock.patch("subprocess.Popen") as popen:
-            start_run(app, config, "/settings.json", ["search", "convert"])
+            start_run(app, config, "/settings.json", "jobs", ["jobs", "process", "--no-search"])
 
         args, options = popen.call_args
         assert args[0] == [sys.executable, "-m", "infield_fly", "-u", "-c", "/settings.json",
-                           "jobs", "process", "--no-search", "--no-convert"]
+                           "jobs", "process", "--no-search"]
         assert options["start_new_session"] is True
         assert options["stdout"].name == processing.get_error_file(config)
-        assert app.state.started_run["process"] is popen.return_value
+        assert app.state.started_runs["jobs"]["process"] is popen.return_value
         assert previous.polled == 1
+
+    def test_runs_of_each_kind_are_tracked_separately(self, app, config):
+        with mock.patch("subprocess.Popen") as popen:
+            popen.return_value.poll.return_value = None
+            start_run(app, config, "/settings.json", "database", ["database", "update"])
+
+        assert popen.call_args[1]["stdout"].name == processing.get_error_file(config,
+                                                                              "database")
+        assert set(app.state.started_runs) == {"database"}
+        assert get_run_status(app, config, "database") == {"state": "starting"}
+        assert get_run_status(app, config) == {"state": "idle"}
 
     def test_real_run_completes(self, logged_in, app, config):
         response = logged_in.post("/processing", data={"query-downloads": "on"},
                                   headers=SAME_ORIGIN, follow_redirects=False)
 
         assert response.headers["location"] == f"{ROOT}/processing"
-        process = app.state.started_run["process"]
+        process = app.state.started_runs["jobs"]["process"]
         assert process.wait(timeout=60) == 0
         assert get_run_status(app, config) == {"state": "idle"}
         with open(processing.get_error_file(config), encoding="utf-8") as errors:
             assert errors.read() == ""
+
+
+def test_real_database_update_completes(logged_in, app, config, settings_path, tmp_path):
+    # Without tracked series, the update finishes without contacting TheTVDB.
+    settings_path.write_text(json.dumps(make_settings(tmp_path, {})), encoding="utf-8")
+
+    logged_in.post("/processing", data={"kind": "database"}, headers=SAME_ORIGIN)
+
+    assert app.state.started_runs["database"]["process"].wait(timeout=60) == 0
+    assert os.path.exists(os.path.join(config.conversion.database_directory, ".dbcache"))
+    assert get_run_status(app, config, "database") == {"state": "idle"}
+    with open(config.conversion.log_file, encoding="utf-8") as log_file:
+        assert "Starting database update" in log_file.read()
 
 
 class TestProcessingPage:
@@ -173,21 +199,22 @@ class TestProcessingPage:
 
         text = logged_in.get("/processing").text
 
-        assert "No run is in progress." in text
-        assert "<fieldset>" in text
-        assert text.count('type="checkbox"') == len(processing.PHASES)
+        assert "No job processing is in progress." in text
+        assert "No database update is in progress." in text
+        assert text.count("<fieldset>") == 2
+        assert text.count('type="checkbox"') == len(processing.PHASES) + 1
         assert "[2026-11-21 10:00:00] INFO - Converted something" in text
         assert config.conversion.log_file in text
         assert f'data-socket="{ROOT}/processing/log"' in text
-        assert 'data-busy="false"' in text
+        assert 'data-busy-jobs="false" data-busy-database="false"' in text
 
     def test_running(self, logged_in, config):
         with ProcessLock(config.conversion.job_lock_file, "jobs process"):
             text = logged_in.get("/processing").text
 
         assert "Started by a scheduled run or the command line" in text
-        assert "<fieldset disabled>" in text
-        assert 'data-busy="true"' in text
+        assert text.count("<fieldset disabled>") == 1
+        assert 'data-busy-jobs="true" data-busy-database="false"' in text
 
     def test_errors_of_last_run(self, logged_in, config):
         os.makedirs(config.conversion.log_directory)
@@ -196,7 +223,7 @@ class TestProcessingPage:
 
         text = logged_in.get("/processing").text
 
-        assert "Errors from the last run started here" in text
+        assert "Errors from the last job processing run started here" in text
         assert "Traceback: &lt;boom&gt;" in text
 
     def test_empty_log(self, logged_in):
@@ -206,9 +233,60 @@ class TestProcessingPage:
         with mock.patch.object(processing, "start_run") as start:
             logged_in.post("/processing", data={"convert": "on"}, headers=SAME_ORIGIN)
 
-        skipped = start.call_args[0][3]
-        assert skipped == ["search", "search-downloads", "add-downloads", "query-downloads"]
-        assert start.call_args[0][2] == app.state.settings_file.path
+        assert start.call_args[0][2:] == (
+            app.state.settings_file.path, "jobs",
+            ["jobs", "process", "--no-search", "--no-search-downloads", "--no-add-downloads",
+             "--no-query-downloads"])
+
+    @pytest.mark.parametrize("data, arguments", [
+        ({}, ["database", "update"]),
+        ({"include_ended": "on"}, ["database", "update", "-f"]),
+    ])
+    def test_starts_database_update(self, logged_in, data, arguments):
+        with mock.patch.object(processing, "start_run") as start:
+            logged_in.post("/processing", data={"kind": "database", **data},
+                           headers=SAME_ORIGIN)
+
+        assert start.call_args[0][3:] == ("database", arguments)
+
+    def test_database_update_while_processing_jobs(self, logged_in, config):
+        with mock.patch.object(processing, "start_run") as start, \
+                ProcessLock(config.conversion.job_lock_file, "jobs process"):
+            logged_in.post("/processing", data={"kind": "database"}, headers=SAME_ORIGIN)
+
+        assert start.call_args[0][3] == "database"
+
+    def test_does_not_start_database_update_while_one_is_running(self, logged_in, config):
+        with mock.patch.object(processing, "start_run") as start, \
+                ProcessLock(config.conversion.database_lock_file, "database update"):
+            text = logged_in.post("/processing", data={"kind": "database"},
+                                  headers=SAME_ORIGIN).text
+
+        start.assert_not_called()
+        assert "A database update is already running" in text
+        assert 'data-busy-jobs="false" data-busy-database="true"' in text
+
+    def test_unknown_kind_is_job_processing(self, logged_in):
+        with mock.patch.object(processing, "start_run") as start:
+            logged_in.post("/processing", data={"kind": "bogus", "convert": "on"},
+                           headers=SAME_ORIGIN)
+
+        assert start.call_args[0][3] == "jobs"
+
+    def test_errors_of_last_database_update(self, logged_in, config):
+        os.makedirs(config.conversion.log_directory)
+        with open(processing.get_error_file(config, "database"), "w",
+                  encoding="utf-8") as errors:
+            errors.write("Traceback\n")
+
+        text = logged_in.get("/processing").text
+
+        assert "Errors from the last database update started here" in text
+        assert "Errors from the last job processing run" not in text
+
+    def test_series_page_link(self, logged_in):
+        assert f'href="{ROOT}/processing#database">Update database</a>' in (
+            logged_in.get("/series").text)
 
     def test_no_phases_chosen(self, logged_in):
         with mock.patch.object(processing, "start_run") as start:
@@ -240,7 +318,8 @@ class TestFollowLog:
         with logged_in.websocket_connect(WEBSOCKET_URL, headers=SAME_ORIGIN) as websocket:
             assert websocket.receive_json() == {"type": "lines", "reset": True,
                                                 "lines": ["earlier"]}
-            assert websocket.receive_json() == {"type": "status", "state": "idle"}
+            assert websocket.receive_json() == {"type": "status", "jobs": {"state": "idle"},
+                                                "database": {"state": "idle"}}
 
             write_log(config, "later")
             assert websocket.receive_json() == {"type": "lines", "reset": False,
@@ -251,7 +330,8 @@ class TestFollowLog:
                 while message["type"] == "heartbeat":
                     message = websocket.receive_json()
                 assert message["type"] == "status"
-                assert message["state"] == "running"
+                assert message["jobs"]["state"] == "running"
+                assert message["database"] == {"state": "idle"}
 
     def test_sends_heartbeats(self, logged_in, fast):
         with logged_in.websocket_connect(WEBSOCKET_URL, headers=SAME_ORIGIN) as websocket:

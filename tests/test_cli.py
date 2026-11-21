@@ -131,6 +131,16 @@ class TestFindDownloads:
         assert os.path.exists(episode_db.cache_file_path)
         capsys.readouterr()
 
+    def test_skips_metadata_update_while_another_is_in_progress(self, config, episode_db,
+                                                                 capsys, caplog):
+        with mock.patch.object(episode_db, "update_all_tracked_series") as update, \
+                ProcessLock(config.conversion.database_lock_file, "database update"):
+            cli.find_downloads(search_args(update_metadata=True), config)
+
+        update.assert_not_called()
+        assert "Not updating the episode database" in caplog.text
+        assert "Finding episodes aired between" in capsys.readouterr().out
+
     def test_creates_jobs(self, config, episode_db, capsys):
         cli.find_downloads(search_args(create_jobs=True), config)
 
@@ -170,6 +180,29 @@ class TestUpdateDatabase:
 
         update.assert_called_once_with(force_updates=True, is_unattended_mode=True)
         assert os.path.exists(episode_db.cache_file_path)
+
+    def test_holds_lock_while_updating(self, config, episode_db):
+        def check_lock_held(**_):
+            with pytest.raises(LockHeldError):
+                with ProcessLock(config.conversion.database_lock_file, "other"):
+                    pass
+
+        with mock.patch.object(episode_db, "update_all_tracked_series",
+                               side_effect=check_lock_held) as update:
+            cli.update_database(Namespace(force_updates=False, unattended=True), config)
+
+        update.assert_called_once()
+        with ProcessLock(config.conversion.database_lock_file, "after"):
+            pass
+
+    def test_skips_update_while_another_is_in_progress(self, config, episode_db, caplog):
+        with mock.patch.object(episode_db, "update_all_tracked_series") as update, \
+                ProcessLock(config.conversion.database_lock_file, "database update"):
+            cli.update_database(Namespace(force_updates=False, unattended=True), config)
+
+        update.assert_not_called()
+        assert ("Not updating the episode database; an update by 'database update' "
+                "(process ") in caplog.text
 
 
 def convert_args(**overrides):

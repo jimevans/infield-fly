@@ -1,46 +1,68 @@
 {% extends "base.html" %}
 {% set active = "processing" %}
 {% block title %}Processing{% endblock %}
-{% block content %}
-{% set busy = status.state != "idle" %}
-<h1>Job processing</h1>
+
+{% macro run_status(status, idle_text) -%}
 <p class="status-line" role="status">
   {% if status.state == "running" %}
   <span class="status status-converting">running</span>
   {{ "Started here" if status.from_web else "Started by a scheduled run or the command line" }}, process {{ status.pid }}, at {{ status.started }}.
   {% elif status.state == "starting" %}
-  <span class="status status-converting">starting</span> Starting a run.
+  <span class="status status-converting">starting</span> Starting.
   {% else %}
-  <span class="status">idle</span> No run is in progress.
+  <span class="status">idle</span> {{ idle_text }}
   {% endif %}
 </p>
+{%- endmacro %}
+
+{% block content %}
+{% set jobs_busy = statuses.jobs.state != "idle" %}
+{% set database_busy = statuses.database.state != "idle" %}
+<h1>Processing</h1>
 
 <form class="editor" method="post" action="{{ app_path(request, 'processing') }}">
-  <fieldset{% if busy %} disabled{% endif %}>
-    <legend>Process now</legend>
+  <input type="hidden" name="kind" value="jobs">
+  <fieldset{% if jobs_busy %} disabled{% endif %}>
+    <legend>Job processing</legend>
+    {{ run_status(statuses.jobs, "No job processing is in progress.") }}
     {% for name, label in phases %}
     <label class="checkbox"><input type="checkbox" name="{{ name }}" checked> {{ label }}</label>
     {% endfor %}
     <div class="form-actions">
       <button type="submit">Process now</button>
-      {% if busy %}<span class="muted">A run is in progress.</span>{% endif %}
     </div>
   </fieldset>
 </form>
+{% if errors.jobs %}
+<h2>Errors from the last job processing run started here</h2>
+<pre class="log">{{ errors.jobs }}</pre>
+{% endif %}
+
+<form id="database" class="editor" method="post" action="{{ app_path(request, 'processing') }}">
+  <input type="hidden" name="kind" value="database">
+  <fieldset{% if database_busy %} disabled{% endif %}>
+    <legend>Episode database</legend>
+    {{ run_status(statuses.database, "No database update is in progress.") }}
+    <p class="hint">Retrieves the episodes of tracked series from TheTVDB, as <code>database update</code> does. Series that have ended are skipped unless included.</p>
+    <label class="checkbox"><input type="checkbox" name="include_ended"> Include series that have ended</label>
+    <div class="form-actions">
+      <button type="submit">Update database</button>
+    </div>
+  </fieldset>
+</form>
+{% if errors.database %}
+<h2>Errors from the last database update started here</h2>
+<pre class="log">{{ errors.database }}</pre>
+{% endif %}
 
 <div class="page-heading">
   <h2>Log</h2>
   <span id="connection" class="muted"></span>
 </div>
-<pre id="log" class="log" tabindex="0" data-socket="{{ app_path(request, 'processing_log') }}" data-busy="{{ 'true' if busy else 'false' }}">
+<pre id="log" class="log" tabindex="0" data-socket="{{ app_path(request, 'processing_log') }}" data-busy-jobs="{{ 'true' if jobs_busy else 'false' }}" data-busy-database="{{ 'true' if database_busy else 'false' }}">
 {%- for line in lines %}{{ line }}
 {% endfor -%}
 </pre>
-<p class="hint">The end of <code>{{ log_file }}</code>, which scheduled runs and runs started here both write to.{% if not lines %} It has no entries yet.{% endif %}</p>
-
-{% if errors and not busy %}
-<h2>Errors from the last run started here</h2>
-<pre class="log">{{ errors }}</pre>
-{% endif %}
+<p class="hint">The end of <code>{{ log_file }}</code>, which scheduled runs and runs started here all write to.{% if not lines %} It has no entries yet.{% endif %}</p>
 <script src="{{ app_path(request, 'static', path='processing.js') }}"></script>
 {% endblock %}

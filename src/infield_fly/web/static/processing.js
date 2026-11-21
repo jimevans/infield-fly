@@ -1,5 +1,6 @@
-// Follows the job processing log over a WebSocket, reconnecting when the connection is
-// lost, and reloads the page when a run starts or finishes, so its status is current.
+// Follows the processing log over a WebSocket, reconnecting when the connection is lost,
+// and reloads the page when a job processing run or database update starts or finishes,
+// so its status is current.
 (function () {
   "use strict";
 
@@ -12,7 +13,8 @@
   var MAX_LINES = 2000;
   var url = new URL(log.dataset.socket, window.location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  var pageBusy = log.dataset.busy === "true";
+  // Whether job processing and a database update were in progress when the page loaded.
+  var pageBusy = log.dataset.busyJobs + " " + log.dataset.busyDatabase;
   var lines = log.textContent.split("\n").filter(function (line) { return line !== ""; });
   var delay = 1000;
 
@@ -42,8 +44,12 @@
       var message = JSON.parse(event.data);
       if (message.type === "lines") {
         show(message.lines, message.reset);
-      } else if (message.type === "status" && (message.state !== "idle") !== pageBusy) {
-        window.location.reload();
+      } else if (message.type === "status") {
+        var busy = String(message.jobs.state !== "idle") + " "
+          + String(message.database.state !== "idle");
+        if (busy !== pageBusy) {
+          window.location.reload();
+        }
       }
     };
     socket.onclose = function () {
