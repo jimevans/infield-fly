@@ -137,3 +137,6 @@ completed/
 logs/
 .DS_Store
 
+
+# Host-specific settings for deploy/deploy.sh
+deploy/deploy.env

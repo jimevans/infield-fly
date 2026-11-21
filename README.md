@@ -372,19 +372,43 @@ failed login is logged, for fail2ban to ban the address. Sessions last seven day
 are signed with a key stored in `.web_secret` alongside the settings file.
 
 The `deploy` directory contains the configuration to serve the web interface at
-`/infield-fly/` on a host running Apache, systemd, and fail2ban. On the host:
+`/infield-fly/` on a host running Apache, systemd, and fail2ban, and a script,
+`deploy/deploy.sh`, that installs Infield Fly and that configuration. Run it in the
+clone on the host, as the account that runs Infield Fly; it uses `sudo` to install
+files:
 
-1. Install the PAM service: `sudo cp deploy/pam.d/infield-fly /etc/pam.d/`
-2. Install the systemd unit as `/etc/systemd/system/infield-fly-web.service`, replacing
-   `YOUR_USER` and the paths in `deploy/infield-fly-web.service`, and start it with
-   `sudo systemctl daemon-reload && sudo systemctl enable --now infield-fly-web`
-3. Add the lines in `deploy/apache-infield-fly.conf` to the site's HTTPS virtual host,
-   then run `sudo apache2ctl configtest && sudo systemctl reload apache2`
-4. Install fail2ban if needed (`sudo apt install fail2ban`), copy the files in
-   `deploy/fail2ban` to the matching directories under `/etc/fail2ban`, and run
-   `sudo systemctl reload fail2ban`
+```
+deploy/deploy.sh
+```
 
-The web interface logs to the journal, viewed with `journalctl -u infield-fly-web`.
+The script installs Infield Fly with its web interface dependencies, using the clone's
+virtual environment if there is one, or `python3 -m pip install --user` otherwise. It
+then fills in the files in `deploy` with this host's values, and for each one that
+differs from the installed copy, shows the differences and asks before replacing it:
+
+* the systemd unit, as `/etc/systemd/system/infield-fly-web.service`, after which it
+  runs `systemctl daemon-reload`
+* the PAM service, as `/etc/pam.d/infield-fly`
+* the Apache configuration, as the file named by `APACHE_CONF`, after which it checks
+  the configuration with `apache2ctl configtest` and reloads Apache, putting back the
+  previous file if the check fails. `APACHE_CONF` defaults to
+  `/etc/apache2/userconf-enabled/infield-fly.conf` if that directory exists; otherwise,
+  set it to a file included by the site's HTTPS virtual host.
+* the fail2ban filter and jail, after which it reloads fail2ban. Install fail2ban first
+  if needed, with `sudo apt install fail2ban`.
+
+The values filled in are the user running the script, the clone's directory, and the
+settings in `deploy/deploy.env`: the path of the `infield-fly` command, the settings
+file, the web interface's port, and the Apache file. Copy `deploy/deploy.env.example`
+to `deploy/deploy.env`, which git ignores, to set any that differ from their defaults;
+options such as `--command` and `--port` override them. Use `--dry-run` to see what
+would change without changing anything, and `--yes` to install changed files without
+asking. To install the files by hand instead, replace the values in capitals in them,
+as described in each file.
+
+The first time the unit is installed, start the web interface with
+`sudo systemctl enable --now infield-fly-web`. It logs to the journal, viewed with
+`journalctl -u infield-fly-web`.
 
 ### Deploying updates
 Because Infield Fly is installed in editable mode, `git pull` updates the code
@@ -396,21 +420,9 @@ To deploy an update, in the clone on the host:
    load a mix of old and new code: the `.lock` file in the job directory is empty or
    missing when none is, for example `cat ~/.config/infield-fly/.jobs/.lock`
 2. Update the code with `git pull`
-3. Install any changed dependencies with `.venv/bin/pip install -e ".[web]"`, including
-   the `web` extra, since `pip install -e .` doesn't install new web interface
-   dependencies
+3. Run `deploy/deploy.sh`, which installs any changed dependencies and deployment files
 4. Restart the web interface with `sudo systemctl restart infield-fly-web`, and check
    that it is running with `systemctl status infield-fly-web`
-
-Run `git diff --stat HEAD@{1} -- deploy pyproject.toml` after pulling to see whether the
-update changed the deployment files. If it did, also update their installed copies:
-
-* `deploy/apache-infield-fly.conf`: update the lines in the Apache configuration, then
-  run `sudo apache2ctl configtest && sudo systemctl reload apache2`
-* `deploy/infield-fly-web.service`: update the installed unit, then run
-  `sudo systemctl daemon-reload` before restarting the web interface
-* `deploy/pam.d` or `deploy/fail2ban`: copy them to the matching directories under
-  `/etc`, then for fail2ban run `sudo systemctl reload fail2ban`
 
 Sessions are kept across restarts, so you stay logged in.
 
