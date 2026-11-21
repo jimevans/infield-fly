@@ -299,7 +299,14 @@ To find a download for a job yourself, give the job the download with
 * `adding` with a magnet link, or the path or URL of an NZB file, queues that
   download for the job in Deluge or SABnzbd
 * `pending` with the path of a downloaded file or directory queues it for
-  conversion
+  conversion. The episode file converted, the largest `.mkv` or `.mp4` file named with
+  an episode number in a directory, must be the job's episode.
+
+Additional data is refused for other statuses. `jobs add` only adds a job for the main
+keyword of a tracked series, and not one that already exists. Commands that change jobs
+(`add`, `update`, `reset`, `remove`, `clear`, and `search -c`) refuse to while job
+processing is running, since a run keeps its own copies of the jobs it processes and
+could overwrite the change.
 
 `jobs process` runs each of the following phases, which can be skipped with
 `--no-search`, `--no-search-downloads`, `--no-add-downloads`,

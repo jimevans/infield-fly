@@ -9,8 +9,9 @@ from urllib.parse import urlencode
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import PlainTextResponse, RedirectResponse
 
-from infield_fly.concurrency import LockHeldError, ProcessLock
-from infield_fly.job_status import JobStatus
+from infield_fly import job_operations
+from infield_fly.job_operations import JobOperationError, set_job_status
+from infield_fly.job_status import JobStatus, parse_job_status
 from infield_fly.jobs import JobQueue
 from infield_fly.web.processing import get_run_status
 from infield_fly.web.templating import add_flash, app_path, templates
@@ -18,11 +19,6 @@ from infield_fly.web.templating import add_flash, app_path, templates
 # The statuses a job can be given, in the order of processing.
 STATUSES = [x for x in JobStatus if x != JobStatus.UNKNOWN]
 EPISODE_EXTENSIONS = (".mkv", ".mp4")
-
-
-class JobChangeRefused(Exception):
-
-    """Raised when a job cannot be changed, with the reason to show the user"""
 
 
 def get_job_version(job):
@@ -38,20 +34,16 @@ def get_job_version(job):
 @contextmanager
 def changing_jobs(request, config):
     """
-    Holds the job processing lock while jobs are changed, so that a processing run, which
-    keeps its own copies of jobs, can't overwrite the change, raising JobChangeRefused if a
-    run is in progress or starting
+    Holds the job processing lock while jobs are changed, raising JobOperationError if a
+    run is in progress, or a run started from the web interface is starting, which hasn't
+    acquired the lock yet
     """
 
     if get_run_status(request.app, config)["state"] != "idle":
-        raise JobChangeRefused("Job processing is running, so jobs can't be changed until it "
-                               "finishes.")
-    try:
-        with ProcessLock(config.conversion.job_lock_file, "web interface job change"):
-            yield
-    except LockHeldError as ex:
-        raise JobChangeRefused("Job processing is running, so jobs can't be changed until it "
-                               "finishes.") from ex
+        raise JobOperationError("Job processing is running, so jobs can't be changed until "
+                                "it finishes.")
+    with job_operations.changing_jobs(config):
+        yield
 
 
 def find_browse_root(request, path):
@@ -107,60 +99,39 @@ async def update_job(request):
         return job_not_found(request)
     form_data = await request.form()
     job_page = app_path(request, "job", job_id=job.job_id)
-    status = JobStatus(form_data.get("status", ""))
+    status = parse_job_status(form_data.get("status", ""))
     download = form_data.get("download", "").strip()
     try:
-        if status == JobStatus.UNKNOWN:
-            raise JobChangeRefused(f"Unknown status '{form_data.get('status', '')}'.")
+        if status is None:
+            raise JobOperationError(f"Unknown status '{form_data.get('status', '')}'.")
         if form_data.get("version") != get_job_version(job):
-            raise JobChangeRefused("The job was changed by something else after you opened "
-                                   "the page, so it was not changed. Check it, and try again.")
+            raise JobOperationError("The job was changed by something else after you opened "
+                                    "the page, so it was not changed. Check it, and try "
+                                    "again.")
+        if (status == JobStatus.PENDING and download
+                and find_browse_root(request, download) is None):
+            raise JobOperationError("The download must be in one of the folders downloads "
+                                    "can be chosen from.")
         with changing_jobs(request, config):
-            messages = await apply_status(request, job_queue, job, status, download)
-    except JobChangeRefused as ex:
+            # Setting an NZB file's download may fetch it from the indexer.
+            warnings = await run_in_threadpool(set_job_status, job_queue, job, status,
+                                               download)
+    except JobOperationError as ex:
         add_flash(request, "warning", str(ex))
         return RedirectResponse(
             job_page + (f"?{urlencode({'download': download})}"
                         if status == JobStatus.PENDING and download else ""), 303)
 
-    for kind, message in messages:
-        add_flash(request, kind, message)
+    if not download:
+        add_flash(request, "success", f"Set the status of the job to {status.value}.")
+    elif status == JobStatus.PENDING:
+        add_flash(request, "success",
+                  f"Set the job to pending conversion of {os.path.normpath(download)}.")
+    else:
+        add_flash(request, "success", f"Set the download of the job to {download}.")
+    for warning in warnings:
+        add_flash(request, "warning", f"Warning: {warning}")
     return RedirectResponse(job_page, 303)
-
-
-async def apply_status(request, job_queue, job, status, download):
-    """
-    Sets the status of a job, and the download given for the adding or pending status,
-    returning the messages to show, or raising JobChangeRefused if the download can't be used
-    """
-
-    if status == JobStatus.ADDING and download:
-        downloader = job_queue.get_downloader(download)
-        if downloader is None:
-            raise JobChangeRefused("For adding, give a magnet link, or the path or URL of an "
-                                   "NZB file.")
-        try:
-            warnings = await run_in_threadpool(downloader.set_download, job, download)
-        except ValueError as ex:
-            raise JobChangeRefused(str(ex)) from ex
-        return ([("success", f"Set the download of the job to {download}.")]
-                + [("warning", f"Warning: {x}") for x in warnings])
-
-    if status == JobStatus.PENDING and download:
-        if find_browse_root(request, download) is None:
-            raise JobChangeRefused("The download must be in one of the folders downloads can "
-                                   "be chosen from.")
-        if not os.path.exists(download):
-            raise JobChangeRefused(f"'{download}' does not exist.")
-        download = os.path.normpath(download)
-        job.set_download_status(JobStatus.PENDING, os.path.basename(download),
-                                os.path.dirname(download))
-        job.save(job_queue.logger)
-        return [("success", f"Set the job to pending conversion of {download}.")]
-
-    job.status = status
-    job.save(job_queue.logger)
-    return [("success", f"Set the status of the job to {status.value}.")]
 
 
 async def reset_job(request):
@@ -172,7 +143,7 @@ async def reset_job(request):
     try:
         with changing_jobs(request, config):
             reset_jobs = job_queue.reset_rejections(job)
-    except JobChangeRefused as ex:
+    except JobOperationError as ex:
         add_flash(request, "warning", str(ex))
     else:
         add_flash(request, "success", f"Cleared the rejected downloads of {len(reset_jobs)} "
@@ -192,7 +163,7 @@ async def remove_job(request):
     try:
         with changing_jobs(request, config):
             job.delete()
-    except JobChangeRefused as ex:
+    except JobOperationError as ex:
         add_flash(request, "warning", str(ex))
         return RedirectResponse(app_path(request, "job", job_id=job.job_id), 303)
     add_flash(request, "success", f"Removed the job for '{job.query}'.")
@@ -221,7 +192,6 @@ async def add_job(request):
 
     config = request.app.state.load_config()
     series = get_series_choices(config)
-    keywords = [keyword for keyword, _ in series]
     if request.method == "GET":
         return templates.TemplateResponse(request, "job_add.html", {
             "series": series, "keyword": "", "query": "", "errors": []})
@@ -229,27 +199,15 @@ async def add_job(request):
     form_data = await request.form()
     keyword = form_data.get("keyword", "")
     query = form_data.get("query", "").strip()
-    job_queue = JobQueue(config)
-    errors = []
-    if keyword not in keywords:
-        errors.append("Choose a tracked series.")
-    if query == "":
-        errors.append("Enter the search string.")
-    elif job_queue.is_existing_job(keyword, query):
-        errors.append("A job for that series and search string already exists.")
-    if not errors:
-        try:
-            with changing_jobs(request, config):
-                job = job_queue.create_job(keyword, query)
-        except JobChangeRefused as ex:
-            errors.append(str(ex))
-        else:
-            add_flash(request, "success", f"Added a job searching for '{query}'.")
-            return RedirectResponse(app_path(request, "job", job_id=job.job_id), 303)
-
-    return templates.TemplateResponse(request, "job_add.html", {
-        "series": series, "keyword": keyword, "query": query, "errors": errors},
-        status_code=400)
+    try:
+        with changing_jobs(request, config):
+            job = job_operations.add_job(JobQueue(config), config, keyword, query)
+    except JobOperationError as ex:
+        return templates.TemplateResponse(request, "job_add.html", {
+            "series": series, "keyword": keyword, "query": query, "errors": [str(ex)]},
+            status_code=400)
+    add_flash(request, "success", f"Added a job searching for '{query}'.")
+    return RedirectResponse(app_path(request, "job", job_id=job.job_id), 303)
 
 
 def render_browser(request, path, *, browse_url, choose_url, **context):

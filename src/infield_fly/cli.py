@@ -18,7 +18,7 @@ import argcomplete
 from infield_fly import __version__
 from infield_fly.configuration import (CONFIG_FILE_ENVIRONMENT_VARIABLE,
                                        DEFAULT_CONFIG_DIRECTORY, Configuration)
-from infield_fly.job_status import JobStatus
+from infield_fly.job_status import JobStatus, parse_job_status
 
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
@@ -48,7 +48,6 @@ def find_downloads(args, config):
     """Finds episodes aired in a date range, and prints or creates jobs for their search strings"""
 
     from infield_fly.database import EpisodeDatabase
-    from infield_fly.jobs import JobQueue
 
     episode_db = EpisodeDatabase.load_from_cache(config)
     from_date = datetime.strptime(args.fromdate, "%Y-%m-%d")
@@ -69,9 +68,7 @@ def find_downloads(args, config):
 
     print("")
     if args.create_jobs and not args.dry_run:
-        job_queue = JobQueue(config)
-        for search in searches_to_perform:
-            job_queue.create_search_job(search["keyword"], search["search"])
+        create_search_jobs(config, searches_to_perform)
     else:
         if args.create_jobs:
             print("Dry run requested. Not creating jobs.")
@@ -82,6 +79,20 @@ def find_downloads(args, config):
                       + format_release_groups(search["search"].release_groups.get(query))
                       + (" (download only)" if index == 0 and search["search"].is_download_only
                          else ""))
+
+def create_search_jobs(config, searches):
+    """Creates a job for each search, unless job processing is running"""
+
+    from infield_fly.job_operations import JobOperationError, changing_jobs
+    from infield_fly.jobs import JobQueue
+
+    job_queue = JobQueue(config)
+    try:
+        with changing_jobs(config):
+            for search in searches:
+                job_queue.create_search_job(search["keyword"], search["search"])
+    except JobOperationError as ex:
+        print(ex)
 
 def format_release_groups(release_groups):
     """Formats the release groups accepted for a search string for display"""
@@ -145,9 +156,9 @@ def convert(args, config):
         print(f"Keyword '{args.keyword}' was not found in the database")
         return
 
-    error = get_video_option_error(args)
-    if error is not None:
-        print(error)
+    errors = conversion.validate_video_options(args.convert_video, args.aspect_ratio, args.crf)
+    if errors:
+        print(errors[0])
         return
 
     mapper = conversion.FileMapper(
@@ -195,20 +206,6 @@ def notify_conversion_complete(args, config):
         if notifier is not None:
             notifier.notify(config.notification.receiving_number,
                             f"Conversion of {args.source} complete.")
-
-def get_video_option_error(args):
-    """Gets the error in the video conversion options of the convert command, if any"""
-
-    if args.aspect_ratio is not None and not args.convert_video:
-        return "Aspect ratio can only be specified when converting video (--convert-video)"
-    if args.aspect_ratio is not None and args.aspect_ratio <= 0:
-        return "Aspect ratio must be a positive number"
-    if args.crf is not None and not args.convert_video:
-        return ("Constant rate factor can only be specified when converting video "
-                "(--convert-video)")
-    if args.crf is not None and not 0 <= args.crf <= 51:
-        return "Constant rate factor must be between 0 and 51"
-    return None
 
 def convert_staged(args, config, file_map, settings):
     """
@@ -290,87 +287,76 @@ def print_nzb_details(job):
 def create_job(args, config):
     """Creates a new queued job"""
 
+    from infield_fly.job_operations import JobOperationError, add_job, changing_jobs
     from infield_fly.jobs import JobQueue
-
-    job_queue = JobQueue(config)
-    job = job_queue.create_job(args.keyword, args.search_term)
-    job.save(logging.getLogger())
-
-def delete_job(args, config):
-    """Deletes a new queued job"""
-
-    from infield_fly.jobs import JobQueue
-
-    job_queue = JobQueue(config)
-    job = job_queue.get_job_by_id(args.id)
-    if job is None:
-        print(f"No existing job with ID '{args.id}'")
-    else:
-        job.delete()
-
-def update_job(args, config):
-    """Updates a new queued job"""
-
-    from infield_fly.jobs import JobQueue
-
-    job_queue = JobQueue(config)
-    job = job_queue.get_job_by_id(args.id)
-    if job is None:
-        print(f"No existing job with ID '{args.id}'")
-    else:
-        status = parse_job_status(args.status)
-        if status is None:
-            print(f"Unknown status value '{args.status}'")
-        else:
-            if status == JobStatus.ADDING and args.update_data is not None:
-                set_job_download(job_queue, job, args.update_data)
-            elif status == JobStatus.PENDING and args.update_data is not None:
-                if not os.path.isfile(args.update_data):
-                    print("Update to pending must include a path a to valid file")
-                else:
-                    job.set_download_status(JobStatus.PENDING,
-                                            os.path.basename(args.update_data),
-                                            os.path.dirname(args.update_data))
-                    job.save(logging.getLogger())
-            else:
-                job.status = status
-                job.save(logging.getLogger())
-
-def reset_job(args, config):
-    """Clears the downloads rejected for a job, and for the other jobs for the same episode"""
-
-    from infield_fly.jobs import JobQueue
-
-    job_queue = JobQueue(config)
-    job = job_queue.get_job_by_id(args.id)
-    if job is None:
-        print(f"No existing job with ID '{args.id}'")
-    else:
-        for reset in job_queue.reset_rejections(job):
-            print(f"Cleared rejected downloads for job {reset.job_id}")
-
-def set_job_download(job_queue, job, location):
-    """Sets a download specified by the user as the download for a job, using its track"""
-
-    downloader = job_queue.get_downloader(location)
-    if downloader is None:
-        print("Update to adding must include a magnet link, or a path or URL to an NZB file")
-        return
 
     try:
-        warnings = downloader.set_download(job, location)
-    except ValueError as ex:
+        with changing_jobs(config):
+            job = add_job(JobQueue(config), config, args.keyword, args.search_term)
+    except JobOperationError as ex:
+        print(ex)
+    else:
+        print(f"Added job {job.job_id}")
+
+def delete_job(args, config):
+    """Deletes a queued job"""
+
+    from infield_fly.job_operations import JobOperationError, changing_jobs
+    from infield_fly.jobs import JobQueue
+
+    job = JobQueue(config).get_job_by_id(args.id)
+    if job is None:
+        print(f"No existing job with ID '{args.id}'")
+        return
+    try:
+        with changing_jobs(config):
+            job.delete()
+    except JobOperationError as ex:
+        print(ex)
+
+def update_job(args, config):
+    """Sets the status of a queued job, with a download for the adding or pending status"""
+
+    from infield_fly.job_operations import JobOperationError, changing_jobs, set_job_status
+    from infield_fly.jobs import JobQueue
+
+    job_queue = JobQueue(config)
+    job = job_queue.get_job_by_id(args.id)
+    if job is None:
+        print(f"No existing job with ID '{args.id}'")
+        return
+    status = parse_job_status(args.status)
+    if status is None:
+        print(f"Unknown status value '{args.status}'")
+        return
+    try:
+        with changing_jobs(config):
+            warnings = set_job_status(job_queue, job, status, args.update_data)
+    except JobOperationError as ex:
         print(ex)
         return
     for warning in warnings:
         print(f"Warning: {warning}")
 
-def parse_job_status(status_value):
-    """Parses a job status argument, returning None if the value is not a valid status"""
+def reset_job(args, config):
+    """Clears the downloads rejected for a job, and for the other jobs for the same episode"""
 
-    if status_value is None or status_value.lower() not in set(item.value for item in JobStatus):
-        return None
-    return JobStatus(status_value.lower())
+    from infield_fly.job_operations import JobOperationError, changing_jobs
+    from infield_fly.jobs import JobQueue
+
+    job_queue = JobQueue(config)
+    job = job_queue.get_job_by_id(args.id)
+    if job is None:
+        print(f"No existing job with ID '{args.id}'")
+        return
+    try:
+        with changing_jobs(config):
+            reset_jobs = job_queue.reset_rejections(job)
+    except JobOperationError as ex:
+        print(ex)
+        return
+    for reset in reset_jobs:
+        print(f"Cleared rejected downloads for job {reset.job_id}")
 
 def list_jobs(args, config):
     """Lists all jobs in the job queue"""
@@ -391,8 +377,9 @@ def list_jobs(args, config):
             print(f"{job.job_id} {job.status_description}")
 
 def clear_jobs(args, config):
-    """Clears the job queue"""
+    """Removes all jobs, or those with a status"""
 
+    from infield_fly.job_operations import JobOperationError, changing_jobs
     from infield_fly.jobs import JobQueue
 
     status = None
@@ -402,11 +389,13 @@ def clear_jobs(args, config):
             print(f"Unknown status value '{args.status}'")
             return
 
-    job_queue = JobQueue(config)
-    jobs = job_queue.load_jobs()
-    for job in jobs:
-        if status is None or status == job.status:
-            job.delete()
+    try:
+        with changing_jobs(config):
+            for job in JobQueue(config).load_jobs():
+                if status is None or status == job.status:
+                    job.delete()
+    except JobOperationError as ex:
+        print(ex)
 
 def process_jobs(args, config):
     """

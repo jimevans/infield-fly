@@ -6,6 +6,16 @@ README.md for how to make one.
 
 ## [Unreleased]
 
+### Changed
+* The command line and the web interface change jobs by the same rules:
+  * Commands that change jobs refuse to while job processing is running, as the web
+    interface does, since a run could overwrite the change.
+  * `jobs update` to pending accepts a download's folder, as well as a file, and both
+    check that the episode file converted is the job's episode.
+  * A download given with a status other than adding or pending is refused, rather
+    than ignored.
+  * `jobs add` refuses a series that isn't tracked, and a job that already exists.
+
 ## [1.1.0] - 2026-11-21
 
 ### Added

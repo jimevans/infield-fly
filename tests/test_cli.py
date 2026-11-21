@@ -146,6 +146,13 @@ class TestFindDownloads:
         assert "Not updating the episode database" in caplog.text
         assert "Finding episodes aired between" in capsys.readouterr().out
 
+    def test_create_jobs_refused_while_processing(self, config, episode_db, capsys):
+        with ProcessLock(config.conversion.job_lock_file, "jobs process"):
+            cli.find_downloads(search_args(create_jobs=True), config)
+
+        assert "Job processing is running" in capsys.readouterr().out
+        assert load_jobs(config) == []
+
     def test_creates_jobs(self, config, episode_db, capsys):
         cli.find_downloads(search_args(create_jobs=True), config)
 
@@ -232,11 +239,14 @@ class TestConvert:
 
     @pytest.mark.parametrize("overrides, message", [
         ({"keyword": "nope"}, "Keyword 'nope' was not found in the database"),
-        ({"aspect_ratio": 2.4}, "Aspect ratio can only be specified when converting video"),
-        ({"aspect_ratio": 0.0, "convert_video": True}, "Aspect ratio must be a positive number"),
-        ({"crf": 20.0}, "Constant rate factor can only be specified when converting video"),
-        ({"crf": -1.0, "convert_video": True}, "Constant rate factor must be between 0 and 51"),
-        ({"crf": 52.0, "convert_video": True}, "Constant rate factor must be between 0 and 51"),
+        ({"aspect_ratio": 2.4}, "An aspect ratio can only be given when re-encoding video."),
+        ({"aspect_ratio": 0.0, "convert_video": True},
+         "The aspect ratio must be a positive number"),
+        ({"crf": 20.0}, "A constant rate factor (CRF) can only be given when re-encoding"),
+        ({"crf": -1.0, "convert_video": True},
+         "The constant rate factor (CRF) must be between 0 and 51."),
+        ({"crf": 52.0, "convert_video": True},
+         "The constant rate factor (CRF) must be between 0 and 51."),
     ])
     def test_invalid_arguments(self, config, episode_db, converter_class, capsys, overrides,
                                message):
@@ -448,12 +458,39 @@ class TestShowJob:
 
 class TestJobCommands:
 
-    def test_create_job(self, config):
+    def test_create_job(self, config, capsys):
         cli.create_job(Namespace(keyword="show", search_term="show s01e01"), config)
 
         jobs = load_jobs(config)
         assert [(x.keyword, x.query, x.status) for x in jobs] == [
             ("show", "show s01e01", JobStatus.WAITING)]
+        assert capsys.readouterr().out == f"Added job {jobs[0].job_id}\n"
+
+    def test_create_job_for_untracked_series(self, config, capsys):
+        cli.create_job(Namespace(keyword="nope", search_term="nope s01e01"), config)
+
+        assert load_jobs(config) == []
+        assert capsys.readouterr().out == (
+            "'nope' is not the main keyword of a tracked series.\n")
+
+    @pytest.mark.parametrize("command, make_args", [
+        (cli.create_job, lambda job: Namespace(keyword="show", search_term="show s01e09")),
+        (cli.delete_job, lambda job: Namespace(id=job.job_id)),
+        (cli.update_job, lambda job: Namespace(id=job.job_id, status="completed",
+                                               update_data=None)),
+        (cli.reset_job, lambda job: Namespace(id=job.job_id)),
+        (cli.clear_jobs, lambda job: Namespace(status=None)),
+    ])
+    def test_refused_while_processing(self, config, capsys, command, make_args):
+        job = add_job(config, keyword="show", query="show s01e02", rejected=["a"])
+        before = Path(job.file_path).read_text(encoding="utf-8")
+
+        with ProcessLock(config.conversion.job_lock_file, "jobs process"):
+            command(make_args(job), config)
+
+        assert "Job processing is running" in capsys.readouterr().out
+        assert [x.job_id for x in load_jobs(config)] == [job.job_id]
+        assert Path(job.file_path).read_text(encoding="utf-8") == before
 
     def test_delete_job(self, config):
         job = add_job(config)
@@ -563,7 +600,8 @@ class TestUpdateJob:
 
         cli.update_job(update_args(job.job_id, "adding", "nonsense"), config)
 
-        assert "must include a magnet link, or a path or URL" in capsys.readouterr().out
+        assert "give a magnet link, or the path or URL of an NZB file" in (
+            capsys.readouterr().out)
         assert load_jobs(config)[0].status == JobStatus.WAITING
 
     def test_pending_with_invalid_file(self, config, tmp_path, capsys):
@@ -571,8 +609,26 @@ class TestUpdateJob:
 
         cli.update_job(update_args(job.job_id, "pending", str(tmp_path / "nope")), config)
 
-        assert "must include a path a to valid file" in capsys.readouterr().out
+        assert "does not exist" in capsys.readouterr().out
         assert load_jobs(config)[0].status == JobStatus.WAITING
+
+    def test_pending_with_folder(self, config, tmp_path):
+        job = add_job(config, keyword="show", query="show s01e01")
+        folder = tmp_path / "Show.S01E01.1080p"
+        folder.mkdir()
+        (folder / "show.s01e01.mkv").touch()
+
+        cli.update_job(update_args(job.job_id, "pending", str(folder)), config)
+
+        updated = load_jobs(config)[0]
+        assert (updated.status, updated.name) == (JobStatus.PENDING, "Show.S01E01.1080p")
+
+    def test_download_with_another_status(self, config, capsys):
+        job = add_job(config)
+
+        cli.update_job(update_args(job.job_id, "waiting", "magnet:?x"), config)
+
+        assert "only be given for the adding or pending status" in capsys.readouterr().out
 
     def test_pending_with_file(self, config, tmp_path):
         job = add_job(config)

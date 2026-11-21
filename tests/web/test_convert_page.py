@@ -247,8 +247,9 @@ class TestValidation:
         ({"name": ".mp4"}, "Enter a file name"),
         ({"name": "a/b"}, "Enter a file name"),
         ({"name": ".hidden"}, "Enter a file name"),
-        ({"convert_video": "on", "crf": "x"}, "Quality (CRF) must be a number."),
-        ({"convert_video": "on", "crf": "60"}, "Quality (CRF) must be between 0 and 51."),
+        ({"convert_video": "on", "crf": "x"}, "The constant rate factor (CRF) must be a number."),
+        ({"convert_video": "on", "crf": "60"},
+         "The constant rate factor (CRF) must be between 0 and 51."),
         ({"convert_video": "on", "aspect_ratio": "wide"}, "The aspect ratio must be a number"),
         ({"convert_video": "on", "aspect_ratio": "-1"}, "must be a positive number"),
     ])

@@ -22,6 +22,27 @@ class ConversionSettings:
     crf: float = 17
 
 
+def validate_video_options(convert_video, aspect_ratio=None, crf=None):
+    """
+    Validates the options for re-encoding video, returning a list of errors, which is empty
+    if they are valid. The aspect ratio and constant rate factor are None when not given.
+    """
+
+    errors = []
+    if aspect_ratio is not None:
+        if not convert_video:
+            errors.append("An aspect ratio can only be given when re-encoding video.")
+        elif aspect_ratio <= 0:
+            errors.append("The aspect ratio must be a positive number, such as 2.40.")
+    if crf is not None:
+        if not convert_video:
+            errors.append("A constant rate factor (CRF) can only be given when re-encoding "
+                          "video.")
+        elif not 0 <= crf <= 51:
+            errors.append("The constant rate factor (CRF) must be between 0 and 51.")
+    return errors
+
+
 @dataclass
 class TrackMapping:
 
