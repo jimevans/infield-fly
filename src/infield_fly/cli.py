@@ -54,8 +54,14 @@ def find_downloads(args, config):
     to_date = datetime.strptime(args.todate, "%Y-%m-%d")
 
     if args.update_metadata:
-        episode_db.update_all_tracked_series()
-        episode_db.save_to_cache()
+        from infield_fly.concurrency import LockHeldError, ProcessLock
+
+        try:
+            with ProcessLock(config.conversion.database_lock_file, "search --update-metadata"):
+                episode_db.update_all_tracked_series()
+                episode_db.save_to_cache()
+        except LockHeldError as ex:
+            warn_database_update_in_progress(ex)
 
     print(f"Finding episodes aired between {from_date:%Y-%m-%d} and {to_date:%Y-%m-%d}")
     searches_to_perform = get_search_strings(from_date, to_date, episode_db, config.metadata)
@@ -99,14 +105,32 @@ def list_series(args, config):
                    f"(aired: {airdate}) - {episode.title}"))
 
 def update_database(args, config):
-    """Updates the episode metadata in the databasae for tracked series"""
+    """
+    Updates the episode metadata in the database for tracked series, unless another process
+    is already updating it
+    """
 
+    from infield_fly.concurrency import LockHeldError, ProcessLock
     from infield_fly.database import EpisodeDatabase
 
-    episode_db = EpisodeDatabase.load_from_cache(config)
-    episode_db.update_all_tracked_series(force_updates=args.force_updates,
-                                         is_unattended_mode=args.unattended)
-    episode_db.save_to_cache()
+    try:
+        with ProcessLock(config.conversion.database_lock_file, "database update"):
+            # Loading the database once the lock is held starts from the latest update.
+            episode_db = EpisodeDatabase.load_from_cache(config)
+            episode_db.update_all_tracked_series(force_updates=args.force_updates,
+                                                 is_unattended_mode=args.unattended)
+            episode_db.save_to_cache()
+    except LockHeldError as ex:
+        warn_database_update_in_progress(ex)
+
+def warn_database_update_in_progress(error):
+    """Logs that the episode database wasn't updated because another update holds its lock"""
+
+    from infield_fly.concurrency import describe_lock_holder
+
+    logging.getLogger().warning(
+        "Not updating the episode database; an update by %s is still in progress",
+        describe_lock_holder(error.holder))
 
 def convert(args, config):
     """Converts a file using the soecified conversion arguments"""

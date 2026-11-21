@@ -63,6 +63,7 @@ class TestConversionSettings:
         assert settings.job_directory == os.path.join("/install", ".jobs")
         assert settings.job_lock_file == os.path.join("/install", ".jobs", ".lock")
         assert settings.log_file == os.path.join("/install", "logs", "infieldfly.log")
+        assert settings.database_lock_file == os.path.join("/install", ".dbcache.lock")
         assert settings.nzb_directory == os.path.join("/install", ".nzb")
 
     def test_default_directory_is_user_config_directory(self):

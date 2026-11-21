@@ -244,7 +244,8 @@ class TestUpdateJob:
         job = add_job(config)
         process = mock.Mock(pid=1)
         process.poll.return_value = None
-        app.state.started_run = {"process": process, "pid": 1, "time": time.monotonic()}
+        app.state.started_runs = {"jobs": {"process": process, "pid": 1,
+                                           "time": time.monotonic()}}
 
         update(logged_in, job, "completed")
 

@@ -6,6 +6,7 @@ from unittest import mock
 import pytest
 from web.conftest import ROOT, SAME_ORIGIN, make_settings
 
+from infield_fly.concurrency import ProcessLock
 from infield_fly.database import EpisodeInfo, SeriesInfo, SeriesSearchResult
 from infield_fly.settings_file import SettingsChangedError, SettingsFile
 
@@ -276,6 +277,18 @@ class TestSaveSeries:
                                     series_id="99", description="New Show"))
 
         assert "Started tracking New Show, but its episodes could not be retrieved" in (
+            logged_in.get("/series").text)
+
+    def test_new_series_while_database_update_in_progress(self, logged_in, settings_path,
+                                                          config, with_api_key, get_series):
+        with ProcessLock(config.conversion.database_lock_file, "database update"):
+            save(logged_in, editor_data(settings_path, original_keyword="",
+                                        keyword="new show", series_id="99",
+                                        description="New Show"))
+
+        get_series.assert_not_called()
+        assert "new show" in tracked_series(settings_path)
+        assert "will be retrieved by the next database update" in (
             logged_in.get("/series").text)
 
     def test_new_series_without_api_key(self, logged_in, settings_path, get_series):

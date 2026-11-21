@@ -242,6 +242,9 @@ infield-fly database update -f   # update all tracked series, including ended on
 infield-fly database list show   # list the cached episodes of the series with keyword "show"
 ```
 
+Only one update of the episode database runs at a time; an update started while
+another is in progress logs a warning and exits without updating.
+
 ### Finding episodes
 ```
 infield-fly search [options] [fromdate] [todate]
@@ -359,10 +362,10 @@ run from different directories. The connections to SABnzbd, the Newznab indexer,
 TheTVDB can be tested with the values on the page before saving them.
 
 Job processing can be started on the Processing page, with a choice of the phases to
-run, as with `jobs process`. A run started there runs in unattended mode, writing to
-the same log file as scheduled runs, and keeps running if the web interface is
-restarted. The page follows the log as it is written, whichever kind of run is in
-progress, using a WebSocket connection, which the reverse proxy must pass through (the
+run, as with `jobs process`, and so can an update of the episode database, as with
+`database update`. A run started there runs in unattended mode, writing to the same
+log file as scheduled runs, and keeps running if the web interface is restarted. The
+page follows the log as it is written, whichever kind of run is in progress, using a WebSocket connection, which the reverse proxy must pass through (the
 Apache configuration in `deploy` does).
 
 Each job's page can change its status, as with `jobs update`, reset its rejected

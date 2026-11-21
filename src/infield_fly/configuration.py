@@ -113,6 +113,15 @@ class ConversionSettings:
         return self.settings.get("database_cache_file", ".dbcache")
 
     @property
+    def database_lock_file(self):
+        """
+        Gets the path of the lock file preventing more than one process from updating the
+        episode database at a time
+        """
+
+        return os.path.join(self.database_directory, f"{self.database_cache_file}.lock")
+
+    @property
     def log_directory(self):
         """Gets the path of the directory to which log files are written"""
 

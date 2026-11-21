@@ -8,7 +8,10 @@ s{{ "%02d" | format(item.season_number) }}e{{ "%02d" | format(item.episode_numbe
 {% block content %}
 <div class="page-heading">
   <h1>Tracked series</h1>
-  <a class="button" href="{{ app_path(request, 'series_add') }}">Add series</a>
+  <span class="form-actions">
+    <a href="{{ app_path(request, 'processing') }}#database">Update database</a>
+    <a class="button" href="{{ app_path(request, 'series_add') }}">Add series</a>
+  </span>
 </div>
 {% if ignored %}
 <div class="notice">

@@ -3,6 +3,7 @@
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import PlainTextResponse, RedirectResponse
 
+from infield_fly.concurrency import LockHeldError, ProcessLock
 from infield_fly.database import EpisodeDatabase, TVMetadataProvider
 from infield_fly.settings_file import SettingsChangedError
 from infield_fly.web.series_form import SeriesForm
@@ -46,15 +47,20 @@ def get_metadata_provider(request, config):
 def fetch_episodes(config, provider, series_id):
     """
     Retrieves the episodes of a series from thetvdb.com into the episode database,
-    returning the series, or None if it could not be retrieved
+    returning the series, or None if it could not be retrieved, or if a database update is
+    in progress, since that update would overwrite the episodes when it saves
     """
 
-    episode_db = EpisodeDatabase.load_from_cache(config)
-    episode_db.metadata_provider = provider
-    series = episode_db.update_series(series_id, is_unattended_mode=True)
-    if series is not None:
-        episode_db.save_to_cache()
-    return series
+    try:
+        with ProcessLock(config.conversion.database_lock_file, "web interface series edit"):
+            episode_db = EpisodeDatabase.load_from_cache(config)
+            episode_db.metadata_provider = provider
+            series = episode_db.update_series(series_id, is_unattended_mode=True)
+            if series is not None:
+                episode_db.save_to_cache()
+            return series
+    except LockHeldError:
+        return None
 
 
 async def add_series(request):
