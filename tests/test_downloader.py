@@ -9,7 +9,7 @@ from infield_fly.downloader import Downloader
 class TestDownloader:
 
     def test_search_downloads_does_nothing_by_default(self):
-        Downloader(Configuration("/install")).search_downloads([object()])
+        Downloader(Configuration.from_dict("/install")).search_downloads([object()])
 
     @pytest.mark.parametrize("method, args", [
         ("recognizes_download", ("location",)),
@@ -19,4 +19,4 @@ class TestDownloader:
     ])
     def test_track_methods_must_be_implemented(self, method, args):
         with pytest.raises(NotImplementedError):
-            getattr(Downloader(Configuration("/install")), method)(*args)
+            getattr(Downloader(Configuration.from_dict("/install")), method)(*args)

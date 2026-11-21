@@ -247,7 +247,7 @@ class TestEpisodeInfo:
 
 @pytest.fixture
 def provider():
-    return TVMetadataProvider(MetadataSettings({"api_key": "key", "pin": "pin"}))
+    return TVMetadataProvider(MetadataSettings.from_dict({"api_key": "key", "pin": "pin"}))
 
 
 @pytest.fixture

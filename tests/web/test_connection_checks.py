@@ -14,7 +14,7 @@ from infield_fly.web.connection_checks import (captured_warnings, check_newznab,
 
 
 def make_config(**sections):
-    return Configuration("/settings", sections)
+    return Configuration.from_dict("/settings", sections)
 
 
 class TestCapturedWarnings:

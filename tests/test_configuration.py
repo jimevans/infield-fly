@@ -13,7 +13,7 @@ from infield_fly.configuration import (Configuration, ConversionSettings, Downlo
 class TestConfiguration:
 
     def test_defaults_without_config_dict(self):
-        config = Configuration("/install")
+        config = Configuration.from_dict("/install")
 
         assert isinstance(config.conversion, ConversionSettings)
         assert isinstance(config.metadata, MetadataSettings)
@@ -21,11 +21,11 @@ class TestConfiguration:
         assert isinstance(config.search, SearchSettings)
         assert isinstance(config.download, DownloadSettings)
         assert config.conversion.infield_fly_directory == "/install"
-        assert config.metadata.tracked_series == []
+        assert config.metadata.tracked_series == ()
         assert config.notification.sid == ""
 
     def test_with_config_dict(self):
-        config = Configuration("/install", {
+        config = Configuration.from_dict("/install", {
             "conversion": {"ffmpeg_location": "/ffmpeg"},
             "metadata": {"api_key": "key"},
             "notification": {"sid": "abc"},
@@ -40,17 +40,19 @@ class TestConfiguration:
         assert config.download.sabnzbd_api_key == "download key"
 
     def test_with_empty_config_dict(self):
-        config = Configuration("/install", {})
+        config = Configuration.from_dict("/install", {})
 
-        assert config.conversion.settings == {}
-        assert config.metadata.settings == {}
-        assert config.notification.settings == {}
+        assert config.conversion == ConversionSettings.from_dict("/install")
+        assert config.metadata == MetadataSettings()
+        assert config.notification == NotificationSettings()
+        assert config.search == SearchSettings()
+        assert config.download == DownloadSettings()
 
 
 class TestConversionSettings:
 
     def test_defaults(self):
-        settings = ConversionSettings("/install")
+        settings = ConversionSettings.from_dict("/install")
 
         assert settings.string_substitutions == {}
         assert settings.ffmpeg_location is None
@@ -67,13 +69,13 @@ class TestConversionSettings:
         assert settings.nzb_directory == os.path.join("/install", ".nzb")
 
     def test_default_directory_is_user_config_directory(self):
-        settings = ConversionSettings()
+        settings = ConversionSettings.from_dict()
 
         assert settings.infield_fly_directory == os.path.join(
             os.path.expanduser("~"), ".config", "infield-fly")
 
     def test_explicit_values(self):
-        settings = ConversionSettings("/install", {
+        settings = ConversionSettings.from_dict("/install", {
             "substitutions": {":": "-"},
             "ffmpeg_location": "/ffmpeg",
             "staging_directory": "/staging",
@@ -97,12 +99,12 @@ class TestConversionSettings:
         assert settings.job_lock_file == os.path.join("/jobs", ".lock")
 
     def test_null_substitutions_returns_empty_dict(self):
-        settings = ConversionSettings("/install", {"substitutions": None})
+        settings = ConversionSettings.from_dict("/install", {"substitutions": None})
 
         assert settings.string_substitutions == {}
 
     def test_invalid_log_level_falls_back_to_info(self):
-        settings = ConversionSettings("/install", {"log_level": "not-a-level"})
+        settings = ConversionSettings.from_dict("/install", {"log_level": "not-a-level"})
 
         assert settings.log_level == logging.INFO
 
@@ -118,7 +120,7 @@ class TestNotificationSettings:
         assert settings.receiving_number == ""
 
     def test_explicit_values(self):
-        settings = NotificationSettings({
+        settings = NotificationSettings.from_dict({
             "sid": "sid",
             "auth_token": "token",
             "sending_number": "+15550001111",
@@ -141,10 +143,10 @@ class TestMetadataSettings:
         assert settings.api_key == ""
         assert settings.legacy_api_key == ""
         assert settings.pin == ""
-        assert settings.tracked_series == []
+        assert settings.tracked_series == ()
 
     def test_explicit_values(self):
-        settings = MetadataSettings({
+        settings = MetadataSettings.from_dict({
             "user_name": "user",
             "user_key": "ukey",
             "api_key": "akey",
@@ -157,28 +159,28 @@ class TestMetadataSettings:
         assert settings.api_key == "akey"
         assert settings.legacy_api_key == "lkey"
         assert settings.pin == "1234"
-        assert settings.tracked_series == []
+        assert settings.tracked_series == ()
 
     def test_tracked_series_without_valid_id_is_skipped(self):
-        settings = MetadataSettings({"tracked_series": {
+        settings = MetadataSettings.from_dict({"tracked_series": {
             "missing": {"description": "No ID"},
             "zero": {"id": 0, "description": "Zero ID"},
             "negative": {"id": -1, "description": "Negative ID"}
         }})
 
-        assert settings.tracked_series == []
+        assert settings.tracked_series == ()
 
     def test_tracked_series_with_description_and_keywords(self):
-        settings = MetadataSettings({"tracked_series": {
+        settings = MetadataSettings.from_dict({"tracked_series": {
             "Show": {"id": 100, "description": "The Show", "keywords": ["Alt", "OTHER"]}
         }})
 
-        assert settings.tracked_series == [
-            TrackedSeries(100, "The Show", "Show", ["show", "alt", "other"], [])
-        ]
+        assert settings.tracked_series == (
+            TrackedSeries(100, "The Show", "Show", ["show", "alt", "other"], []),
+        )
 
     def test_tracked_series_without_description_omits_main_keyword(self):
-        settings = MetadataSettings({"tracked_series": {
+        settings = MetadataSettings.from_dict({"tracked_series": {
             "Show": {"id": 100, "keywords": ["alt"]}
         }})
 
@@ -186,7 +188,7 @@ class TestMetadataSettings:
         assert settings.tracked_series[0].keywords == ["alt"]
 
     def test_search_disabled_creates_no_searches(self):
-        settings = MetadataSettings({"tracked_series": {
+        settings = MetadataSettings.from_dict({"tracked_series": {
             "show": {"id": 1, "description": "Show", "enable_search": False,
                      "search_configs": [{"search_terms": ["1080p"]}]}
         }})
@@ -194,7 +196,7 @@ class TestMetadataSettings:
         assert settings.tracked_series[0].stored_searches == []
 
     def test_search_enabled_without_configs_uses_series_keyword(self):
-        settings = MetadataSettings({"tracked_series": {
+        settings = MetadataSettings.from_dict({"tracked_series": {
             "show": {"id": 1, "description": "Show", "enable_search": True}
         }})
 
@@ -203,7 +205,7 @@ class TestMetadataSettings:
         ]
 
     def test_search_enabled_with_configs(self):
-        settings = MetadataSettings({"tracked_series": {
+        settings = MetadataSettings.from_dict({"tracked_series": {
             "show": {
                 "id": 1,
                 "description": "Show",
@@ -233,8 +235,8 @@ class TestSearchSettings:
         assert not settings.is_enabled
 
     def test_explicit_values(self):
-        settings = SearchSettings({"newznab_url": "https://indexer/api", "api_key": "key",
-                                   "max_candidates": 2})
+        settings = SearchSettings.from_dict(
+            {"newznab_url": "https://indexer/api", "api_key": "key", "max_candidates": 2})
 
         assert (settings.newznab_url, settings.api_key, settings.max_candidates) == (
             "https://indexer/api", "key", 2)
@@ -258,18 +260,19 @@ class TestDownloadSettings:
         assert settings.deluge_password is None
 
     def test_explicit_values(self):
-        settings = DownloadSettings({"sabnzbd_host": "sab", "sabnzbd_port": 9090,
-                                     "sabnzbd_use_ssl": True, "sabnzbd_api_key": "key",
-                                     "sabnzbd_category": "tv",
-                                     "delete_completed_downloads": True})
+        settings = DownloadSettings.from_dict({
+            "sabnzbd_host": "sab", "sabnzbd_port": 9090, "sabnzbd_use_ssl": True,
+            "sabnzbd_api_key": "key", "sabnzbd_category": "tv",
+            "delete_completed_downloads": True})
 
         assert (settings.sabnzbd_host, settings.sabnzbd_port, settings.sabnzbd_use_ssl,
                 settings.sabnzbd_api_key, settings.sabnzbd_category,
                 settings.delete_completed_downloads) == ("sab", 9090, True, "key", "tv", True)
 
     def test_deluge_values(self):
-        settings = DownloadSettings({"deluge_host": "deluge.local", "deluge_port": 58846,
-                                     "deluge_user_name": "user", "deluge_password": "pass"})
+        settings = DownloadSettings.from_dict({
+            "deluge_host": "deluge.local", "deluge_port": 58846, "deluge_user_name": "user",
+            "deluge_password": "pass"})
 
         assert (settings.deluge_host, settings.deluge_port, settings.deluge_user_name,
                 settings.deluge_password) == ("deluge.local", 58846, "user", "pass")
@@ -325,7 +328,7 @@ class TestGetEpisodeSearches:
                           {"show 1080p s01e02": ["flux"]})]
 
     def test_reads_release_groups_from_settings(self):
-        settings = MetadataSettings({"tracked_series": {"show": {
+        settings = MetadataSettings.from_dict({"tracked_series": {"show": {
             "id": 1, "description": "The Show", "enable_search": True,
             "search_configs": [{"search_terms": ["1080p"], "release_groups": ["flux", "ntb"]},
                                {"search_terms": ["720p"]}]}}})

@@ -13,7 +13,7 @@ VALID_SETTINGS = {"sid": "sid", "auth_token": "token", "sending_number": "+15550
 def config_with(**overrides):
     """Creates a configuration with valid notification settings, overridden as specified"""
 
-    return Configuration("/install", {"notification": {**VALID_SETTINGS, **overrides}})
+    return Configuration.from_dict("/install", {"notification": {**VALID_SETTINGS, **overrides}})
 
 
 class TestCreateDefaultNotifier:

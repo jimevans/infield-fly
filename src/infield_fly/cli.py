@@ -761,7 +761,7 @@ def load_config(config_file):
         # explicitly specified one is almost certainly a mistake.
         raise FileNotFoundError(f"Settings file '{config_file_path}' does not exist")
 
-    return Configuration(infield_fly_directory, settings_dict)
+    return Configuration.from_dict(infield_fly_directory, settings_dict)
 
 def main():
     """Main entry point"""

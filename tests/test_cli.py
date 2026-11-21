@@ -21,7 +21,8 @@ import pytest
 from conftest import TRACKED_SERIES, make_episode_db
 from infield_fly import cli
 from infield_fly.concurrency import LockHeldError, ProcessLock
-from infield_fly.configuration import DEFAULT_CONFIG_DIRECTORY, EpisodeSearch
+from infield_fly.configuration import (DEFAULT_CONFIG_DIRECTORY, ConversionSettings,
+                                       EpisodeSearch)
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobQueue, JobStatus
 from infield_fly.staged_conversion import ConversionCancelled
@@ -965,8 +966,7 @@ class TestLoadConfig:
             config = cli.load_config(None)
 
         exists.assert_called_once_with(os.path.join(DEFAULT_CONFIG_DIRECTORY, "settings.json"))
-        assert config.conversion.settings == {}
-        assert config.conversion.infield_fly_directory == DEFAULT_CONFIG_DIRECTORY
+        assert config.conversion == ConversionSettings.from_dict(DEFAULT_CONFIG_DIRECTORY)
 
 
 class TestMain:
