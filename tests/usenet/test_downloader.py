@@ -31,7 +31,10 @@ def downloader(config):
 @pytest.fixture
 def sabnzbd_client():
     with mock.patch("infield_fly.usenet.downloader.SabnzbdClient") as client_class:
-        yield client_class.return_value
+        client = client_class.return_value
+        client.get_download_status.return_value = (None, None, None)
+        client.get_complete_directory.return_value = None
+        yield client
 
 
 class TestSearchDownloads:
@@ -330,6 +333,111 @@ class TestRemoveDownload:
     def save_converted_job(config, download_directory, name, nzo_id="nzo1"):
         return save_job(config, JobStatus.COMPLETED, downloader="sabnzbd", nzo_id=nzo_id,
                         name=name, download_directory=str(download_directory))
+
+    @pytest.fixture
+    def completed(self, tmp_path, sabnzbd_client):
+        """
+        SABnzbd's completed directory, with a download whose episode file was given to its
+        job by hand, a leftover file and sample beside it, and another download
+        """
+
+        complete = tmp_path / "complete"
+        folder = complete / "Show.S01E02.1080p-GROUP"
+        (folder / "Sample").mkdir(parents=True)
+        (folder / "show.s01e02.mkv").touch()
+        (folder / "show.s01e02.nfo").touch()
+        (folder / "Sample" / "sample.mkv").touch()
+        (complete / "Other.Download").mkdir()
+        sabnzbd_client.get_download_status.return_value = ("Completed", str(folder), None)
+        sabnzbd_client.get_complete_directory.return_value = str(complete)
+        return complete, folder
+
+    def test_deletes_folder_of_file_given_by_hand(self, delete_config, sabnzbd_client,
+                                                  completed, caplog):
+        caplog.set_level("INFO")
+        complete, folder = completed
+        job = self.save_converted_job(delete_config, folder, "show.s01e02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not folder.exists()
+        assert sorted(os.listdir(complete)) == ["Other.Download"]
+        sabnzbd_client.get_download_status.assert_called_once_with("nzo1")
+        sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
+        assert f"Deleting completed download {os.path.realpath(folder)}" in caplog.text
+
+    def test_deletes_folder_recorded_for_job(self, delete_config, sabnzbd_client, completed):
+        complete, folder = completed
+        job = self.save_converted_job(delete_config, complete, folder.name)
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not folder.exists()
+        assert complete.exists()
+
+    @pytest.mark.parametrize("storage, complete_directory", [
+        (None, "complete"),
+        ("Show.S01E02.1080p-GROUP", None),
+        # A download saved directly in the completed directory.
+        ("", "complete"),
+        # A folder outside the completed directory.
+        ("Show.S01E02.1080p-GROUP", "elsewhere"),
+        # A file rather than a folder.
+        ("Show.S01E02.1080p-GROUP/show.s01e02.mkv", "complete"),
+    ])
+    def test_deletes_only_file_when_folder_not_confirmed(
+            self, delete_config, sabnzbd_client, completed, tmp_path, storage,
+            complete_directory):
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        complete, folder = completed
+        (tmp_path / "elsewhere").mkdir()
+        sabnzbd_client.get_download_status.return_value = (
+            "Completed", None if storage is None else str(complete / storage), None)
+        sabnzbd_client.get_complete_directory.return_value = (
+            None if complete_directory is None else str(tmp_path / complete_directory))
+        job = self.save_converted_job(delete_config, folder, "show.s01e02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not (folder / "show.s01e02.mkv").exists()
+        assert (folder / "show.s01e02.nfo").exists()
+        sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
+
+    def test_keeps_folder_not_containing_download(self, delete_config, sabnzbd_client,
+                                                  completed, tmp_path):
+        _, folder = completed
+        (tmp_path / "torrents").mkdir()
+        (tmp_path / "torrents" / "show.s01e02.mkv").touch()
+        job = self.save_converted_job(delete_config, tmp_path / "torrents", "show.s01e02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not (tmp_path / "torrents" / "show.s01e02.mkv").exists()
+        assert folder.exists()
+
+    def test_failed_folder_lookup_deletes_only_file(self, delete_config, sabnzbd_client,
+                                                    completed, caplog):
+        _, folder = completed
+        sabnzbd_client.get_complete_directory.side_effect = SabnzbdError("down")
+        job = self.save_converted_job(delete_config, folder, "show.s01e02.mkv")
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert not (folder / "show.s01e02.mkv").exists()
+        assert folder.exists()
+        assert f"Could not find the folder of the download for job {job.job_id}: down" in (
+            caplog.text)
+        sabnzbd_client.delete_history_item.assert_called_once_with("nzo1")
+
+    def test_without_nzo_id_does_not_ask_sabnzbd(self, delete_config, sabnzbd_client,
+                                                 completed):
+        _, folder = completed
+        job = self.save_converted_job(delete_config, folder, "show.s01e02.mkv", nzo_id=None)
+
+        NzbDownloader(delete_config).remove_download(job)
+
+        assert folder.exists()
+        sabnzbd_client.get_download_status.assert_not_called()
 
     def test_disabled_by_default(self, downloader, config, sabnzbd_client, tmp_path):
         (tmp_path / "Show.S01E02").mkdir()

@@ -100,6 +100,24 @@ class TestGetDownloadStatus:
         assert client.get_download_status("nzo1") == (None, None, None)
 
 
+class TestGetCompleteDirectory:
+
+    def test_complete_directory(self, client, requests_get):
+        requests_get.return_value = make_response(
+            {"status": {"completedir": "/home/user/Downloads/complete"}})
+
+        assert client.get_complete_directory() == "/home/user/Downloads/complete"
+        params = requests_get.call_args[1]["params"]
+        assert (params["mode"], params["skip_dashboard"]) == ("fullstatus", 1)
+
+    @pytest.mark.parametrize("response", [{}, {"status": True}, {"status": {}},
+                                          {"status": {"completedir": ""}}])
+    def test_not_reported(self, client, requests_get, response):
+        requests_get.return_value = make_response(response)
+
+        assert client.get_complete_directory() is None
+
+
 class TestCallApi:
 
     def test_delete_history_item(self, client, requests_get):
