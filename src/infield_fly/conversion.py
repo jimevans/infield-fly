@@ -67,7 +67,6 @@ class Converter:
     """Converts files into the correct format"""
 
     def __init__(self, input_file, output_file, ffmpeg_location=None, is_unattended_mode=False):
-        super().__init__()
         self.ffmpeg_location = ffmpeg_location
         self.input_file = input_file
         self.output_file = output_file
@@ -262,7 +261,7 @@ class Converter:
                 video_filters.append(
                     f"crop=w='if(gt(iw/ih,{aspect_ratio}+0.01),trunc(ih*{aspect_ratio}/2)*2,iw)'"
                     f":h='if(lt(iw/ih,{aspect_ratio}-0.01),trunc(iw/{aspect_ratio}/2)*2,ih)'")
-            if len(video_filters) > 0:
+            if video_filters:
                 ffmpeg_args.append("-vf")
                 ffmpeg_args.append(",".join(video_filters))
             ffmpeg_args.append("-crf")
@@ -371,7 +370,6 @@ class FileStreamInfo:
     """Represents the file stream information of a media file"""
 
     def __init__(self, streams, all_streams=None, duration=None):
-        super().__init__()
         self.video_stream = streams["video"]
         self.audio_stream = streams["audio"]
         self.subtitle_stream = streams["subtitle"]
@@ -454,7 +452,7 @@ class FileStreamInfo:
             audio_streams
         ]
         for candidates in candidate_lists:
-            if len(candidates) > 0:
+            if candidates:
                 return candidates[0]
 
         return None
@@ -488,7 +486,6 @@ class FileStreamInfo:
         """Gets information about an individual stream within a file"""
 
         def __init__(self, stream_metadata):
-            super().__init__()
             self.metadata = stream_metadata
 
         @property
@@ -513,17 +510,13 @@ class FileStreamInfo:
         def is_default(self):
             """Gets a value indicating whether this stream is the default for this stream type"""
 
-            return ("disposition" in self.metadata
-                    and "default" in self.metadata["disposition"]
-                    and self.metadata["disposition"]["default"] == 1)
+            return self.metadata.get("disposition", {}).get("default") == 1
 
         @property
         def is_forced(self):
             """Gets a value indicating whether the stream contents are marked forced"""
 
-            return ("disposition" in self.metadata
-                    and "forced" in self.metadata["disposition"]
-                    and self.metadata["disposition"]["forced"] == 1)
+            return self.metadata.get("disposition", {}).get("forced") == 1
 
         @property
         def channel_count(self):
@@ -547,9 +540,7 @@ class FileStreamInfo:
         def language(self):
             """Gets the language tag of the stream, if defined"""
 
-            return (self.metadata["tags"]["language"]
-                    if "tags" in self.metadata and "language" in self.metadata["tags"]
-                    else "")
+            return self.metadata.get("tags", {}).get("language", "")
 
         @property
         def title(self):
@@ -584,7 +575,6 @@ class FileMapper:
                  episode_db,
                  file_name_match_regex=r"(.*)s([0-9]+)e([0-9]+)(.*)(\.mkv|\.mp4|\.avi)",
                  file_name_substitutions=None):
-        super().__init__()
         self.file_name_match_regex = file_name_match_regex
         self.episode_db = episode_db
         self.file_name_substitutions = file_name_substitutions or {}

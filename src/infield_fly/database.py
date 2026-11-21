@@ -21,7 +21,6 @@ class EpisodeDatabase:
     """The episode database of all known series"""
 
     def __init__(self, config):
-        super().__init__()
         self.cache_directory = config.conversion.database_directory
         self.cache_file_name = config.conversion.database_cache_file
         self.known_series = {}
@@ -156,7 +155,6 @@ class SeriesInfo:
     """The metadata for a series"""
 
     def __init__(self, series_id, title, status, year):
-        super().__init__()
         self.series_id = series_id
         self.title = title
         self.status = status
@@ -216,28 +214,27 @@ class SeriesInfo:
 
         series_id = series_dict["id"]
         series_title = series_dict["name"]
-        series_status = (series_dict["status"]["name"]
-                         if "name" in series_dict["status"]
-                         else series_dict["status"])
-        series_year = (series_dict["year"]
-                       if "year" in series_dict and series_dict["year"] is not None
-                       else None)
+        # TheTVDB reports the status as an object with a name, or older caches as the name.
+        series_status = series_dict["status"]
+        if isinstance(series_status, dict):
+            series_status = series_status.get("name", series_status)
 
-        return cls(series_id, series_title, series_status, series_year)
+        return cls(series_id, series_title, series_status, series_dict.get("year"))
 
 
 class EpisodeInfo:
 
     """The metadata for an episode"""
 
-    def __init__(self, episode_id, series_title, **kwargs):
-        super().__init__()
+    def __init__(self, episode_id, series_title, *, season_number=0, episode_number=0,
+                 title="", airdate=None):
+        # pylint: disable=too-many-arguments
         self.episode_id = episode_id
         self.series_title = series_title
-        self.season_number = kwargs["season_number"] if "season_number" in kwargs else 0
-        self.episode_number = kwargs["episode_number"] if "episode_number" in kwargs else 0
-        self.title = kwargs["title"] if "title" in kwargs else ""
-        self.airdate = kwargs["airdate"] if "airdate" in kwargs else None
+        self.season_number = season_number
+        self.episode_number = episode_number
+        self.title = title
+        self.airdate = airdate
 
     def to_json(self):
         """Serializes this episode metadata to a JSON format"""
@@ -254,13 +251,12 @@ class EpisodeInfo:
     def from_dictionary(cls, series_title, episode_dict):
         """Creates an EpisodeInfo object from a dictionary, usually created from a JSON object."""
 
-        episode_id = episode_dict["id"] if "id" in episode_dict else None
+        episode_id = episode_dict.get("id")
         episode_title = episode_dict["name"]
         season_number = episode_dict["seasonNumber"]
         episode_number = episode_dict["number"]
-        airdate = (datetime.strptime(episode_dict["aired"], "%Y-%m-%d")
-                  if "aired" in episode_dict and episode_dict["aired"] is not None
-                  else None)
+        aired = episode_dict.get("aired")
+        airdate = datetime.strptime(aired, "%Y-%m-%d") if aired is not None else None
 
         return cls(episode_id,
                    series_title,
@@ -312,7 +308,6 @@ class TVMetadataProvider:
     """The provider to retrieve metadata from thetvdb.com"""
 
     def __init__(self, metadata_settings):
-        super().__init__()
         self.api_key = metadata_settings.api_key
         self.pin = metadata_settings.pin
         self.base_url = "https://api4.thetvdb.com/v4/"
@@ -381,7 +376,7 @@ class TVMetadataProvider:
         data = result["data"]
         series_info = SeriesInfo.from_dictionary(data["series"])
         episodes = []
-        while len(data["episodes"]) > 0:
+        while data["episodes"]:
             episodes.extend(data["episodes"])
             page_index += 1
             params["page"] = page_index
@@ -393,7 +388,7 @@ class TVMetadataProvider:
         episodes.sort(key=lambda x: (x["seasonNumber"], x["number"]))
 
         progress_bar = None
-        if not is_unattended_mode and len(episodes) > 0:
+        if not is_unattended_mode and episodes:
             progress_bar = ProgressBar(len(episodes), length=80, prefix="Process episodes:")
         for episode_object in episodes:
             if not is_unattended_mode:
@@ -431,67 +426,31 @@ class TVMetadataProvider:
 
         data = result["data"]
 
-        airdate = (datetime.strptime(data["aired"], "%Y-%m-%d")
-                  if "aired" in data and data["aired"] is not None
-                  else None)
-        return airdate
+        aired = data.get("aired")
+        return datetime.strptime(aired, "%Y-%m-%d") if aired is not None else None
 
 
-class ProgressBar:
+class ProgressBar:  # pylint: disable=too-many-instance-attributes
 
-    """Prints a progress bar in the console"""
+    """Prints a progress bar in the console, with its formatting as attributes"""
 
-    def __init__(self, total_value, **kwargs):
+    def __init__(self, total_value, *, increment_value=1, prefix="", suffix="", decimals=1,
+                 length=100, fill="█", print_end="\r"):
+        # pylint: disable=too-many-arguments
         self.current_value = 0
         self.total_value = total_value
-        self.format_settings = {}
-        self.increment_value = kwargs["increment_value"] if "increment_value" in kwargs else 1
-        self.format_settings["prefix"] = kwargs["prefix"] if "prefix" in kwargs else ""
-        self.format_settings["suffix"] = kwargs["suffix"] if "suffix" in kwargs else ""
-        self.format_settings["decimals"] = kwargs["decimals"] if "decimals" in kwargs else 1
-        self.format_settings["length"] = kwargs["length"] if "length" in kwargs else 100
-        self.format_settings["fill_character"] = kwargs["fill"] if "fill" in kwargs else "█"
-        self.format_settings["print_end"] = kwargs["print_end"] if "print_end" in kwargs else "\r"
+        self.increment_value = increment_value
+        # Printed before and after the bar.
+        self.prefix = prefix
+        self.suffix = suffix
+        # The number of decimal places in the percentage complete.
+        self.decimals = decimals
+        # The length of the whole line, and the character filling the completed part.
+        self.length = length
+        self.fill_character = fill
+        # Printed at the end of each update of the line.
+        self.print_end = print_end
         self._update_display()
-
-    @property
-    def prefix(self):
-        """Gets the prefix printed at the beginning the progress bar"""
-
-        return self.format_settings["prefix"]
-
-    @property
-    def suffix(self):
-        """Gets the suffix printed at the end of the progress bar"""
-
-        return self.format_settings["suffix"]
-
-    @property
-    def decimals(self):
-        """
-        Gets the number of decimal points to use in printing the percentage complete
-        in the progress bar
-        """
-
-        return self.format_settings["decimals"]
-
-    @property
-    def length(self):
-        """Gets the total line length of the progress bar"""
-
-        return self.format_settings["length"]
-
-    @property
-    def fill_character(self):
-        """Gets the character to use to fill the progress of the progress bar"""
-
-        return self.format_settings["fill_character"]
-
-    @property
-    def print_end(self):
-        """Gets the character to be used to print at the end of a progress bar line update"""
-
-        return self.format_settings["print_end"]
 
     def increment(self):
         """Increments the progress bar and displays the result"""

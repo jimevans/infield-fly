@@ -167,7 +167,7 @@ class SeriesForm:  # pylint: disable=too-many-instance-attributes
         except ValueError:
             return []
         metadata = MetadataSettings({"tracked_series": {self.keyword: settings}})
-        if len(metadata.tracked_series) == 0:
+        if not metadata.tracked_series:
             return []
         return metadata.tracked_series[0].get_episode_searches(season_number, episode_number)
 

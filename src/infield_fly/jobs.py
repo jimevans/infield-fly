@@ -33,12 +33,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
     def get_job_by_id(self, job_id):
         """Gets a job by its ID, if it exists; otherwise, returns None"""
 
-        jobs = self.load_jobs()
-        for job in jobs:
-            if job.job_id == job_id:
-                return job
-
-        return None
+        return next((job for job in self.load_jobs() if job.job_id == job_id), None)
 
     def create_job(self, keyword, query, is_download_only=False):
         """Creates a new job using the specified keyword and query string"""
@@ -98,7 +93,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         self.share_rejections(all_jobs)
         job_list = [x for x in all_jobs
                     if x.status in (JobStatus.WAITING, JobStatus.SEARCHING)]
-        if len(job_list) == 0:
+        if not job_list:
             logger.info("No waiting jobs to search for during job processing")
             return
 
@@ -137,7 +132,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
                       if x.job_id == job.job_id
                       or (job.episode_key is not None and x.episode_key == job.episode_key)]
         for reset_job in reset_jobs:
-            if len(reset_job.rejected) > 0:
+            if reset_job.rejected:
                 reset_job.rejected = []
                 reset_job.save()
         return reset_jobs
@@ -174,7 +169,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         """Executes all pending conversion jobs, converting files to the proper format"""
 
         pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
-        if len(pending_job_list) == 0:
+        if not pending_job_list:
             logger.info("No files to convert during job processing")
             return
 
@@ -334,7 +329,6 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
     """Object representing a job to be processed"""
 
     def __init__(self, directory, job_dict):
-        super().__init__()
         self.directory = directory
         self.dictionary = job_dict
         if "id" not in self.dictionary:

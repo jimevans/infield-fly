@@ -19,7 +19,7 @@ class JobStatus(Enum):
     def _missing_(cls, value):
         """Returns the UNKNOWN value for values not matching valid values"""
 
-        return cls(cls.UNKNOWN)
+        return cls.UNKNOWN
 
 
 def parse_job_status(value):

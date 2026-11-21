@@ -79,7 +79,6 @@ class NewznabSearcher:
     """Searches a Newznab indexer, such as NZBPlanet, for NZB files"""
 
     def __init__(self, search_settings):
-        super().__init__()
         self.settings = search_settings
 
     def search(self, query, excluded_guids=(), release_groups=()):
@@ -94,23 +93,23 @@ class NewznabSearcher:
         results = self.get_results({"t": "search", "q": query})
         if results is None:
             return []
-        if len(results) == 0:
+        if not results:
             logger.info("No search results found for '%s'", query)
             return []
 
         results.sort(key=lambda x: x.rank_key, reverse=True)
-        if len(release_groups) > 0:
+        if release_groups:
             ranked_results = [(x.get_release_group_rank(release_groups), x) for x in results]
             # The sort is stable, so results from the same group stay newest first.
             results = [x for _, x in sorted([(rank, x) for rank, x in ranked_results
                                              if rank is not None], key=lambda x: x[0])]
-            if len(results) == 0:
+            if not results:
                 logger.info("No search results for '%s' are from release groups %s",
                                  query, ", ".join(release_groups))
                 return []
 
         candidates = [x for x in results if x.guid not in excluded_guids]
-        if len(candidates) == 0:
+        if not candidates:
             logger.info("All %d search results for '%s' were rejected previously",
                              len(results), query)
         return candidates
@@ -160,7 +159,7 @@ class NewznabSearcher:
             logger.warning("Downloading NZB for '%s' failed: %s", result.title, ex)
             return None
 
-        if response.status_code != 200 or len(response.content) == 0:
+        if response.status_code != 200 or not response.content:
             logger.warning("Downloading NZB for '%s' failed (%s)",
                                 result.title, response.status_code)
             return None

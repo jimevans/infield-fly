@@ -135,7 +135,7 @@ class NzbDownloader(Downloader):
     def add_downloads(self, jobs):
         """Adds the NZB files of jobs to the SABnzbd client"""
 
-        if len(jobs) == 0:
+        if not jobs:
             logger.info("No NZB files to add during job processing")
             return
 
@@ -165,7 +165,7 @@ class NzbDownloader(Downloader):
         pending, and rejects those whose downloads failed so they are searched for again
         """
 
-        if len(jobs) == 0:
+        if not jobs:
             logger.info("No downloading NZB files to query for status during job "
                              "processing")
             return
