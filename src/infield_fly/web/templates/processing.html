@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set active = "processing" %}
+{% block title %}Processing{% endblock %}
+{% block content %}
+{% set busy = status.state != "idle" %}
+<h1>Job processing</h1>
+<p class="status-line" role="status">
+  {% if status.state == "running" %}
+  <span class="status status-converting">running</span>
+  {{ "Started here" if status.from_web else "Started by a scheduled run or the command line" }}, process {{ status.pid }}, at {{ status.started }}.
+  {% elif status.state == "starting" %}
+  <span class="status status-converting">starting</span> Starting a run.
+  {% else %}
+  <span class="status">idle</span> No run is in progress.
+  {% endif %}
+</p>
+
+<form class="editor" method="post" action="{{ app_path(request, 'processing') }}">
+  <fieldset{% if busy %} disabled{% endif %}>
+    <legend>Process now</legend>
+    {% for name, label in phases %}
+    <label class="checkbox"><input type="checkbox" name="{{ name }}" checked> {{ label }}</label>
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit">Process now</button>
+      {% if busy %}<span class="muted">A run is in progress.</span>{% endif %}
+    </div>
+  </fieldset>
+</form>
+
+<div class="page-heading">
+  <h2>Log</h2>
+  <span id="connection" class="muted"></span>
+</div>
+<pre id="log" class="log" tabindex="0" data-socket="{{ app_path(request, 'processing_log') }}" data-busy="{{ 'true' if busy else 'false' }}">
+{%- for line in lines %}{{ line }}
+{% endfor -%}
+</pre>
+<p class="hint">The end of <code>{{ log_file }}</code>, which scheduled runs and runs started here both write to.{% if not lines %} It has no entries yet.{% endif %}</p>
+
+{% if errors and not busy %}
+<h2>Errors from the last run started here</h2>
+<pre class="log">{{ errors }}</pre>
+{% endif %}
+<script src="{{ app_path(request, 'static', path='processing.js') }}"></script>
+{% endblock %}

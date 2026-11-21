@@ -120,6 +120,12 @@ class ConversionSettings:
                                  os.path.join(self.infield_fly_directory, "logs"))
 
     @property
+    def log_file(self):
+        """Gets the path of the log file written by unattended runs"""
+
+        return os.path.join(self.log_directory, "infieldfly.log")
+
+    @property
     def log_level(self):
         """Gets the log level for logging"""
 

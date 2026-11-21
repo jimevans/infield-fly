@@ -358,6 +358,13 @@ default applies. Paths must be absolute, since scheduled runs and the web interf
 run from different directories. The connections to SABnzbd, the Newznab indexer, and
 TheTVDB can be tested with the values on the page before saving them.
 
+Job processing can be started on the Processing page, with a choice of the phases to
+run, as with `jobs process`. A run started there runs in unattended mode, writing to
+the same log file as scheduled runs, and keeps running if the web interface is
+restarted. The page follows the log as it is written, whichever kind of run is in
+progress, using a WebSocket connection, which the reverse proxy must pass through (the
+Apache configuration in `deploy` does).
+
 The web interface listens on `127.0.0.1:8642` by default, and is meant to be served
 over HTTPS by a reverse proxy, with `--root-path` naming the URL path under which the
 proxy serves it. It reads the settings file on each request, so changes to it apply

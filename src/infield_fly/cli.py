@@ -639,7 +639,7 @@ def setup_logging(config, is_unattended):
         if not os.path.isdir(config.conversion.log_directory):
             os.makedirs(config.conversion.log_directory)
         handler = RotatingFileHandler(
-            os.path.join(config.conversion.log_directory, "infieldfly.log"),
+            config.conversion.log_file,
             backupCount=9,
             maxBytes=1048576)
         handler.setLevel(config.conversion.log_level)

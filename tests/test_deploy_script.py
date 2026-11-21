@@ -99,7 +99,7 @@ class TestFirstDeployment:
                 "--root-path /infield-fly\n") in service
         # Comments describing the values to fill in are left as they are.
         assert "#   YOUR_USER             the account running Infield Fly" in service
-        assert "ProxyPass http://127.0.0.1:8642/\n" in host.read(APACHE)
+        assert "ProxyPass http://127.0.0.1:8642/ upgrade=websocket\n" in host.read(APACHE)
         assert host.read(PAM) == (CHECKOUT / "deploy/pam.d/infield-fly").read_text(
             encoding="utf-8")
         assert "failregex" in host.read(FILTER)

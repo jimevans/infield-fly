@@ -12,14 +12,14 @@ from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import PlainTextResponse, RedirectResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 
 from infield_fly.concurrency import read_lock_holder
 from infield_fly.database import EpisodeDatabase
 from infield_fly.job_status import JobStatus
 from infield_fly.jobs import JobQueue
-from infield_fly.web import series_editor, settings_editor
+from infield_fly.web import processing, series_editor, settings_editor
 from infield_fly.web.templating import WEB_DIRECTORY, app_path, templates
 
 SESSION_COOKIE = "infield_fly_session"
@@ -271,6 +271,9 @@ def create_app(load_config, authenticator, secret_key, *, settings_file, https_o
             Route("/logout", logout, methods=["POST"], name="logout"),
             Route("/jobs", list_jobs, name="jobs"),
             Route("/jobs/{job_id}", show_job, name="job"),
+            Route("/processing", processing.show_processing, methods=["GET", "POST"],
+                  name="processing"),
+            WebSocketRoute("/processing/log", processing.follow_log, name="processing_log"),
             Route("/series", list_series, name="series"),
             Route("/series/add", series_editor.add_series, name="series_add"),
             Route("/series/edit", series_editor.edit_series, methods=["GET", "POST"],
