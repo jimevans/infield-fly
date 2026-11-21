@@ -231,6 +231,29 @@ class TestSettings:
         assert "-c /srv/settings.json web --port 9100" in host.read(SERVICE)
         assert "Warning: the settings file /srv/settings.json does not exist" in result.stderr
 
+    def test_browse_roots(self, host, tmp_path):
+        (tmp_path / "completed").mkdir()
+        host.env_file.write_text(f'BROWSE_ROOTS="{tmp_path / "completed"} /missing"\n',
+                                 encoding="utf-8")
+
+        result = host.run("--yes")
+
+        assert result.returncode == 0, result.stderr
+        assert (f"--root-path /infield-fly --browse-root {tmp_path / 'completed'} "
+                "--browse-root /missing\n") in host.read(SERVICE)
+        assert "Warning: the browse root /missing does not exist" in result.stderr
+
+    def test_browse_roots_option(self, host):
+        host.run("--yes", "--browse-roots", "/a")
+
+        assert "--root-path /infield-fly --browse-root /a\n" in host.read(SERVICE)
+
+    def test_relative_browse_root(self, host):
+        result = host.run("--browse-roots", "downloads")
+
+        assert result.returncode == 1
+        assert "the path 'downloads' must be absolute" in result.stderr
+
     def test_apache_file_can_be_turned_off(self, host):
         host.env_file.write_text('APACHE_CONF=""\n', encoding="utf-8")
 
@@ -356,7 +379,7 @@ def test_example_env_file_documents_every_setting():
     script = SCRIPT.read_text(encoding="utf-8")
 
     for setting in ["INFIELD_FLY_COMMAND", "PIP_COMMAND", "SETTINGS_FILE", "WEB_PORT",
-                    "APACHE_CONF"]:
+                    "BROWSE_ROOTS", "APACHE_CONF"]:
         assert f"#{setting}=" in example
         assert setting in script
     assert os.access(SCRIPT, os.X_OK)

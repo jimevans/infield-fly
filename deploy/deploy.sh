@@ -25,6 +25,8 @@ Options:
       --pip COMMAND     command used to install Infield Fly (PIP_COMMAND)
       --settings PATH   path of the settings file (SETTINGS_FILE)
       --port PORT       local port of the web interface (WEB_PORT)
+      --browse-roots "PATH ..."
+                        folders from which downloads can be chosen (BROWSE_ROOTS)
       --apache-conf PATH
                         Apache configuration file to install (APACHE_CONF)
   -h, --help            show this help
@@ -54,6 +56,7 @@ option_command=""
 option_pip=""
 option_settings=""
 option_port=""
+option_browse_roots=""
 option_apache_conf=""
 
 option_value() {
@@ -71,6 +74,7 @@ while [ $# -gt 0 ]; do
         --pip) option_pip=$(option_value "$@"); shift ;;
         --settings) option_settings=$(option_value "$@"); shift ;;
         --port) option_port=$(option_value "$@"); shift ;;
+        --browse-roots) option_browse_roots=$(option_value "$@"); shift ;;
         --apache-conf) option_apache_conf=$(option_value "$@"); shift ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; fail "unknown option $1" ;;
@@ -91,6 +95,7 @@ if [ -n "$option_command" ]; then INFIELD_FLY_COMMAND=$option_command; fi
 if [ -n "$option_pip" ]; then PIP_COMMAND=$option_pip; fi
 if [ -n "$option_settings" ]; then SETTINGS_FILE=$option_settings; fi
 if [ -n "$option_port" ]; then WEB_PORT=$option_port; fi
+if [ -n "$option_browse_roots" ]; then BROWSE_ROOTS=$option_browse_roots; fi
 if [ -n "$option_apache_conf" ]; then APACHE_CONF=$option_apache_conf; fi
 
 user=$(whoami)
@@ -120,6 +125,13 @@ case "$WEB_PORT" in
 esac
 check_path "$checkout"
 check_path "$SETTINGS_FILE"
+BROWSE_ROOT_OPTIONS=""
+for root in ${BROWSE_ROOTS:-}; do
+    check_path "$root"
+    [ -d "$root" ] || echo "Warning: the browse root $root does not exist" >&2
+    BROWSE_ROOT_OPTIONS="$BROWSE_ROOT_OPTIONS --browse-root $root"
+done
+BROWSE_ROOT_OPTIONS=${BROWSE_ROOT_OPTIONS# }
 if [ -n "$APACHE_CONF" ] && [ ! -d "$TARGET_ROOT$(dirname "$APACHE_CONF")" ]; then
     fail "the directory of the Apache file $APACHE_CONF does not exist"
 fi
@@ -161,6 +173,7 @@ echo "Deploying for user $user:"
 echo "  infield-fly command: $INFIELD_FLY_COMMAND"
 echo "  settings file:       $SETTINGS_FILE"
 echo "  web interface port:  $WEB_PORT"
+echo "  browse roots:        ${BROWSE_ROOTS:-(none)}"
 echo "  Apache file:         ${APACHE_CONF:-(not installed)}"
 echo
 
@@ -180,6 +193,9 @@ render() {
                 line=${line//INFIELD_FLY_COMMAND/$INFIELD_FLY_COMMAND}
                 line=${line//SETTINGS_FILE/$SETTINGS_FILE}
                 line=${line//WEB_PORT/$WEB_PORT}
+                line=${line//BROWSE_ROOT_OPTIONS/$BROWSE_ROOT_OPTIONS}
+                # Leave no trailing space where an empty value was filled in.
+                while [ "${line% }" != "$line" ]; do line=${line% }; done
                 ;;
         esac
         printf '%s\n' "$line"

@@ -8,6 +8,8 @@
 #   INFIELD_FLY_COMMAND   the path of the infield-fly command
 #   SETTINGS_FILE         the path of the settings file
 #   WEB_PORT              the local port of the web interface, such as 8642
+#   BROWSE_ROOT_OPTIONS   a --browse-root option for each folder from which downloads
+#                         can be chosen for jobs, or nothing
 # then run:
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now infield-fly-web
@@ -19,7 +21,7 @@ After=network.target
 Type=simple
 User=YOUR_USER
 WorkingDirectory=INFIELD_FLY_CHECKOUT
-ExecStart=INFIELD_FLY_COMMAND -c SETTINGS_FILE web --port WEB_PORT --root-path /infield-fly
+ExecStart=INFIELD_FLY_COMMAND -c SETTINGS_FILE web --port WEB_PORT --root-path /infield-fly BROWSE_ROOT_OPTIONS
 Restart=on-failure
 RestartSec=5
 PrivateTmp=true

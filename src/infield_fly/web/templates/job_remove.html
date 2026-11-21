@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% set active = "jobs" %}
+{% block title %}Remove job{% endblock %}
+{% block content %}
+<p><a href="{{ app_path(request, 'job', job_id=job.job_id) }}">← Job</a></p>
+<h1>Remove this job?</h1>
+<p>{{ job.status_description }}</p>
+<p>The job file is deleted, along with any NZB file waiting to be added. A download already in SABnzbd or Deluge is left there.</p>
+<form class="form-actions" method="post" action="{{ app_path(request, 'job_remove', job_id=job.job_id) }}">
+  <button type="submit" class="danger">Remove job</button>
+  <a href="{{ app_path(request, 'job', job_id=job.job_id) }}">Cancel</a>
+</form>
+{% endblock %}
