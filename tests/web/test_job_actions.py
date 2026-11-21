@@ -157,6 +157,34 @@ class TestUpdateJob:
         assert reload(config, job).status == JobStatus.WAITING
         assert message in flashes(logged_in, job)
 
+    def test_pending_download_of_another_episode(self, logged_in, config, downloads):
+        (downloads / "show.s01e03.mkv").touch()
+        job = add_job(config)
+
+        update(logged_in, job, "pending", str(downloads / "show.s01e03.mkv"))
+
+        assert reload(config, job).status == JobStatus.WAITING
+        assert ("&#39;show.s01e03.mkv&#39; is episode s01e03, but this job is for s01e02."
+                in flashes(logged_in, job))
+
+    def test_pending_download_without_episode_file(self, logged_in, config, downloads):
+        (downloads / "notes.txt").touch()
+        job = add_job(config)
+
+        update(logged_in, job, "pending", str(downloads / "notes.txt"))
+
+        assert reload(config, job).status == JobStatus.WAITING
+        assert "has no episode file to convert" in flashes(logged_in, job)
+
+    def test_download_with_another_status(self, logged_in, config):
+        job = add_job(config)
+
+        update(logged_in, job, "completed", "/anything")
+
+        assert reload(config, job).status == JobStatus.WAITING
+        assert "A download can only be given for the adding or pending status." in (
+            flashes(logged_in, job))
+
     def test_pending_download_without_browse_roots(self, logged_in, config):
         job = add_job(config)
 
@@ -265,14 +293,14 @@ class TestUpdateJob:
         job = add_job(config)
         holders = []
 
-        async def record_holder(*_):
+        def record_holder(*_):
             holders.append(read_lock_holder(config.conversion.job_lock_file))
             return []
 
-        with mock.patch.object(job_actions, "apply_status", side_effect=record_holder):
+        with mock.patch.object(job_actions, "set_job_status", side_effect=record_holder):
             update(logged_in, job, "completed")
 
-        assert holders[0]["description"] == "web interface job change"
+        assert holders[0]["description"] == "job change"
         assert read_lock_holder(config.conversion.job_lock_file) is None
 
 
@@ -380,7 +408,8 @@ class TestAddJob:
             flashes(logged_in, jobs[0]))
 
     @pytest.mark.parametrize("data, message", [
-        ({"keyword": "nope", "query": "q"}, "Choose a tracked series."),
+        ({"keyword": "nope", "query": "q"},
+         "&#39;nope&#39; is not the main keyword of a tracked series."),
         ({"keyword": "show", "query": " "}, "Enter the search string."),
         ({"keyword": "show", "query": "show s01e02"},
          "A job for that series and search string already exists."),

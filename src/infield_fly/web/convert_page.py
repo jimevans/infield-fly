@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse
 
-from infield_fly.conversion import ConversionSettings, Converter, FileMapper
+from infield_fly.conversion import (ConversionSettings, Converter, FileMapper,
+                                    validate_video_options)
 from infield_fly.database import EpisodeDatabase
 from infield_fly.web import processing
 from infield_fly.web.job_actions import (find_browse_root, get_series_choices, render_browser,
@@ -98,20 +99,24 @@ class ConvertForm:  # pylint: disable=too-many-instance-attributes
         return errors
 
     def validate_video_options(self):
-        """Validates the options for re-encoding video"""
+        """
+        Validates the options for re-encoding video, checking here only that they are
+        numbers, and their values as the convert command does
+        """
 
+        values = {}
         errors = []
-        try:
-            if self.crf and not 0 <= float(self.crf) <= 51:
-                errors.append("Quality (CRF) must be between 0 and 51.")
-        except ValueError:
-            errors.append("Quality (CRF) must be a number.")
-        try:
-            if self.aspect_ratio and float(self.aspect_ratio) <= 0:
-                errors.append("The aspect ratio must be a positive number, such as 2.40.")
-        except ValueError:
-            errors.append("The aspect ratio must be a number, such as 2.40.")
-        return errors
+        for name, value, error in (
+                ("crf", self.crf, "The constant rate factor (CRF) must be a number."),
+                ("aspect_ratio", self.aspect_ratio,
+                 "The aspect ratio must be a number, such as 2.40.")):
+            try:
+                values[name] = float(value) if value else None
+            except ValueError:
+                errors.append(error)
+        if errors:
+            return errors
+        return validate_video_options(True, values["aspect_ratio"], values["crf"])
 
     def get_settings(self):
         """Gets the conversion settings chosen"""
