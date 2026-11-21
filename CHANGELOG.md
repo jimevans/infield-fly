@@ -15,6 +15,17 @@ README.md for how to make one.
   * A download given with a status other than adding or pending is refused, rather
     than ignored.
   * `jobs add` refuses a series that isn't tracked, and a job that already exists.
+* Where a name contains more than one episode number, such as s01e02, the first is used
+  everywhere; naming a converted file, and updating a job's converted file name, used the
+  last.
+* A new job's file no longer includes its fallback search strings and release groups
+  when they are empty, and values added to a job's file are written in a fixed order.
+  Values missing from a job's file are read as empty, as before.
+
+### Fixed
+* Converting a folder of episodes applied the character substitutions to the `.mp4`
+  extension, as well as the episode's title, and didn't remove spaces from the end of
+  the name, as job processing does.
 
 ## [1.1.0] - 2026-11-21
 
