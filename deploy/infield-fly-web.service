@@ -1,8 +1,14 @@
 # systemd unit running the Infield Fly web interface as the account that runs the
 # scheduled job processing, so both work with the same files.
 #
-# Install as /etc/systemd/system/infield-fly-web.service, replacing YOUR_USER and the
-# paths, then run:
+# deploy/deploy.sh fills in the values in capitals and installs this as
+# /etc/systemd/system/infield-fly-web.service. To install it by hand, replace them:
+#   YOUR_USER             the account running Infield Fly
+#   INFIELD_FLY_CHECKOUT  the directory of the Infield Fly clone
+#   INFIELD_FLY_COMMAND   the path of the infield-fly command
+#   SETTINGS_FILE         the path of the settings file
+#   WEB_PORT              the local port of the web interface, such as 8642
+# then run:
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now infield-fly-web
 [Unit]
@@ -12,8 +18,8 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USER
-WorkingDirectory=/home/YOUR_USER/infield-fly
-ExecStart=/home/YOUR_USER/infield-fly/.venv/bin/infield-fly -c /home/YOUR_USER/.config/infield-fly/settings.json web --root-path /infield-fly
+WorkingDirectory=INFIELD_FLY_CHECKOUT
+ExecStart=INFIELD_FLY_COMMAND -c SETTINGS_FILE web --port WEB_PORT --root-path /infield-fly
 Restart=on-failure
 RestartSec=5
 PrivateTmp=true
