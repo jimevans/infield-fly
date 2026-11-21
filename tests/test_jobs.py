@@ -165,6 +165,17 @@ class TestJobQueueBasics:
         rejected = {x.job_id: x.rejected for x in queue.load_jobs()}
         assert rejected == {first.job_id: [], second.job_id: [], other_episode.job_id: ["d"]}
 
+    def test_reset_rejections_leaves_jobs_without_rejections_unsaved(self, queue):
+        first = add_job(queue, JobStatus.WAITING, keyword="show", query="show s01e02",
+                        rejected=["a"])
+        second = add_job(queue, JobStatus.WAITING, keyword="show", query="show 2160p s01e02")
+
+        with mock.patch.object(Job, "save", autospec=True) as save:
+            reset_jobs = queue.reset_rejections(first)
+
+        assert sorted(x.job_id for x in reset_jobs) == sorted([first.job_id, second.job_id])
+        assert [x.args[0].job_id for x in save.call_args_list] == [first.job_id]
+
     def test_reset_rejections_without_episode(self, queue):
         job = add_job(queue, JobStatus.WAITING, keyword="show", query="show special",
                       rejected=["e"])
