@@ -22,6 +22,9 @@ from infield_fly.job_status import JobStatus, parse_job_status
 
 logger = logging.getLogger(__name__)
 
+# Logged when the episode database isn't updated, since another update is in progress.
+DATABASE_UPDATE_SKIPPED = "Not updating the episode database; an update by %s is still in progress"
+
 
 def get_search_strings(from_date, to_date, episode_db, metadata_settings):
     """Gets the set of search strings for all tracked series during the specified date range"""
@@ -56,14 +59,12 @@ def find_downloads(args, config):
     to_date = datetime.strptime(args.todate, "%Y-%m-%d")
 
     if args.update_metadata:
-        from infield_fly.concurrency import LockHeldError, ProcessLock
+        def update():
+            episode_db.update_all_tracked_series()
+            episode_db.save_to_cache()
 
-        try:
-            with ProcessLock(config.conversion.database_lock_file, "search --update-metadata"):
-                episode_db.update_all_tracked_series()
-                episode_db.save_to_cache()
-        except LockHeldError as ex:
-            warn_database_update_in_progress(ex)
+        run_holding_lock(config.conversion.database_lock_file, "search --update-metadata",
+                         DATABASE_UPDATE_SKIPPED, update)
 
     print(f"Finding episodes aired between {from_date:%Y-%m-%d} and {to_date:%Y-%m-%d}")
     searches_to_perform = get_search_strings(from_date, to_date, episode_db, config.metadata)
@@ -124,27 +125,37 @@ def update_database(args, config):
     is already updating it
     """
 
-    from infield_fly.concurrency import LockHeldError, ProcessLock
     from infield_fly.database import EpisodeDatabase
 
-    try:
-        with ProcessLock(config.conversion.database_lock_file, "database update"):
-            # Loading the database once the lock is held starts from the latest update.
-            episode_db = EpisodeDatabase.load_from_cache(config)
-            episode_db.update_all_tracked_series(force_updates=args.force_updates,
-                                                 is_unattended_mode=args.unattended)
-            episode_db.save_to_cache()
-    except LockHeldError as ex:
-        warn_database_update_in_progress(ex)
+    def update():
+        # Loading the database once the lock is held starts from the latest update.
+        episode_db = EpisodeDatabase.load_from_cache(config)
+        episode_db.update_all_tracked_series(force_updates=args.force_updates,
+                                             is_unattended_mode=args.unattended)
+        episode_db.save_to_cache()
 
-def warn_database_update_in_progress(error):
-    """Logs that the episode database wasn't updated because another update holds its lock"""
+    run_holding_lock(config.conversion.database_lock_file, "database update",
+                     DATABASE_UPDATE_SKIPPED, update)
 
-    from infield_fly.concurrency import describe_lock_holder
+def run_holding_lock(lock_file, description, skipped_message, work):
+    """
+    Runs work, a function, holding a process lock, so that another process wanting the lock
+    can't run at the same time. If another process holds the lock, the work is skipped, and
+    skipped_message is logged, with %s replaced by a description of the lock's holder.
+    """
 
-    logger.warning(
-        "Not updating the episode database; an update by %s is still in progress",
-        describe_lock_holder(error.holder))
+    from contextlib import ExitStack
+
+    from infield_fly.concurrency import LockHeldError, ProcessLock, describe_lock_holder
+
+    with ExitStack() as stack:
+        # Only acquiring the lock is caught, not errors raised by the work.
+        try:
+            stack.enter_context(ProcessLock(lock_file, description))
+        except LockHeldError as ex:
+            logger.warning(skipped_message, describe_lock_holder(ex.holder))
+            return
+        work()
 
 def convert(args, config):
     """Converts a file using the specified conversion arguments"""
@@ -404,15 +415,9 @@ def process_jobs(args, config):
     is already processing them
     """
 
-    from infield_fly.concurrency import LockHeldError, ProcessLock, describe_lock_holder
-
-    try:
-        with ProcessLock(config.conversion.job_lock_file, "jobs process"):
-            run_processing_phases(args, config)
-    except LockHeldError as ex:
-        logger.warning(
-            "Not processing jobs; job processing by %s is still in progress",
-            describe_lock_holder(ex.holder))
+    run_holding_lock(config.conversion.job_lock_file, "jobs process",
+                     "Not processing jobs; job processing by %s is still in progress",
+                     lambda: run_processing_phases(args, config))
 
 def run_processing_phases(args, config):
     """Runs the job processing phases selected by the command line arguments"""
