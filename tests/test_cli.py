@@ -20,7 +20,7 @@ import pytest
 
 from conftest import TRACKED_SERIES, make_episode_db
 from infield_fly import cli
-from infield_fly.concurrency import LockHeldError, ProcessLock
+from infield_fly.concurrency import LockHeldError, ProcessLock, read_lock_holder
 from infield_fly.configuration import (DEFAULT_CONFIG_DIRECTORY, ConversionSettings,
                                        EpisodeSearch)
 from infield_fly.database import EpisodeInfo
@@ -740,6 +740,39 @@ class TestProcessJobs:
         cli.process_jobs(args, config)
 
         assert job_queue.method_calls == []
+
+
+class TestRunHoldingLock:
+
+    def test_runs_work_holding_lock(self, tmp_path):
+        lock_file = str(tmp_path / ".lock")
+        holders = []
+
+        cli.run_holding_lock(lock_file, "work", "Skipped by %s",
+                             lambda: holders.append(read_lock_holder(lock_file)))
+
+        assert holders[0]["description"] == "work"
+        assert read_lock_holder(lock_file) is None
+
+    def test_skips_work_while_lock_is_held(self, tmp_path, caplog):
+        lock_file = str(tmp_path / ".lock")
+        work = mock.Mock()
+
+        with ProcessLock(lock_file, "other"):
+            cli.run_holding_lock(lock_file, "work", "Skipped; held by %s", work)
+
+        work.assert_not_called()
+        assert "Skipped; held by 'other' (process " in caplog.text
+
+    def test_lock_errors_of_the_work_are_not_skips(self, tmp_path, caplog):
+        error = LockHeldError({"description": "another lock"})
+
+        with pytest.raises(LockHeldError) as raised:
+            cli.run_holding_lock(str(tmp_path / ".lock"), "work", "Skipped by %s",
+                                 mock.Mock(side_effect=error))
+
+        assert raised.value is error
+        assert "Skipped" not in caplog.text
 
 
 class TestProcessJobsLock:
