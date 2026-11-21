@@ -30,8 +30,9 @@ def downloads(app, tmp_path):
 
 
 def add_job(config, status=JobStatus.WAITING, **values):
-    job = Job(config.conversion.job_directory,
-              {"status": status.value, "keyword": "show", "query": "show s01e02", **values})
+    job = Job.from_dict(config.conversion.job_directory,
+                        {"status": status.value, "keyword": "show", "query": "show s01e02",
+                         **values})
     job.save()
     return job
 

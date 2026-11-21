@@ -45,7 +45,7 @@ def queue(config):
 def add_job(queue, status, **values):
     """Saves a job with the specified status and values to the queue directory"""
 
-    job = Job(queue.job_queue_file_path, {"status": status.value, **values})
+    job = Job.from_dict(queue.job_queue_file_path, {"status": status.value, **values})
     job.save()
     return job
 
@@ -553,7 +553,7 @@ class TestJobStatus:
 class TestJob:
 
     def test_defaults(self, tmp_path):
-        job = Job(str(tmp_path), {})
+        job = Job(str(tmp_path))
 
         assert job.job_id
         assert job.file_path == os.path.join(str(tmp_path), job.job_id)
@@ -570,8 +570,8 @@ class TestJob:
         assert job.search_queries == [None]
 
     def test_properties_round_trip(self, tmp_path):
-        job = Job(str(tmp_path), {"id": "abc", "status": "pending", "added": "2020-01-01",
-                                  "download_only": True})
+        job = Job.from_dict(str(tmp_path), {"id": "abc", "status": "pending",
+                                            "added": "2020-01-01", "download_only": True})
         values = {"keyword": "k", "query": "q", "magnet_link": "m", "title": "t", "name": "n",
                   "torrent_hash": "h", "download_directory": "d", "converted_file_name": "c",
                   "downloader": "sabnzbd", "nzb_guid": "g", "nzb_file": "f", "nzo_id": "z",
@@ -588,14 +588,14 @@ class TestJob:
 
     def test_save_load_and_delete(self, tmp_path):
         directory = str(tmp_path / "new")
-        job = Job(directory, {"query": "q"})
+        job = Job.from_dict(directory, {"query": "q"})
 
         job.save()
 
         with open(job.file_path, encoding="utf-8") as job_file:
             assert json.load(job_file)["status"] == "waiting"
         loaded = Job.load(directory, job.job_id)
-        assert loaded.dictionary == job.dictionary
+        assert loaded.to_dict() == job.to_dict()
 
         job.delete()
         job.delete()
@@ -607,10 +607,12 @@ class TestJob:
         ("show special", None),
     ])
     def test_episode_key(self, tmp_path, query, expected):
-        assert Job(str(tmp_path), {"keyword": "show", "query": query}).episode_key == expected
+        job = Job.from_dict(str(tmp_path), {"keyword": "show", "query": query})
+
+        assert job.episode_key == expected
 
     def test_set_download_status(self, tmp_path):
-        job = Job(str(tmp_path), {})
+        job = Job(str(tmp_path))
 
         job.set_download_status(JobStatus.DOWNLOADING, "name", "/downloads")
         job.set_download_status(JobStatus.PENDING, "renamed")
@@ -621,7 +623,7 @@ class TestJob:
     def test_delete_removes_nzb_file(self, tmp_path):
         nzb_file = tmp_path / "job.nzb"
         nzb_file.write_bytes(b"<nzb/>")
-        job = Job(str(tmp_path / "jobs"), {"nzb_file": str(nzb_file)})
+        job = Job.from_dict(str(tmp_path / "jobs"), {"nzb_file": str(nzb_file)})
         job.save()
 
         job.delete()
@@ -633,13 +635,60 @@ class TestJob:
         not_a_directory = tmp_path / "file"
         not_a_directory.touch()
 
-        Job(str(not_a_directory), {}).save()
+        Job(str(not_a_directory)).save()
 
         assert "is not a directory" in caplog.text
         assert not_a_directory.read_text(encoding="utf-8") == ""
 
+    def test_file_values_are_kept_in_order(self, tmp_path):
+        values = {"id": "abc", "custom": {"kept": True}, "status": "pending", "added": "2020-01-01",
+                  "download_only": False, "query": "q"}
+        job = Job.from_dict(str(tmp_path), values)
+
+        job.query = "changed"
+        job.keyword = "show"
+
+        assert list(job.to_dict().items()) == [
+            ("id", "abc"), ("custom", {"kept": True}), ("status", "pending"),
+            ("added", "2020-01-01"), ("download_only", False), ("query", "changed"),
+            ("keyword", "show")]
+
+    def test_new_job_writes_only_identity_and_values_set(self, tmp_path):
+        job = Job(str(tmp_path), keyword="show")
+
+        assert set(job.to_dict()) == {"id", "status", "added", "download_only", "keyword"}
+        assert job.to_dict()["status"] == "waiting"
+
+    def test_value_read_from_file_is_written_even_if_default(self, tmp_path):
+        job = Job.from_dict(str(tmp_path), {"nzo_id": "SAB_1", "fallback_queries": []})
+
+        job.nzo_id = None
+
+        assert job.to_dict()["nzo_id"] is None
+        assert job.to_dict()["fallback_queries"] == []
+
+    def test_fields_saved_under_other_keys(self, tmp_path):
+        job = Job.from_dict(str(tmp_path), {"id": "abc", "download_only": True})
+
+        assert (job.job_id, job.is_download_only) == ("abc", True)
+        assert job.to_dict()["download_only"] is True
+
+    def test_list_defaults_are_not_shared(self, tmp_path):
+        first, second = Job(str(tmp_path)), Job(str(tmp_path))
+
+        first.rejected.append("guid")
+
+        assert second.rejected == []
+
+    def test_jobs_are_equal_only_to_themselves(self, tmp_path):
+        values = {"id": "abc", "status": "waiting", "added": "2020-01-01"}
+        first = Job.from_dict(str(tmp_path), values)
+
+        assert first != Job.from_dict(str(tmp_path), values)
+        assert len({first, first}) == 1
+
     def test_copy_has_new_id(self, tmp_path):
-        job = Job(str(tmp_path), {"query": "q", "status": "pending"})
+        job = Job.from_dict(str(tmp_path), {"query": "q", "status": "pending"})
 
         job_copy = job.copy()
 
@@ -659,8 +708,8 @@ class TestJob:
         ("unknown", {}, "Unknown status - 'q'"),
     ])
     def test_status_description(self, tmp_path, status, values, expected):
-        job = Job(str(tmp_path), {"status": status, "query": "q", "title": "t", "name": "n",
-                                  "converted_file_name": "c", **values})
+        job = Job.from_dict(str(tmp_path), {"status": status, "query": "q", "title": "t",
+                                            "name": "n", "converted_file_name": "c", **values})
 
         assert job.status_description == expected
 
@@ -673,7 +722,8 @@ class TestUpdateConvertedFileName:
         ("show", "show s09e09"),
     ])
     def test_leaves_name_unchanged(self, config, episode_db, keyword, query):
-        job = Job("unused", {"keyword": keyword, "query": query, "converted_file_name": "old"})
+        job = Job.from_dict("unused", {"keyword": keyword, "query": query,
+                                       "converted_file_name": "old"})
 
         job.update_converted_file_name(config)
 
@@ -681,7 +731,7 @@ class TestUpdateConvertedFileName:
 
     @pytest.mark.parametrize("current", [None, PLEX_NAME])
     def test_sets_name_from_episode(self, config, episode_db, current):
-        job = Job("unused", {"keyword": "show", "query": "show S01E02",
+        job = Job.from_dict("unused", {"keyword": "show", "query": "show S01E02",
                              "converted_file_name": current})
 
         job.update_converted_file_name(config)
