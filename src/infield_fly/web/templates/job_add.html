@@ -9,13 +9,13 @@
   <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
-{% if keywords %}
+{% if series %}
 <form class="editor" method="post" action="{{ app_path(request, 'job_add') }}">
   <fieldset>
     <label for="keyword">Series</label>
     <select id="keyword" name="keyword">
-      {% for item in keywords %}
-      <option value="{{ item }}"{% if item == keyword %} selected{% endif %}>{{ item }}</option>
+      {% for item, name in series %}
+      <option value="{{ item }}"{% if item == keyword %} selected{% endif %}>{{ name }}</option>
       {% endfor %}
     </select>
     <label for="query">Search string</label>

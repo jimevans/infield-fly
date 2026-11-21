@@ -199,14 +199,32 @@ async def remove_job(request):
     return RedirectResponse(app_path(request, "jobs"), 303)
 
 
+def get_series_choices(config):
+    """
+    Gets the tracked series to choose from for a job, as (main keyword, name) pairs, in
+    alphabetical order of their names. A series is named by its description, followed by
+    its main keyword when another series has the same description.
+    """
+
+    names = [(x.main_keyword, x.description or x.main_keyword)
+             for x in config.metadata.tracked_series]
+    counts = {}
+    for _, name in names:
+        counts[name.lower()] = counts.get(name.lower(), 0) + 1
+    choices = [(keyword, f"{name} ({keyword})" if counts[name.lower()] > 1 else name)
+               for keyword, name in names]
+    return sorted(choices, key=lambda x: (x[1].lower(), x[0]))
+
+
 async def add_job(request):
     """Adds a job searching for an episode of a tracked series"""
 
     config = request.app.state.load_config()
-    keywords = [x.main_keyword for x in config.metadata.tracked_series]
+    series = get_series_choices(config)
+    keywords = [keyword for keyword, _ in series]
     if request.method == "GET":
         return templates.TemplateResponse(request, "job_add.html", {
-            "keywords": keywords, "keyword": "", "query": "", "errors": []})
+            "series": series, "keyword": "", "query": "", "errors": []})
 
     form_data = await request.form()
     keyword = form_data.get("keyword", "")
@@ -230,7 +248,7 @@ async def add_job(request):
             return RedirectResponse(app_path(request, "job", job_id=job.job_id), 303)
 
     return templates.TemplateResponse(request, "job_add.html", {
-        "keywords": keywords, "keyword": keyword, "query": query, "errors": errors},
+        "series": series, "keyword": keyword, "query": query, "errors": errors},
         status_code=400)
 
 
