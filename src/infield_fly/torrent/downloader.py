@@ -40,7 +40,7 @@ class TorrentDownloader(Downloader):
     def add_downloads(self, jobs):
         """Adds the magnet links of jobs to the Deluge client"""
 
-        if len(jobs) == 0:
+        if not jobs:
             logger.info("No torrents to add during job processing")
             return
 
@@ -77,7 +77,7 @@ class TorrentDownloader(Downloader):
     def query_downloads(self, jobs):
         """Marks jobs whose torrents have finished downloading in the Deluge client as pending"""
 
-        if len(jobs) == 0:
+        if not jobs:
             logger.info("No downloading torrents to query for status during job "
                              "processing")
             return

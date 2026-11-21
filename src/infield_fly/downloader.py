@@ -12,7 +12,6 @@ class Downloader:
     name = None
 
     def __init__(self, configuration):
-        super().__init__()
         self.config = configuration
 
     def search_downloads(self, jobs):

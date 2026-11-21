@@ -42,7 +42,7 @@ def get_search_strings(from_date, to_date, episode_db, metadata_settings):
 
     print("Episodes found:")
     for episode in found_episodes:
-        print(F"{episode.plex_title} (airdate {episode.airdate:%Y-%m-%d})")
+        print(f"{episode.plex_title} (airdate {episode.airdate:%Y-%m-%d})")
 
     return searches_to_perform
 
@@ -174,7 +174,7 @@ def convert(args, config):
         aspect_ratio=args.aspect_ratio,
         crf=(args.crf if args.crf is not None else conversion.ConversionSettings.crf))
 
-    if len(file_map) == 0:
+    if not file_map:
         logger.warning("No files to convert in %s", args.source)
         return
 
@@ -282,7 +282,7 @@ def print_nzb_details(job):
         print(f"NZB file: {job.nzb_file}")
     if job.nzo_id is not None:
         print(f"SABnzbd ID: {job.nzo_id}")
-    if len(job.rejected) > 0:
+    if job.rejected:
         print(f"Rejected NZB indexer IDs: {', '.join(job.rejected)}")
 
 def create_job(args, config):

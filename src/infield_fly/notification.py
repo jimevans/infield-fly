@@ -11,7 +11,6 @@ class Notifier:
     """Notifies a user via SMS using the Twilio API"""
 
     def __init__(self, account_sid, auth_token, sending_number):
-        super().__init__()
         self.account_sid = account_sid
         self.auth_token = auth_token
         self.sending_number = sending_number

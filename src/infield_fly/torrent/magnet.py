@@ -26,7 +26,7 @@ class TorrentResult:
         urn_list = ([x for x in magnet_link_query["xt"] if x.startswith("urn:btih:")]
                     if magnet_link_query is not None and "xt" in magnet_link_query
                     else [])
-        torrent_hash = urn_list[0][9:] if len(urn_list) > 0 else None
+        torrent_hash = urn_list[0][9:] if urn_list else None
         if title is None:
             title = (magnet_link_query["dn"][0]
                      if magnet_link_query is not None and "dn" in magnet_link_query

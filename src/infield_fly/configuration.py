@@ -14,8 +14,6 @@ class Configuration:
     """Configuration object containing settings for use with Infield Fly"""
 
     def __init__(self, infield_fly_directory=None, config_dict=None):
-        super().__init__()
-
         self.settings = {}
         if config_dict is not None:
             self.settings["conversion"] = ConversionSettings(
@@ -68,7 +66,6 @@ class ConversionSettings:
     """Settings object containing settings for conversiion of files"""
 
     def __init__(self, infield_fly_dir=None, raw_settings=None):
-        super().__init__()
         self.settings = raw_settings if raw_settings is not None else {}
         self.infield_fly_dir = (infield_fly_dir
                                 if infield_fly_dir is not None
@@ -187,7 +184,6 @@ class NotificationSettings:
     """Settings object containing settings for using SMS notification with Infield Fly"""
 
     def __init__(self, raw_settings=None):
-        super().__init__()
         self.settings = raw_settings if raw_settings is not None else {}
 
     @property
@@ -220,7 +216,6 @@ class SearchSettings:
     """Settings object containing settings for searching a Newznab indexer for downloads"""
 
     def __init__(self, raw_settings=None):
-        super().__init__()
         self.settings = raw_settings if raw_settings is not None else {}
 
     @property
@@ -256,7 +251,6 @@ class DownloadSettings:
     """
 
     def __init__(self, raw_settings=None):
-        super().__init__()
         self.settings = raw_settings if raw_settings is not None else {}
 
     @property
@@ -328,7 +322,6 @@ class MetadataSettings:
     """Settings object containing settings for retrieving episode meta with Infield Fly"""
 
     def __init__(self, raw_settings=None):
-        super().__init__()
         self.settings = {}
         self.tracked_series = []
         if raw_settings is not None:
@@ -470,9 +463,9 @@ class TrackedSeries:
                     searches.append(search)
             if query not in search.queries:
                 search.queries.append(query)
-                if len(stored_search.release_groups) > 0:
+                if stored_search.release_groups:
                     search.release_groups[query] = stored_search.release_groups[:]
 
-        if len(converted_search.queries) > 0:
+        if converted_search.queries:
             searches.insert(0, converted_search)
         return searches

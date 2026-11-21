@@ -35,7 +35,6 @@ class SabnzbdClient:
     """Client for the API of a SABnzbd instance"""
 
     def __init__(self, download_settings):
-        super().__init__()
         self.settings = download_settings
 
     @property

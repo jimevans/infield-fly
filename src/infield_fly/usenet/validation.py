@@ -26,7 +26,7 @@ class NzbValidationResult:
     def is_valid(self):
         """Gets a value indicating whether the NZB file can be downloaded"""
 
-        return len(self.problems) == 0
+        return not self.problems
 
 
 def validate_nzb(content, expected_size=0):
@@ -45,7 +45,7 @@ def validate_nzb(content, expected_size=0):
         return result
 
     files = [x for x in root if _local_name(x.tag) == "file"]
-    if _local_name(root.tag) != "nzb" or len(files) == 0:
+    if _local_name(root.tag) != "nzb" or not files:
         result.problems.append("NZB file lists no files")
         return result
 
@@ -73,7 +73,7 @@ def validate_nzb(content, expected_size=0):
 
 def _validate_segments(file_element, name, result):
     segments = [x for x in file_element.iter() if _local_name(x.tag) == "segment"]
-    if len(segments) == 0:
+    if not segments:
         result.problems.append(f"'{name}' lists no segments")
         return
 
@@ -95,7 +95,7 @@ def _validate_segments(file_element, name, result):
     # The part counts in subjects, as in '"Show.S01E02.mkv" yEnc (1/3412)', are not used,
     # because obfuscated posts randomize them. Only gaps before the last segment are checked.
     missing = set(range(1, max(numbers) + 1)) - set(numbers)
-    if len(missing) > 0:
+    if missing:
         result.problems.append(
             f"'{name}' is missing {len(missing)} of {max(numbers)} segments")
 
