@@ -1,5 +1,6 @@
 """Tests for the pages of the web interface that change, remove, and add jobs"""
 
+import json
 import logging
 import os
 import time
@@ -7,7 +8,7 @@ from unittest import mock
 from urllib.parse import quote
 
 import pytest
-from web.conftest import ROOT, SAME_ORIGIN
+from web.conftest import ROOT, SAME_ORIGIN, make_settings
 
 from infield_fly.concurrency import ProcessLock, read_lock_holder
 from infield_fly.jobs import Job, JobQueue, JobStatus
@@ -336,12 +337,36 @@ class TestResetAndRemove:
 
 class TestAddJob:
 
-    def test_form(self, logged_in):
+    def test_form_lists_series_by_name(self, logged_in, settings_path, tmp_path):
+        settings_path.write_text(json.dumps(make_settings(tmp_path, {
+            "show": {"id": 1, "description": "The Show"},
+            "another": {"id": 2, "description": "another Show"},
+            "zebra": {"id": 3, "description": "A Zebra"},
+        })), encoding="utf-8")
+
         text = logged_in.get("/jobs/add").text
 
-        assert '<option value="show">show</option>' in text
-        assert '<option value="missing">missing</option>' in text
+        assert (text.index('<option value="zebra">A Zebra</option>')
+                < text.index('<option value="another">another Show</option>')
+                < text.index('<option value="show">The Show</option>'))
         assert f'href="{ROOT}/jobs/add">Add job</a>' in logged_in.get("/jobs").text
+
+    def test_series_with_same_name_show_keywords(self, logged_in, settings_path, tmp_path):
+        settings_path.write_text(json.dumps(make_settings(tmp_path, {
+            "show": {"id": 1, "description": "The Show"},
+            "show us": {"id": 2, "description": "the show"},
+        })), encoding="utf-8")
+
+        text = logged_in.get("/jobs/add").text
+
+        assert '<option value="show">The Show (show)</option>' in text
+        assert '<option value="show us">the show (show us)</option>' in text
+
+    def test_chosen_series_stays_selected(self, logged_in):
+        text = logged_in.post("/jobs/add", headers=SAME_ORIGIN,
+                              data={"keyword": "missing", "query": " "}).text
+
+        assert '<option value="missing" selected>Missing</option>' in text
 
     def test_adds_job(self, logged_in, config):
         response = logged_in.post("/jobs/add", headers=SAME_ORIGIN, follow_redirects=False,

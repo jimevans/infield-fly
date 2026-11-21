@@ -6,6 +6,12 @@ README.md for how to make one.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-21
+
+### Fixed
+* The Add job page lists tracked series by name, in alphabetical order, instead of by
+  main keyword in the order of the settings file.
+
 ## [1.0.0] - 2026-11-21
 The first versioned release, describing everything Infield Fly does as of this version.
 
@@ -69,5 +75,6 @@ The first versioned release, describing everything Infield Fly does as of this v
 * Tests, coverage, and linting run on GitHub Actions with Python 3.9 and 3.10, failing
   the build if any code isn't covered by tests or pylint reports anything.
 
-[Unreleased]: https://github.com/jimevans/infield-fly/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jimevans/infield-fly/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/jimevans/infield-fly/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jimevans/infield-fly/releases/tag/v1.0.0
