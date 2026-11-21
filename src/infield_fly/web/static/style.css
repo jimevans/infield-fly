@@ -360,3 +360,11 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 .entries li:first-child { border-top: 0; }
 .entries li.episode a { font-weight: 600; }
+
+.site-footer {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 16px 2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}

@@ -4,6 +4,8 @@ import os
 
 from starlette.templating import Jinja2Templates
 
+from infield_fly import __version__
+
 WEB_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 templates = Jinja2Templates(directory=os.path.join(WEB_DIRECTORY, "templates"))
@@ -43,5 +45,6 @@ def format_size(size):
 
 
 templates.env.globals["app_path"] = app_path
+templates.env.globals["version"] = __version__
 templates.env.filters["filesize"] = format_size
 templates.env.globals["pop_flashes"] = pop_flashes

@@ -444,7 +444,8 @@ To deploy an update, in the clone on the host:
    load a mix of old and new code: the `.lock` file in the job directory is empty or
    missing when none is, for example `cat ~/.config/infield-fly/.jobs/.lock`
 2. Update the code with `git pull`
-3. Run `deploy/deploy.sh`, which installs any changed dependencies and deployment files
+3. Run `deploy/deploy.sh`, which installs any changed dependencies and deployment files,
+   and records the version, derived from the latest tag, that the web interface shows
 4. Restart the web interface with `sudo systemctl restart infield-fly-web`, and check
    that it is running with `systemctl status infield-fly-web`
 
@@ -476,6 +477,26 @@ Run the tests with coverage, and lint the source and tests, using:
 These also run on GitHub Actions for each push to `main` and each pull request, with
 Python 3.9, the oldest supported version, and 3.10. The build fails if any code is not
 covered by tests, or if pylint reports any message, in the source or the tests.
+
+## Releases
+The version of Infield Fly comes from git tags: a commit tagged `v1.2.0` is version
+1.2.0, and later commits are development versions, such as `1.2.1.dev3+g1234abc`. The
+version is shown by `infield-fly --version` and at the bottom of each web interface page.
+Changes are recorded in [CHANGELOG.md](CHANGELOG.md) as they are made, under
+Unreleased. Versions follow [semantic versioning](https://semver.org): a change that
+needs a settings or job file to be changed is a major version, a new feature is a minor
+version, and a fix is a patch version.
+
+To make a release:
+
+1. In `CHANGELOG.md`, move the entries under Unreleased to a heading for the new version
+   and the date, and update the links at the end of the file; commit this to `main`
+2. Tag the commit, and push the tag:
+   ```
+   git tag -a v1.2.0 -m "Infield Fly 1.2.0"
+   git push origin v1.2.0
+   ```
+3. Deploy it as described in Deploying updates
 
 ## Support
 This library is provided as-is, and will be updated only at the whim of the

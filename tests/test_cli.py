@@ -957,6 +957,16 @@ class TestMain:
         assert f"Settings file '{missing}' does not exist" in capsys.readouterr().err
         list_jobs.assert_not_called()
 
+    def test_version(self, capsys):
+        with mock.patch.object(sys, "argv", ["infield-fly", "--version"]), \
+                mock.patch.object(cli, "__version__", "1.2.3"), \
+                pytest.raises(SystemExit) as exit_info:
+            # The version string is set when the parser is created, inside main.
+            cli.main()
+
+        assert exit_info.value.code == 0
+        assert capsys.readouterr().out == "infield-fly 1.2.3\n"
+
     def test_requires_command(self, capsys):
         with mock.patch.object(sys, "argv", ["infield-fly"]), pytest.raises(SystemExit):
             cli.main()
