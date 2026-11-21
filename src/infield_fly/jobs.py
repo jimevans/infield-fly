@@ -6,8 +6,10 @@ import os
 import re
 import shutil
 import uuid
+from dataclasses import MISSING, dataclass, field, fields, replace
 from datetime import datetime
 from time import perf_counter
+from typing import Optional
 
 from infield_fly.concurrency import atomic_write
 from infield_fly.conversion import ConversionSettings, Converter
@@ -38,7 +40,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
     def create_job(self, keyword, query, is_download_only=False):
         """Creates a new job using the specified keyword and query string"""
 
-        job = Job(self.job_queue_file_path, {})
+        job = Job(self.job_queue_file_path)
         job.keyword = keyword
         job.query = query
         job.is_download_only = is_download_only
@@ -324,93 +326,102 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         return self.config.conversion.job_directory
 
 
-class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attributes
+def new_job_id():
+    """Gets a new, unique job ID"""
 
-    """Object representing a job to be processed"""
+    return str(uuid.uuid1())
 
-    def __init__(self, directory, job_dict):
-        self.directory = directory
-        self.dictionary = job_dict
-        if "id" not in self.dictionary:
-            self.dictionary["id"] = str(uuid.uuid1())
-        if "status" not in self.dictionary:
-            self.dictionary["status"] = JobStatus.WAITING
-        else:
-            self.dictionary["status"] = JobStatus(job_dict["status"])
 
-        if "added" not in self.dictionary:
-            self.dictionary["added"] =  datetime.now().strftime("%Y-%m-%d")
-        if "download_only" not in self.dictionary:
-            self.dictionary["download_only"] = False
+def today():
+    """Gets today's date, as YYYY-MM-DD"""
+
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+# A dataclass with eq=False, since a job is identified by its file, rather than its values:
+# two jobs are equal only if they are the same object, as for other objects.
+@dataclass(eq=False)
+class Job:  # pylint: disable=too-many-instance-attributes
+
+    """
+    A job to be processed. Its fields are saved in the job's file, under their names, or the
+    keys in their metadata. Keys in the file that this code doesn't know are written back as
+    they were read, as is the order of the keys, and fields that were never set aren't
+    written, except those always written for a new job.
+    """
+
+    # The directory of the job's file, which isn't saved in it.
+    directory: str = field(metadata={"saved": False})
+    # The ID of the job, which names its file.
+    job_id: str = field(default_factory=new_job_id, metadata={"key": "id", "always": True})
+    status: JobStatus = field(default=JobStatus.WAITING, metadata={"always": True})
+    # The date on which the job was created, as YYYY-MM-DD.
+    added: str = field(default_factory=today, metadata={"always": True})
+    # Whether the job only downloads its file, as opposed to also converting it.
+    is_download_only: bool = field(default=False,
+                                   metadata={"key": "download_only", "always": True})
+    # The main keyword of the job's tracked series.
+    keyword: Optional[str] = None
+    # The string with which to search for downloads.
+    query: Optional[str] = None
+    # The file name of the download once converted, without its extension.
+    converted_file_name: Optional[str] = None
+    # The strings with which to search, in order, when searching with the query finds no
+    # download.
+    fallback_queries: list = field(default_factory=list)
+    # The release groups, in order of preference, from which results of each search string
+    # are accepted, keyed by search string; results from any group are accepted for a search
+    # string with none.
+    release_groups: dict = field(default_factory=dict)
+    # The display title of the job's download, and its name and directory once downloaded.
+    title: Optional[str] = None
+    name: Optional[str] = None
+    download_directory: Optional[str] = None
+    # The download client used for the job: "deluge" or "sabnzbd".
+    downloader: str = TorrentDownloader.name
+    magnet_link: Optional[str] = None
+    # The calculated SHA1 hash of the job's torrent.
+    torrent_hash: Optional[str] = None
+    # The indexer's ID for the NZB file found for the job, the path of the NZB file waiting to
+    # be added, and the SABnzbd ID of its download.
+    nzb_guid: Optional[str] = None
+    nzb_file: Optional[str] = None
+    nzo_id: Optional[str] = None
+    # The indexer IDs of NZB files rejected for the job.
+    rejected: list = field(default_factory=list)
+    # The values read from the job's file, kept so that keys this code doesn't know, and the
+    # order of the keys, are written back.
+    file_values: dict = field(default_factory=dict, repr=False, metadata={"saved": False})
+
+    @classmethod
+    def from_dict(cls, directory, values):
+        """Creates a job from the values of its file"""
+
+        job = cls(directory, file_values=dict(values))
+        for job_field in saved_fields():
+            key = job_field.metadata.get("key", job_field.name)
+            if key in values:
+                setattr(job, job_field.name, values[key])
+        job.status = JobStatus(job.status)
+        return job
+
+    def to_dict(self):
+        """Gets the values to save in the job's file"""
+
+        values = dict(self.file_values)
+        for job_field in saved_fields():
+            key = job_field.metadata.get("key", job_field.name)
+            value = getattr(self, job_field.name)
+            if key in values or job_field.metadata.get("always") or value != get_default(
+                    job_field):
+                values[key] = value.value if isinstance(value, JobStatus) else value
+        return values
 
     @property
     def file_path(self):
         """Gets the full path to this job file"""
 
         return os.path.join(self.directory, self.job_id)
-
-    @property
-    def job_id(self):
-        """Gets the ID of this job"""
-
-        return self.dictionary["id"]
-
-    @property
-    def keyword(self):
-        """Gets or sets the keyword of the tracked series for this job"""
-
-        return self.dictionary.get("keyword", None)
-
-    @keyword.setter
-    def keyword(self, value):
-        self.dictionary["keyword"] = value
-
-    @property
-    def added(self):
-        """Gets or sets the date on which this job was created"""
-
-        return self.dictionary.get("added", None)
-
-    @added.setter
-    def added(self, value):
-        self.dictionary["added"] = value
-
-    @property
-    def query(self):
-        """Gets or sets the string used to search for downloads for this job"""
-
-        return self.dictionary.get("query", None)
-
-    @query.setter
-    def query(self, value):
-        self.dictionary["query"] = value
-
-    @property
-    def fallback_queries(self):
-        """
-        Gets or sets the strings with which to search, in order, when searching with the
-        query string of this job finds no download
-        """
-
-        return self.dictionary.get("fallback_queries", [])
-
-    @fallback_queries.setter
-    def fallback_queries(self, value):
-        self.dictionary["fallback_queries"] = value
-
-    @property
-    def release_groups(self):
-        """
-        Gets or sets the release groups, in order of preference, from which results of each
-        of this job's search strings are accepted, keyed by search string. Results from any
-        group are accepted for a search string with no release groups.
-        """
-
-        return self.dictionary.get("release_groups", {})
-
-    @release_groups.setter
-    def release_groups(self, value):
-        self.dictionary["release_groups"] = value
 
     @property
     def search_queries(self):
@@ -429,139 +440,6 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
         if episode_number is None:
             return None
         return (self.keyword, episode_number)
-
-    @property
-    def status(self):
-        """Gets or sets the status for this job"""
-
-        return self.dictionary["status"]
-
-    @status.setter
-    def status(self, value):
-        self.dictionary["status"] = value
-
-    @property
-    def magnet_link(self):
-        """Gets or sets the magnet link for this job"""
-
-        return self.dictionary.get("magnet_link", None)
-
-    @magnet_link.setter
-    def magnet_link(self, value):
-        self.dictionary["magnet_link"] = value
-
-    @property
-    def title(self):
-        """Gets or sets the display title for this job"""
-
-        return self.dictionary.get("title", None)
-
-    @title.setter
-    def title(self, value):
-        self.dictionary["title"] = value
-
-    @property
-    def name(self):
-        """Gets or sets the download name for this job"""
-
-        return self.dictionary.get("name", None)
-
-    @name.setter
-    def name(self, value):
-        self.dictionary["name"] = value
-
-    @property
-    def torrent_hash(self):
-        """Gets the calculated SHA1 hash for the torrent in this job"""
-
-        return self.dictionary.get("torrent_hash",  None)
-
-    @torrent_hash.setter
-    def torrent_hash(self, value):
-        self.dictionary["torrent_hash"] = value
-
-    @property
-    def downloader(self):
-        """Gets or sets the download client, 'deluge' or 'sabnzbd', used for this job"""
-
-        return self.dictionary.get("downloader", TorrentDownloader.name)
-
-    @downloader.setter
-    def downloader(self, value):
-        self.dictionary["downloader"] = value
-
-    @property
-    def nzb_guid(self):
-        """Gets or sets the indexer's ID for the NZB file found for this job"""
-
-        return self.dictionary.get("nzb_guid", None)
-
-    @nzb_guid.setter
-    def nzb_guid(self, value):
-        self.dictionary["nzb_guid"] = value
-
-    @property
-    def nzb_file(self):
-        """Gets or sets the path to the NZB file waiting to be added for this job"""
-
-        return self.dictionary.get("nzb_file", None)
-
-    @nzb_file.setter
-    def nzb_file(self, value):
-        self.dictionary["nzb_file"] = value
-
-    @property
-    def nzo_id(self):
-        """Gets or sets the SABnzbd ID of the download for this job"""
-
-        return self.dictionary.get("nzo_id", None)
-
-    @nzo_id.setter
-    def nzo_id(self, value):
-        self.dictionary["nzo_id"] = value
-
-    @property
-    def rejected(self):
-        """Gets or sets the indexer IDs of NZB files rejected for this job"""
-
-        return self.dictionary.get("rejected", [])
-
-    @rejected.setter
-    def rejected(self, value):
-        self.dictionary["rejected"] = value
-
-    @property
-    def download_directory(self):
-        """Gets the directory to which the torrent for this job is downloaded"""
-
-        return self.dictionary.get("download_directory", None)
-
-    @download_directory.setter
-    def download_directory(self, value):
-        self.dictionary["download_directory"] = value
-
-    @property
-    def converted_file_name(self):
-        """Gets the file name of the download once converted"""
-
-        return self.dictionary.get("converted_file_name", None)
-
-    @converted_file_name.setter
-    def converted_file_name(self, value):
-        self.dictionary["converted_file_name"] = value
-
-    @property
-    def is_download_only(self):
-        """
-        Gets a value indicating whether this job only downloads the file as opposed to also
-        converting it
-        """
-
-        return self.dictionary.get("download_only", False)
-
-    @is_download_only.setter
-    def is_download_only(self, value):
-        self.dictionary["download_only"] = value
 
     def set_download_status(self, status, name, download_directory=None):
         """Sets the status, download name, and optionally the download directory of this job"""
@@ -618,7 +496,7 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
             logger.warning("Skipping unreadable job file %s: %s", job_file_path, ex)
             return None
 
-        return Job(directory, job_queue_dictionary)
+        return Job.from_dict(directory, job_queue_dictionary)
 
     def delete(self):
         """Deletes the file representing this job, and any NZB file waiting to be added"""
@@ -631,12 +509,7 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
     def copy(self):
         """Creates a copy of this job with a new ID"""
 
-        job_copy = Job(self.directory, {})
-        for name in self.dictionary:
-            if name != "id":
-                job_copy.dictionary[name] = self.dictionary[name]
-
-        return job_copy
+        return replace(self, job_id=new_job_id(), file_values=dict(self.file_values))
 
     def save(self):
         """Writes this job to a file"""
@@ -650,7 +523,7 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
             return
 
         with atomic_write(self.file_path) as job_file:
-            json.dump(self.dictionary, job_file, indent=2, default=lambda x: x.value)
+            json.dump(self.to_dict(), job_file, indent=2)
 
     def update_converted_file_name(self, config):
         """Updates converted file name with latest name from cached episode database"""
@@ -667,3 +540,15 @@ class Job:  # pylint: disable=too-many-public-methods,too-many-instance-attribut
                         for c in episode.plex_title).strip()
                     if self.converted_file_name != candidate_converted_file_name:
                         self.converted_file_name = candidate_converted_file_name
+
+
+def saved_fields():
+    """Gets the fields of a job that are saved in its file"""
+
+    return [x for x in fields(Job) if x.metadata.get("saved", True)]
+
+
+def get_default(job_field):
+    """Gets the value a field of a job has when it isn't set"""
+
+    return job_field.default_factory() if job_field.default is MISSING else job_field.default

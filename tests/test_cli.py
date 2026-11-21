@@ -56,7 +56,7 @@ def episode_db(config):
 
 
 def add_job(config, status=JobStatus.WAITING, **values):
-    job = Job(config.conversion.job_directory, {"status": status.value, **values})
+    job = Job.from_dict(config.conversion.job_directory, {"status": status.value, **values})
     job.save()
     return job
 

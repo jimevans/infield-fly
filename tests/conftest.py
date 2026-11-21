@@ -69,7 +69,7 @@ def make_episode_db(config, episodes):
 def save_job(config, status, **values):
     """Saves a job with the specified status and values to the configured job directory"""
 
-    job = Job(config.conversion.job_directory, {"status": status.value, **values})
+    job = Job.from_dict(config.conversion.job_directory, {"status": status.value, **values})
     job.save()
     return job
 

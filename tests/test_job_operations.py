@@ -27,8 +27,8 @@ def queue(config):
 
 @pytest.fixture
 def job(config):
-    job = Job(config.conversion.job_directory,
-              {"status": "waiting", "keyword": "show", "query": "show 1080p s01e02"})
+    job = Job.from_dict(config.conversion.job_directory,
+                        {"status": "waiting", "keyword": "show", "query": "show 1080p s01e02"})
     job.save()
     return job
 
@@ -138,8 +138,8 @@ class TestSetJobStatus:
         assert reload(queue, job).status == JobStatus.WAITING
 
     def test_pending_for_job_without_episode_number(self, queue, config, tmp_path):
-        special = Job(config.conversion.job_directory,
-                      {"status": "waiting", "keyword": "show", "query": "show special"})
+        special = Job.from_dict(config.conversion.job_directory,
+                                {"status": "waiting", "keyword": "show", "query": "show special"})
         special.save()
         (tmp_path / "show.s00e01.mkv").touch()
 
