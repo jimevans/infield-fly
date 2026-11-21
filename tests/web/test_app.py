@@ -43,6 +43,13 @@ class TestAccessControl:
         assert client.get("/static/style.css").status_code == 200
         assert client.get("/login").status_code == 200
 
+    def test_version_in_footer(self, client):
+        with mock.patch.dict("infield_fly.web.templating.templates.env.globals",
+                             {"version": "1.2.3"}):
+            text = client.get("/login").text
+
+        assert '<footer class="site-footer">Infield Fly 1.2.3</footer>' in text
+
     def test_security_headers(self, client):
         response = client.get("/login")
 

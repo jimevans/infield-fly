@@ -15,6 +15,7 @@ from logging.handlers import RotatingFileHandler
 
 import argcomplete
 
+from infield_fly import __version__
 from infield_fly.configuration import (CONFIG_FILE_ENVIRONMENT_VARIABLE,
                                        DEFAULT_CONFIG_DIRECTORY, Configuration)
 from infield_fly.job_status import JobStatus
@@ -715,6 +716,7 @@ def main():
     """Main entry point"""
 
     parser = argparse.ArgumentParser(prog="infield-fly")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("-u", "--unattended", action="store_true", default=False,
                         help="Run Infield Fly in unattended mode.")
     parser.add_argument("-c", "--config", nargs="?", default=None,
