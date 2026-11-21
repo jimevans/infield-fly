@@ -116,7 +116,7 @@ def get_default(setting_field, settings_directory):
 
     if setting_field.key == "log_level":
         return "info"
-    section = Configuration(settings_directory, {}).settings[setting_field.section]
+    section = getattr(Configuration.from_dict(settings_directory, {}), setting_field.section)
     default = getattr(section, setting_field.key)
     return "" if default is None else default
 
@@ -279,7 +279,7 @@ class SettingsForm:
         without saving them, so that connections can be checked before saving
         """
 
-        return Configuration(settings_directory, self.apply_to(settings))
+        return Configuration.from_dict(settings_directory, self.apply_to(settings))
 
 
 def _validate_int(setting_field, value):

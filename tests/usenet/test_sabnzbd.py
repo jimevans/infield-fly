@@ -22,10 +22,10 @@ def make_response(json_value=None, status_code=200, text=""):
 
 @pytest.fixture
 def client():
-    return SabnzbdClient(DownloadSettings({"sabnzbd_host": "sabnzbd",
-                                           "sabnzbd_port": 8080,
-                                           "sabnzbd_api_key": "key",
-                                           "sabnzbd_category": "tv"}))
+    return SabnzbdClient(DownloadSettings.from_dict({"sabnzbd_host": "sabnzbd",
+                                                     "sabnzbd_port": 8080,
+                                                     "sabnzbd_api_key": "key",
+                                                     "sabnzbd_category": "tv"}))
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ class TestAddNzb:
         assert post.call_args[1]["files"]["name"][0] == "job.nzb"
 
     def test_omits_category_when_not_configured(self, nzb_file):
-        client = SabnzbdClient(DownloadSettings({"sabnzbd_api_key": "key"}))
+        client = SabnzbdClient(DownloadSettings.from_dict({"sabnzbd_api_key": "key"}))
         with mock.patch("infield_fly.usenet.sabnzbd.requests.post",
                         return_value=make_response({"status": True, "nzo_ids": ["nzo1"]})
                         ) as post:
@@ -134,8 +134,8 @@ class TestCallApi:
             "value": "nzo1", "del_files": 1}
 
     def test_uses_https_when_ssl_configured(self, requests_get):
-        client = SabnzbdClient(DownloadSettings({"sabnzbd_host": "sabnzbd", "sabnzbd_port": 9090,
-                                                 "sabnzbd_use_ssl": True}))
+        client = SabnzbdClient(DownloadSettings.from_dict(
+            {"sabnzbd_host": "sabnzbd", "sabnzbd_port": 9090, "sabnzbd_use_ssl": True}))
         requests_get.return_value = make_response({"status": True})
 
         client.delete_history_item("nzo1")

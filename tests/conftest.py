@@ -45,7 +45,7 @@ def make_config(tmp_path):
             "search": search or {},
             "download": download or {}
         }
-        return Configuration(str(tmp_path), config_dict)
+        return Configuration.from_dict(str(tmp_path), config_dict)
 
     return _make_config
 

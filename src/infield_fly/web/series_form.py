@@ -166,7 +166,7 @@ class SeriesForm:
             settings = self.to_settings()
         except ValueError:
             return []
-        metadata = MetadataSettings({"tracked_series": {self.keyword: settings}})
+        metadata = MetadataSettings.from_dict({"tracked_series": {self.keyword: settings}})
         if not metadata.tracked_series:
             return []
         return metadata.tracked_series[0].get_episode_searches(season_number, episode_number)

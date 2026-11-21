@@ -79,7 +79,7 @@ class TestNewznabSearcher:
 
     @pytest.fixture
     def searcher(self):
-        return NewznabSearcher(SearchSettings({"newznab_url": API_URL, "api_key": "key"}))
+        return NewznabSearcher(SearchSettings.from_dict({"newznab_url": API_URL, "api_key": "key"}))
 
     @pytest.fixture
     def requests_get(self):
