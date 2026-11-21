@@ -19,7 +19,7 @@ from infield_fly.concurrency import read_lock_holder
 from infield_fly.database import EpisodeDatabase
 from infield_fly.job_status import JobStatus
 from infield_fly.jobs import JobQueue
-from infield_fly.web import series_editor
+from infield_fly.web import series_editor, settings_editor
 from infield_fly.web.templating import WEB_DIRECTORY, app_path, templates
 
 SESSION_COOKIE = "infield_fly_session"
@@ -277,6 +277,8 @@ def create_app(load_config, authenticator, secret_key, *, settings_file, https_o
                   name="series_edit"),
             Route("/series/delete", series_editor.delete_series, methods=["GET", "POST"],
                   name="series_delete"),
+            Route("/settings", settings_editor.edit_settings, methods=["GET", "POST"],
+                  name="settings"),
             Mount("/static", StaticFiles(directory=os.path.join(WEB_DIRECTORY, "static")),
                   name="static"),
         ],

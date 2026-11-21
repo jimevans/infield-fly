@@ -351,6 +351,13 @@ changed by something else since the editor was opened, such as by hand, saving i
 refused and the editor shows the current settings, so no change is silently lost.
 Removing a series keeps its existing jobs and its episodes in the episode database.
 
+The other settings are edited on the Settings page, in the same way. Secrets, such as
+API keys, are not shown unless you choose to show them; leaving a hidden secret blank
+keeps its saved value. An empty setting is removed from the settings file, so that its
+default applies. Paths must be absolute, since scheduled runs and the web interface
+run from different directories. The connections to SABnzbd, the Newznab indexer, and
+TheTVDB can be tested with the values on the page before saving them.
+
 The web interface listens on `127.0.0.1:8642` by default, and is meant to be served
 over HTTPS by a reverse proxy, with `--root-path` naming the URL path under which the
 proxy serves it. It reads the settings file on each request, so changes to it apply
@@ -378,6 +385,34 @@ The `deploy` directory contains the configuration to serve the web interface at
    `sudo systemctl reload fail2ban`
 
 The web interface logs to the journal, viewed with `journalctl -u infield-fly-web`.
+
+### Deploying updates
+Because Infield Fly is installed in editable mode, `git pull` updates the code
+immediately, but the running web interface keeps the code it started with until it is
+restarted. Scheduled job processing needs nothing, since each run starts a new process.
+To deploy an update, in the clone on the host:
+
+1. Optionally, check that no job processing run is in progress, so that a run doesn't
+   load a mix of old and new code: the `.lock` file in the job directory is empty or
+   missing when none is, for example `cat ~/.config/infield-fly/.jobs/.lock`
+2. Update the code with `git pull`
+3. Install any changed dependencies with `.venv/bin/pip install -e ".[web]"`, including
+   the `web` extra, since `pip install -e .` doesn't install new web interface
+   dependencies
+4. Restart the web interface with `sudo systemctl restart infield-fly-web`, and check
+   that it is running with `systemctl status infield-fly-web`
+
+Run `git diff --stat HEAD@{1} -- deploy pyproject.toml` after pulling to see whether the
+update changed the deployment files. If it did, also update their installed copies:
+
+* `deploy/apache-infield-fly.conf`: update the lines in the Apache configuration, then
+  run `sudo apache2ctl configtest && sudo systemctl reload apache2`
+* `deploy/infield-fly-web.service`: update the installed unit, then run
+  `sudo systemctl daemon-reload` before restarting the web interface
+* `deploy/pam.d` or `deploy/fail2ban`: copy them to the matching directories under
+  `/etc`, then for fail2ban run `sudo systemctl reload fail2ban`
+
+Sessions are kept across restarts, so you stay logged in.
 
 ## Development
 Each way of downloading episodes is a download track, in its own package under

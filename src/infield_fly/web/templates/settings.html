@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% set active = "settings" %}
+{% block title %}Settings{% endblock %}
+
+{% macro setting(item) -%}
+{% set value = form.values[item.name] %}
+{% if item.kind == "bool" %}
+<label class="checkbox"><input type="checkbox" name="{{ item.name }}"{% if value %} checked{% endif %}> {{ item.label }}</label>
+{% elif item.kind == "secret" %}
+<label for="{{ item.name }}">{{ item.label }}
+  {% if item.name not in form.revealed %}<span class="muted">· {{ "set" if item.name in saved_secrets else "not set" }}</span>{% endif %}</label>
+{% if item.name in form.revealed %}
+<input type="hidden" name="{{ item.name }}-revealed" value="1">
+<input id="{{ item.name }}" name="{{ item.name }}" value="{{ value }}" autocomplete="off" autocapitalize="none" spellcheck="false">
+<p class="hint">Shown. Clearing it removes the saved value.</p>
+{% else %}
+<div class="inline-fields">
+  <input id="{{ item.name }}" name="{{ item.name }}" type="password" value="{{ value }}" autocomplete="new-password"
+         placeholder="{{ 'Leave blank to keep' if item.name in saved_secrets else '' }}">
+  <button type="submit" class="secondary" name="action" value="reveal-{{ item.name }}" formnovalidate>Show</button>
+</div>
+{% endif %}
+{% elif item.kind == "choice" %}
+<label for="{{ item.name }}">{{ item.label }}</label>
+<select id="{{ item.name }}" name="{{ item.name }}">
+  <option value=""{% if value == "" %} selected{% endif %}>Default ({{ defaults[item.name] }})</option>
+  {% for choice in item.choices %}
+  <option value="{{ choice }}"{% if value == choice %} selected{% endif %}>{{ choice }}</option>
+  {% endfor %}
+</select>
+{% else %}
+<label for="{{ item.name }}">{{ item.label }}</label>
+<input id="{{ item.name }}" name="{{ item.name }}" value="{{ value }}"
+       {% if item.kind == "int" %}inputmode="numeric" {% endif %}autocapitalize="none" spellcheck="false"
+       placeholder="{% if defaults[item.name] != '' %}Default: {{ defaults[item.name] }}{% endif %}">
+{% endif %}
+{% if item.hint and not (item.kind == "secret" and item.name in form.revealed) %}<p class="hint">{{ item.hint }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro group_contents(group) -%}
+{% if group.warning %}<p class="notice">{{ group.warning }}</p>{% endif %}
+{% for item in group.fields %}{{ setting(item) }}{% endfor %}
+{% if group.title == "Conversion" %}
+<h2>Character substitutions</h2>
+<p class="hint">Characters in episode titles replaced when naming converted files, such as a colon with a dash. Spaces in replacements are kept.</p>
+{% for character, replacement in form.substitutions %}
+<div class="substitution">
+  <input name="substitution-{{ loop.index0 }}-character" value="{{ character }}" maxlength="1" aria-label="Character {{ loop.index }}" autocapitalize="none" spellcheck="false">
+  <span aria-hidden="true">→</span>
+  <input name="substitution-{{ loop.index0 }}-replacement" value="{{ replacement }}" aria-label="Replacement {{ loop.index }}" autocapitalize="none" spellcheck="false" placeholder="(remove)">
+  <button type="submit" class="secondary" name="action" value="remove-substitution-{{ loop.index0 }}" formnovalidate>Remove</button>
+</div>
+{% endfor %}
+<button type="submit" class="secondary" name="action" value="add-substitution" formnovalidate>Add substitution</button>
+{% endif %}
+{% if group.check %}
+<div class="check">
+  <button type="submit" class="secondary" name="action" value="check-{{ group.check }}" formnovalidate>Test connection</button>
+  {% if group.check in check_results %}
+  {% set result = check_results[group.check] %}
+  <p class="flash flash-{{ 'success' if result[0] else 'warning' }}" role="status">{{ result[1] }}</p>
+  {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% block content %}
+<h1>Settings</h1>
+<p class="muted">Saved to <code>{{ settings_path }}</code>. Tracked series are edited on the <a href="{{ app_path(request, 'series') }}">Series</a> page. Tests use the values on this page, whether or not they are saved.</p>
+{% if errors %}
+<div class="error-summary" role="alert">
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+<form class="editor" method="post" action="{{ app_path(request, 'settings') }}">
+  {# Pressing Enter submits with the first submit button, so the first one saves. #}
+  <button type="submit" name="action" value="save" class="visually-hidden" tabindex="-1" aria-hidden="true">Save</button>
+  <input type="hidden" name="version" value="{{ version }}">
+  <input type="hidden" name="substitution_count" value="{{ form.substitutions | length }}">
+  {% for group in groups %}
+  {% if group.is_collapsed %}
+  {% set has_revealed = group.fields | map(attribute="name") | select("in", form.revealed) | list %}
+  <details class="group"{% if has_revealed or group.check in check_results %} open{% endif %}>
+    <summary>{{ group.title }}</summary>
+    <fieldset>{{ group_contents(group) }}</fieldset>
+  </details>
+  {% else %}
+  <fieldset>
+    <legend>{{ group.title }}</legend>
+    {{ group_contents(group) }}
+  </fieldset>
+  {% endif %}
+  {% endfor %}
+  <div class="form-actions">
+    <button type="submit" name="action" value="save">Save</button>
+    <a href="{{ app_path(request, 'settings') }}">Discard changes</a>
+  </div>
+</form>
+{% endblock %}

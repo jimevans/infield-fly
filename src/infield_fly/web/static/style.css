@@ -290,3 +290,31 @@ button.danger { background: var(--error); color: var(--accent-text); }
 .example ol { margin: 0 0 0.5rem; padding-left: 1.5rem; }
 
 .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+
+/* Settings page */
+select {
+  font: inherit;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.editor details.group { margin-bottom: 1.25rem; }
+.editor details.group > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.editor details.group[open] > summary { border-radius: 10px 10px 0 0; border-bottom: 0; }
+.editor details.group > fieldset { border-radius: 0 0 10px 10px; margin: 0; }
+.editor .notice { margin: 0 0 0.5rem; }
+.substitution { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.substitution input:first-child { width: 3.5rem; flex: none; text-align: center; }
+.substitution input { flex: 1; min-width: 0; }
+.check { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; }
+.check .flash { margin: 0; }
