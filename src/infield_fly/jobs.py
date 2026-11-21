@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 DOWNLOADER_CLASSES = (NzbDownloader, TorrentDownloader)
 
 
-class JobQueue:  # pylint: disable=too-many-public-methods
+class JobQueue:
 
     """Queue of jobs being processed"""
 
@@ -48,7 +48,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         job.save()
         return job
 
-    def get_jobs_by_status(self, status):
+    def _get_jobs_by_status(self, status):
         """Gets all jubs with a specific status"""
 
         jobs = self.load_jobs()
@@ -60,16 +60,16 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         waiting jobs, and creates jobs for episodes of tracked series aired on the airdate
         """
 
-        completed_job_list = [x for x in self.get_jobs_by_status(JobStatus.COMPLETED)
+        completed_job_list = [x for x in self._get_jobs_by_status(JobStatus.COMPLETED)
                               if x.added != airdate.strftime("%Y-%m-%d")]
         for job in completed_job_list:
             job.delete()
 
-        for job in self.get_jobs_by_status(JobStatus.WAITING):
+        for job in self._get_jobs_by_status(JobStatus.WAITING):
             job.update_converted_file_name(self.config)
             job.save()
 
-        self.create_new_search_jobs(airdate)
+        self._create_new_search_jobs(airdate)
 
     @property
     def downloaders(self):
@@ -92,7 +92,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         """Searches for downloads for waiting jobs with each download track in turn"""
 
         all_jobs = self.load_jobs()
-        self.share_rejections(all_jobs)
+        self._share_rejections(all_jobs)
         job_list = [x for x in all_jobs
                     if x.status in (JobStatus.WAITING, JobStatus.SEARCHING)]
         if not job_list:
@@ -103,7 +103,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
             downloader.search_downloads(
                 [x for x in job_list if x.status in (JobStatus.WAITING, JobStatus.SEARCHING)])
 
-    def share_rejections(self, job_list):
+    def _share_rejections(self, job_list):
         """
         Shares the downloads rejected for each job with the other jobs for the same episode,
         so that a download found to be incomplete or unavailable is not tried again for the
@@ -142,18 +142,18 @@ class JobQueue:  # pylint: disable=too-many-public-methods
     def add_downloads(self):
         """Adds the found downloads of adding jobs to the download client of their tracks"""
 
-        job_list = self.get_jobs_by_status(JobStatus.ADDING)
-        for downloader, jobs in self.group_jobs_by_downloader(job_list):
+        job_list = self._get_jobs_by_status(JobStatus.ADDING)
+        for downloader, jobs in self._group_jobs_by_downloader(job_list):
             downloader.add_downloads(jobs)
 
     def query_downloads_status(self):
         """Marks downloading jobs whose downloads have finished in their tracks as pending"""
 
-        job_list = self.get_jobs_by_status(JobStatus.DOWNLOADING)
-        for downloader, jobs in self.group_jobs_by_downloader(job_list):
+        job_list = self._get_jobs_by_status(JobStatus.DOWNLOADING)
+        for downloader, jobs in self._group_jobs_by_downloader(job_list):
             downloader.query_downloads(jobs)
 
-    def group_jobs_by_downloader(self, job_list):
+    def _group_jobs_by_downloader(self, job_list):
         """
         Groups jobs by the download track handling them, returning a list of each track
         with its jobs, and logging jobs whose track is unknown
@@ -170,7 +170,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
     def perform_conversions(self, is_unattended_mode=False):
         """Executes all pending conversion jobs, converting files to the proper format"""
 
-        pending_job_list = self.get_jobs_by_status(JobStatus.PENDING)
+        pending_job_list = self._get_jobs_by_status(JobStatus.PENDING)
         if not pending_job_list:
             logger.info("No files to convert during job processing")
             return
@@ -181,9 +181,9 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         for job in pending_job_list:
             try:
                 if job.is_download_only:
-                    self.copy_downloaded_files(job, is_unattended_mode)
+                    self._copy_downloaded_files(job, is_unattended_mode)
                 else:
-                    self.convert_downloaded_files(job, is_unattended_mode)
+                    self._convert_downloaded_files(job, is_unattended_mode)
             except Exception as ex:  # pylint: disable=broad-exception-caught
                 # Return the job to pending so it is retried on the next run,
                 # rather than leaving it stuck in the converting state.
@@ -191,7 +191,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
                 job.status = JobStatus.PENDING
                 job.save()
 
-    def create_new_search_jobs(self, airdate):
+    def _create_new_search_jobs(self, airdate):
         """Creates new search jobs based on airdate"""
 
         episode_db = EpisodeDatabase.load_from_cache(self.config)
@@ -225,7 +225,7 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         job.save()
         return job
 
-    def copy_downloaded_files(self, job, is_unattended_mode):
+    def _copy_downloaded_files(self, job, is_unattended_mode):
         """Copies downloaded job files to a destination directory"""
 
         src_dir = os.path.join(job.download_directory, job.name)
@@ -238,9 +238,9 @@ class JobQueue:  # pylint: disable=too-many-public-methods
         if is_unattended_mode:
             logger.info("Copy completed in %s seconds", end_time - start_time)
 
-        self.mark_job_complete(job)
+        self._mark_job_complete(job)
 
-    def convert_downloaded_files(self, job, is_unattended_mode):
+    def _convert_downloaded_files(self, job, is_unattended_mode):
         """Converts downloaded job files"""
 
         src_path = os.path.join(job.download_directory, job.name)
@@ -275,12 +275,12 @@ class JobQueue:  # pylint: disable=too-many-public-methods
             shutil.move(output_file,
                         os.path.join(self.config.conversion.final_directory,
                                      os.path.basename(output_file)))
-        self.mark_job_complete(job)
+        self._mark_job_complete(job)
         for downloader in self.downloaders:
             if downloader.name == job.downloader:
                 downloader.remove_download(job)
 
-    def mark_job_complete(self, job):
+    def _mark_job_complete(self, job):
         """Marks a job as completed"""
 
         job.status = JobStatus.COMPLETED
@@ -339,7 +339,8 @@ def today():
 
 
 # A dataclass with eq=False, since a job is identified by its file, rather than its values:
-# two jobs are equal only if they are the same object, as for other objects.
+# two jobs are equal only if they are the same object, as for other objects. It has a field
+# for each value of a job file, more than the project's limit for other classes.
 @dataclass(eq=False)
 class Job:  # pylint: disable=too-many-instance-attributes
 

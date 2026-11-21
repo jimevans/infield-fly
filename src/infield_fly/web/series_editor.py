@@ -89,8 +89,7 @@ async def add_series(request):
         "tracked_ids": tracked_ids})
 
 
-def render_form(request, form, original_keyword, version, errors=None, status_code=200):
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
+def render_form(request, form, original_keyword, version, *, errors=None, status_code=200):
     """Shows the series editor"""
 
     return templates.TemplateResponse(request, "series_edit.html", {
@@ -123,7 +122,8 @@ async def edit_series(request):
 
     errors = form.validate(tracked_series, original_keyword)
     if errors:
-        return render_form(request, form, original_keyword, version, errors, 400)
+        return render_form(request, form, original_keyword, version, errors=errors,
+                           status_code=400)
 
     updated_series = {}
     for keyword, series in tracked_series.items():
@@ -179,7 +179,8 @@ def render_changed_form(request, form, original_keyword, tracked_series, version
                       "by something else, so your changes to it were not saved.")
             return RedirectResponse(app_path(request, "series"), 303)
         form = SeriesForm.from_settings(original_keyword, tracked_series[original_keyword])
-    return render_form(request, form, original_keyword, version, [CHANGED_MESSAGE], 409)
+    return render_form(request, form, original_keyword, version, errors=[CHANGED_MESSAGE],
+                       status_code=409)
 
 
 async def save_succeeded(request, form, is_new, is_id_changed):

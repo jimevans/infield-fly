@@ -228,7 +228,6 @@ class EpisodeInfo:
 
     def __init__(self, episode_id, series_title, *, season_number=0, episode_number=0,
                  title="", airdate=None):
-        # pylint: disable=too-many-arguments
         self.episode_id = episode_id
         self.series_title = series_title
         self.season_number = season_number
@@ -430,13 +429,12 @@ class TVMetadataProvider:
         return datetime.strptime(aired, "%Y-%m-%d") if aired is not None else None
 
 
-class ProgressBar:  # pylint: disable=too-many-instance-attributes
+class ProgressBar:
 
     """Prints a progress bar in the console, with its formatting as attributes"""
 
     def __init__(self, total_value, *, increment_value=1, prefix="", suffix="", decimals=1,
                  length=100, fill="█", print_end="\r"):
-        # pylint: disable=too-many-arguments
         self.current_value = 0
         self.total_value = total_value
         self.increment_value = increment_value

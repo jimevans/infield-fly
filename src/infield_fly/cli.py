@@ -3,7 +3,7 @@
 
 # Shell completion runs this module on every press of the Tab key, so modules
 # with expensive dependencies are imported in the commands that use them.
-# pylint: disable=import-outside-toplevel
+  # pylint: disable=import-outside-toplevel
 
 import argparse
 import json

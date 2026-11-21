@@ -384,7 +384,6 @@ class TestRecoverFinishedDownload:
     ])
     def test_unsuitable_folders_are_not_used(self, downloader, config, complete, caplog,
                                              name, episode_file):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
         self.make_download(complete, name, episode_file)
         job = self.save_job(config)
 
@@ -533,7 +532,6 @@ class TestRemoveDownload:
     def test_deletes_only_file_when_folder_not_confirmed(
             self, delete_config, sabnzbd_client, completed, tmp_path, storage,
             complete_directory):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
         complete, folder = completed
         (tmp_path / "elsewhere").mkdir()
         sabnzbd_client.get_download_status.return_value = DownloadStatus(

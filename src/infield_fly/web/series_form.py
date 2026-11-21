@@ -18,7 +18,7 @@ class SearchConfigForm:
 
 
 @dataclass
-class SeriesForm:  # pylint: disable=too-many-instance-attributes
+class SeriesForm:
 
     """
     The fields of a tracked series, as entered in the series editor. Lists, such as the

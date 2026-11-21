@@ -107,7 +107,7 @@ class TestJobQueueBasics:
         add_job(queue, JobStatus.WAITING, query="a")
         add_job(queue, JobStatus.PENDING, query="b")
 
-        assert [x.query for x in queue.get_jobs_by_status(JobStatus.PENDING)] == ["b"]
+        assert [x.query for x in queue._get_jobs_by_status(JobStatus.PENDING)] == ["b"]
 
     def test_is_existing_job(self, queue):
         add_job(queue, JobStatus.WAITING, keyword="show", query="q")
@@ -141,7 +141,7 @@ class TestJobQueueBasics:
         no_episode = add_job(queue, JobStatus.WAITING, keyword="show", query="show special",
                              rejected=["e"])
 
-        queue.share_rejections(queue.load_jobs())
+        queue._share_rejections(queue.load_jobs())
 
         rejected = {x.job_id: x.rejected for x in queue.load_jobs()}
         assert sorted(rejected[first.job_id]) == ["a", "b", "c"]
@@ -188,14 +188,14 @@ class TestJobQueueBasics:
     def test_mark_job_complete_today_keeps_job(self, queue):
         job = add_job(queue, JobStatus.CONVERTING)
 
-        queue.mark_job_complete(job)
+        queue._mark_job_complete(job)
 
         assert queue.get_job_by_id(job.job_id).status == JobStatus.COMPLETED
 
     def test_mark_job_complete_earlier_deletes_job(self, queue):
         job = add_job(queue, JobStatus.CONVERTING, added="2000-01-01")
 
-        queue.mark_job_complete(job)
+        queue._mark_job_complete(job)
 
         assert queue.get_job_by_id(job.job_id) is None
 
@@ -368,8 +368,8 @@ class TestPerformConversions:
             assert all(x.status == JobStatus.CONVERTING for x in queue.load_jobs())
             handled.append((job.job_id, is_unattended_mode))
 
-        with mock.patch.object(queue, "copy_downloaded_files", side_effect=record), \
-                mock.patch.object(queue, "convert_downloaded_files", side_effect=record):
+        with mock.patch.object(queue, "_copy_downloaded_files", side_effect=record), \
+                mock.patch.object(queue, "_convert_downloaded_files", side_effect=record):
             queue.perform_conversions(True)
 
         assert sorted(handled) == sorted([(copy_job.job_id, True), (convert_job.job_id, True)])
@@ -377,7 +377,7 @@ class TestPerformConversions:
     def test_failed_job_returns_to_pending(self, queue, caplog):
         job = add_job(queue, JobStatus.PENDING)
 
-        with mock.patch.object(queue, "convert_downloaded_files",
+        with mock.patch.object(queue, "_convert_downloaded_files",
                                side_effect=RuntimeError("ffmpeg failed")):
             queue.perform_conversions()
 
@@ -396,7 +396,7 @@ class TestCopyDownloadedFiles:
         job = add_job(queue, JobStatus.CONVERTING, name="Show.S01",
                       download_directory=str(tmp_path / "downloads"))
 
-        queue.copy_downloaded_files(job, is_unattended_mode)
+        queue._copy_downloaded_files(job, is_unattended_mode)
 
         copied = os.path.join(config.conversion.final_directory, "Show.S01", "episode.mkv")
         with open(copied, encoding="utf-8") as copied_file:
@@ -442,7 +442,7 @@ class TestConvertDownloadedFiles:
                       download_directory=str(tmp_path / "downloads"),
                       converted_file_name=PLEX_NAME)
 
-        queue.convert_downloaded_files(job, False)
+        queue._convert_downloaded_files(job, False)
 
         staged = os.path.join(config.conversion.staging_directory, f"{PLEX_NAME}.mp4")
         converter_class.assert_called_once_with(
@@ -463,7 +463,7 @@ class TestConvertDownloadedFiles:
         job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mp4",
                       download_directory=str(tmp_path), converted_file_name=PLEX_NAME)
 
-        queue.convert_downloaded_files(job, True)
+        queue._convert_downloaded_files(job, True)
 
         assert converter_class.call_args[0][0] == str(tmp_path / "Show.S01E02.mp4")
         assert os.path.exists(os.path.join(config.conversion.final_directory,
@@ -478,7 +478,7 @@ class TestConvertDownloadedFiles:
         job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mkv",
                       download_directory=str(tmp_path), converted_file_name=PLEX_NAME)
 
-        queue.convert_downloaded_files(job, False)
+        queue._convert_downloaded_files(job, False)
 
         for extension in (".mp4", ".eng.forced.srt", ".eng.srt"):
             assert os.path.exists(os.path.join(config.conversion.final_directory,
@@ -497,7 +497,7 @@ class TestConvertDownloadedFiles:
         job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02",
                       download_directory=str(tmp_path), converted_file_name=PLEX_NAME)
 
-        queue.convert_downloaded_files(job, False)
+        queue._convert_downloaded_files(job, False)
 
         converter_class.assert_called_once()
         assert converter_class.call_args[0][0] == str(download / "Show.S01E02.1080p.mkv")
@@ -510,7 +510,7 @@ class TestConvertDownloadedFiles:
 
         with mock.patch.object(NzbDownloader, "remove_download") as nzb_remove, \
                 mock.patch.object(TorrentDownloader, "remove_download") as torrent_remove:
-            queue.convert_downloaded_files(job, False)
+            queue._convert_downloaded_files(job, False)
 
         nzb_remove.assert_called_once()
         assert nzb_remove.call_args[0][0].job_id == job.job_id
@@ -521,7 +521,7 @@ class TestConvertDownloadedFiles:
         job = add_job(queue, JobStatus.CONVERTING, name="Show.S01E02.mkv",
                       download_directory=str(tmp_path))
 
-        queue.convert_downloaded_files(job, False)
+        queue._convert_downloaded_files(job, False)
 
         converter_class.assert_not_called()
         assert queue.get_job_by_id(job.job_id).status == JobStatus.PENDING
@@ -534,7 +534,7 @@ class TestConvertDownloadedFiles:
         job = add_job(queue, JobStatus.CONVERTING, name="Show",
                       download_directory=str(tmp_path / "downloads"))
 
-        queue.convert_downloaded_files(job, False)
+        queue._convert_downloaded_files(job, False)
 
         converter_class.assert_not_called()
         assert queue.get_job_by_id(job.job_id).status == JobStatus.PENDING

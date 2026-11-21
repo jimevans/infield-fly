@@ -180,7 +180,6 @@ class TestAddJob:
                                       "exists."),
     ])
     def test_refused(self, queue, config, job, keyword, query, message):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
         with pytest.raises(JobOperationError) as error:
             add_job(queue, config, keyword, query)
 

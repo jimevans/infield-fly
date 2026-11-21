@@ -212,7 +212,6 @@ def get_error_file(config, kind="jobs"):
 
 
 def start_run(app, config, settings_path, kind, arguments):
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
     """
     Starts a run of a kind, running the infield-fly command with arguments, in a process of
     its own, in a new session, so that it keeps running if the web interface is stopped. It
