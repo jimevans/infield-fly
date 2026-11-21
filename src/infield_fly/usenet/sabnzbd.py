@@ -2,6 +2,7 @@
 
 import logging
 import os
+from typing import NamedTuple, Optional
 
 import requests
 
@@ -11,6 +12,20 @@ REQUEST_TIMEOUT_SECONDS = 30
 class SabnzbdError(Exception):
 
     """Raised when a request to the SABnzbd API fails"""
+
+
+class DownloadStatus(NamedTuple):
+
+    """
+    The status of a download in SABnzbd: its status, which is None if SABnzbd has no
+    download with its ID, and once finished, the path SABnzbd moved it to, the reason it
+    failed, if it did, and the name of its job, which names its folder
+    """
+
+    status: Optional[str]
+    storage: Optional[str] = None
+    fail_message: Optional[str] = None
+    name: Optional[str] = None
 
 
 class SabnzbdClient:
@@ -45,22 +60,25 @@ class SabnzbdClient:
 
     def get_download_status(self, nzo_id):
         """
-        Gets the status and final path of a download. The status is 'Completed' or 'Failed'
-        for a finished download, the status of a download that is still in progress, or None
-        if SABnzbd has no download with the ID.
+        Gets the status of a download as a DownloadStatus. The status is 'Completed' or
+        'Failed' for a finished download, the status of a download that is still in
+        progress, or None if SABnzbd has no download with the ID. SABnzbd reports the final
+        path of a finished download as its folder, or, for some downloads, as the file in
+        its folder.
         """
 
         history = self.call_api({"mode": "history", "nzo_ids": nzo_id})
         for slot in history.get("history", {}).get("slots", []):
             if slot.get("nzo_id") == nzo_id:
-                return slot.get("status"), slot.get("storage"), slot.get("fail_message")
+                return DownloadStatus(slot.get("status"), slot.get("storage"),
+                                      slot.get("fail_message"), slot.get("name"))
 
         queue = self.call_api({"mode": "queue", "nzo_ids": nzo_id})
         for slot in queue.get("queue", {}).get("slots", []):
             if slot.get("nzo_id") == nzo_id:
-                return slot.get("status"), None, None
+                return DownloadStatus(slot.get("status"))
 
-        return None, None, None
+        return DownloadStatus(None)
 
     def get_complete_directory(self):
         """

@@ -177,9 +177,12 @@ and optionally the category under which to add them. Set `sabnzbd_use_ssl` to tr
 `delete_completed_downloads` is true (it defaults to false), a download's files
 are deleted from SABnzbd's completed folder, and the download is removed from
 its history, once the download has been converted. When the download is in a
-folder of its own there, as SABnzbd's history records, the whole folder is
-deleted, with any other files in it, even if the job was given only the episode
-file in it by hand. It also names the Deluge
+folder of its own there, the whole folder is deleted, with any other files in it,
+even if the job was given only the episode file in it by hand. SABnzbd's history
+records the download's location as its folder, or for some downloads, as the file
+in it, whose folder is deleted only if it is named after the download, as
+SABnzbd names it, so that a folder shared by other downloads is never deleted.
+It also names the Deluge
 daemon to which magnet links are added, with `deluge_host`, `deluge_port`,
 `deluge_user_name`, and `deluge_password`.
 
@@ -320,7 +323,11 @@ To find a download for a job yourself, give the job the download with
    magnet links to Deluge.
 4. **Query downloads:** marks finished downloads as `pending`. A download that
    fails in SABnzbd is removed from its history and rejected, and its job
-   returns to `waiting` to try the next search result.
+   returns to `waiting` to try the next search result. A download that SABnzbd
+   no longer knows, as when it was removed from SABnzbd's history after
+   finishing, is looked for in SABnzbd's completed directory, in a folder named
+   after the download that holds the job's episode, and converted from there;
+   only if there is none is it rejected.
 5. **Convert:** converts `pending` downloads into the final directory (or copies
    them, for download-only jobs). When a download contains more than one episode
    file (`.mkv` or `.mp4`), such as a sample alongside the episode, only the

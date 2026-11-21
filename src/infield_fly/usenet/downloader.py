@@ -1,10 +1,12 @@
 """Module for finding NZB files for jobs on a Newznab indexer and downloading them using SABnzbd"""
 
 import os
+import re
 import shutil
 
 from infield_fly.concurrency import atomic_write
 from infield_fly.downloader import Downloader
+from infield_fly.episodes import find_episode_file, get_episode_number
 from infield_fly.job_status import JobStatus
 from infield_fly.usenet.newznab import NewznabSearcher, NzbResult
 from infield_fly.usenet.sabnzbd import SabnzbdClient, SabnzbdError
@@ -170,24 +172,54 @@ class NzbDownloader(Downloader):
         client = SabnzbdClient(self.config.download)
         for job in jobs:
             try:
-                status, storage, fail_message = client.get_download_status(job.nzo_id)
-                if status == "Failed":
+                download = client.get_download_status(job.nzo_id)
+                if download.status == "Failed":
                     client.delete_history_item(job.nzo_id)
             except SabnzbdError as ex:
                 self.logger.error("Querying download for job %s failed: %s", job.job_id, ex)
                 continue
 
-            if status == "Completed":
-                storage = os.path.normpath(storage)
+            if download.status == "Completed":
+                storage = os.path.normpath(download.storage)
                 job.set_download_status(JobStatus.PENDING,
                                         os.path.basename(storage),
                                         os.path.dirname(storage))
                 job.save(self.logger)
-            elif status in ("Failed", None):
+            elif download.status is None and self.recover_finished_download(client, job):
+                continue
+            elif download.status in ("Failed", None):
                 self.logger.warning("Download of '%s' for job %s failed (%s); searching again",
                                     job.title, job.job_id,
-                                    fail_message or "not found in SABnzbd")
+                                    download.fail_message or "not found in SABnzbd")
                 self.reject_nzb(job)
+
+    def recover_finished_download(self, client, job):
+        """
+        Looks for the folder of a job's download in SABnzbd's completed directory, when
+        SABnzbd no longer knows the download, as when it is removed from SABnzbd's history
+        between checks. If a folder named after the download's job holds the job's episode,
+        it is used as the job's download, rather than downloading the episode again, and
+        True is returned.
+        """
+
+        try:
+            complete_directory = client.get_complete_directory()
+        except SabnzbdError as ex:
+            self.logger.warning("Could not look for the download of job %s: %s",
+                                job.job_id, ex)
+            return False
+        folder = find_job_folder(complete_directory, job.title, get_episode_number(job.query))
+        if folder is None:
+            return False
+
+        self.logger.warning("Download of '%s' for job %s is no longer in SABnzbd, but was "
+                            "found in %s; converting it", job.title, job.job_id, folder)
+        # SABnzbd no longer has the download, so there is no history item to remove later.
+        job.nzo_id = None
+        job.set_download_status(JobStatus.PENDING, os.path.basename(folder),
+                                os.path.dirname(folder))
+        job.save(self.logger)
+        return True
 
     def remove_download(self, job):
         """
@@ -227,26 +259,32 @@ class NzbDownloader(Downloader):
 
     def find_download_folder(self, client, job, download_path):
         """
-        Gets the folder SABnzbd's history records as the location of a job's download, when
-        it is a folder inside SABnzbd's completed directory, but not the directory itself,
-        and contains the job's download path, so that the whole folder can be deleted; or
-        None if SABnzbd doesn't confirm such a folder. A job's download path is the file in
-        the folder when the job was given its download by hand.
+        Gets the folder of a job's download, as SABnzbd's history records its location, so
+        that the whole folder can be deleted, or None if SABnzbd doesn't confirm such a
+        folder. SABnzbd records the folder itself, or for some downloads, the file in it, in
+        which case the file's folder is used only if it is named after the download's job,
+        so that a folder shared by other downloads, such as a category's folder, is never
+        mistaken for it. The folder must be inside SABnzbd's completed directory, but not the
+        directory itself, and contain the job's download path, which is the file in the
+        folder when the job was given its download by hand.
         """
 
         if job.nzo_id is None:
             return None
         try:
-            _, storage, _ = client.get_download_status(job.nzo_id)
+            download = client.get_download_status(job.nzo_id)
             complete_directory = client.get_complete_directory()
         except SabnzbdError as ex:
             self.logger.warning("Could not find the folder of the download for job %s: %s",
                                 job.job_id, ex)
             return None
-        if not storage or not complete_directory:
+        if not download.storage or not complete_directory:
             return None
 
-        folder = os.path.realpath(storage)
+        folder = os.path.realpath(download.storage)
+        if os.path.isfile(folder) and is_job_folder(os.path.dirname(folder),
+                                                    download.name or job.title):
+            folder = os.path.dirname(folder)
         complete_directory = os.path.realpath(complete_directory)
         if (not os.path.isdir(folder) or folder == complete_directory
                 or os.path.commonpath([complete_directory, folder]) != complete_directory
@@ -263,3 +301,42 @@ class NzbDownloader(Downloader):
         job.nzo_id = None
         job.status = JobStatus.WAITING
         job.save(self.logger)
+
+
+def is_job_folder(folder, job_name):
+    """
+    Gets a value indicating whether a folder is named after a SABnzbd job, as SABnzbd names
+    the folder of a job's download: the job's name, followed by a number, as ".1", when a
+    folder of that name already existed
+    """
+
+    name = os.path.basename(os.path.normpath(folder))
+    return bool(job_name) and (name == job_name
+                               or re.fullmatch(re.escape(job_name) + r"\.[0-9]+", name)
+                               is not None)
+
+
+def find_job_folder(complete_directory, job_name, episode_number):
+    """
+    Finds the folder of a download named after a SABnzbd job in SABnzbd's completed
+    directory, or a folder in it, such as a category's folder, whose episode file is the
+    episode, returning the most recently changed such folder, or None if there is none. An
+    episode number of None accepts any episode file.
+    """
+
+    if not complete_directory or not os.path.isdir(complete_directory):
+        return None
+    parents = [complete_directory] + [
+        os.path.join(complete_directory, x) for x in os.listdir(complete_directory)
+        if os.path.isdir(os.path.join(complete_directory, x))]
+    candidates = []
+    for parent in parents:
+        for name in os.listdir(parent):
+            folder = os.path.join(parent, name)
+            if not os.path.isdir(folder) or not is_job_folder(folder, job_name):
+                continue
+            episode_file = find_episode_file(folder)
+            if episode_file is not None and episode_number in (
+                    None, get_episode_number(os.path.basename(episode_file))):
+                candidates.append(folder)
+    return max(candidates, key=os.path.getmtime, default=None)
