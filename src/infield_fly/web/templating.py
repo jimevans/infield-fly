@@ -30,5 +30,18 @@ def pop_flashes(request):
     return request.session.pop("flash", [])
 
 
+def format_size(size):
+    """Formats a size in bytes for display, such as 1.5 GB"""
+
+    if size < 1024:
+        return f"{size} bytes"
+    for unit in ("KB", "MB"):
+        size /= 1024
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+    return f"{size / 1024:.1f} GB"
+
+
 templates.env.globals["app_path"] = app_path
+templates.env.filters["filesize"] = format_size
 templates.env.globals["pop_flashes"] = pop_flashes

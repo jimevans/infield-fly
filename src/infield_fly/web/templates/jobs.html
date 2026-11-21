@@ -2,7 +2,10 @@
 {% set active = "jobs" %}
 {% block title %}Jobs{% endblock %}
 {% block content %}
-<h1>Jobs</h1>
+<div class="page-heading">
+  <h1>Jobs</h1>
+  <a class="button" href="{{ app_path(request, 'job_add') }}">Add job</a>
+</div>
 {% if processing %}
 <p class="notice">Job processing is running ({{ processing.description }}, process
   {{ processing.pid }}, started {{ processing.started }}). <a href="{{ app_path(request, 'processing') }}">Follow it</a></p>

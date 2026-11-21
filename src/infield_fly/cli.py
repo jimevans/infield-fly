@@ -395,7 +395,8 @@ def run_web(args, config):
             os.path.join(config.conversion.infield_fly_directory, ".web_secret")),
         https_only=not args.allow_http,
         root_path=args.root_path,
-        settings_file=SettingsFile(resolve_config_path(args.config)[0]))
+        settings_file=SettingsFile(resolve_config_path(args.config)[0]),
+        browse_roots=args.browse_roots)
     # Proxy headers are trusted only from the local reverse proxy, so that the client
     # address used to limit failed logins cannot be forged by other clients.
     uvicorn.run(app, host=args.host, port=args.port, root_path=args.root_path,
@@ -625,6 +626,10 @@ def add_web_subparser(subparsers):
     web_subparser.add_argument("--pam-service", default="infield-fly",
                                help="PAM service with which to check passwords (defaults " +
                                "to infield-fly)")
+    web_subparser.add_argument("--browse-root", dest="browse_roots", action="append",
+                               default=[], metavar="PATH",
+                               help="Directory whose downloads can be chosen for jobs; " +
+                               "can be given more than once")
     web_subparser.add_argument("--allow-http", action="store_true",
                                help="Send the session cookie over plain HTTP; use only for " +
                                "local testing")

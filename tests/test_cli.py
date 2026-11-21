@@ -617,7 +617,8 @@ class TestRunWeb:
     def web_args(**overrides):
         return Namespace(**{"config": None, "host": "127.0.0.1", "port": 8642,
                             "root_path": "/infield-fly", "allowed_user": None,
-                            "pam_service": "infield-fly", "allow_http": False, **overrides})
+                            "pam_service": "infield-fly", "allow_http": False,
+                            "browse_roots": [], **overrides})
 
     def test_runs_app_behind_local_proxy(self, config):
         with mock.patch("uvicorn.run") as run, \
@@ -628,7 +629,8 @@ class TestRunWeb:
         load_config, authenticator, secret_key = create_app.call_args[0]
         settings_file = create_app.call_args[1].pop("settings_file")
         assert settings_file.path == cli.resolve_config_path(None)[0]
-        assert create_app.call_args[1] == {"https_only": True, "root_path": "/infield-fly"}
+        assert create_app.call_args[1] == {"https_only": True, "root_path": "/infield-fly",
+                                           "browse_roots": []}
         assert (authenticator.allowed_user, authenticator.pam_service) == ("me", "infield-fly")
         assert secret_key == Path(config.conversion.infield_fly_directory,
                                   ".web_secret").read_text(encoding="utf-8")
@@ -898,15 +900,18 @@ class TestMain:
         args = self.run_main("web", command="run_web")
 
         assert (args.host, args.port, args.root_path, args.allowed_user, args.pam_service,
-                args.allow_http) == ("127.0.0.1", 8642, "", None, "infield-fly", False)
+                args.allow_http, args.browse_roots) == (
+                    "127.0.0.1", 8642, "", None, "infield-fly", False, [])
 
     def test_web_options(self):
         args = self.run_main("web", "--host", "0.0.0.0", "--port", "9000", "--root-path",
                              "/infield-fly", "--allowed-user", "someone", "--pam-service",
-                             "login", "--allow-http", command="run_web")
+                             "login", "--allow-http", "--browse-root", "/a", "--browse-root",
+                             "/b", command="run_web")
 
         assert (args.host, args.port, args.root_path, args.allowed_user, args.pam_service,
-                args.allow_http) == ("0.0.0.0", 9000, "/infield-fly", "someone", "login", True)
+                args.allow_http, args.browse_roots) == (
+                    "0.0.0.0", 9000, "/infield-fly", "someone", "login", True, ["/a", "/b"])
 
     def test_missing_settings_file_is_reported(self, tmp_path, capsys):
         missing = str(tmp_path / "missing.json")

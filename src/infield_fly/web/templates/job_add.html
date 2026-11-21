@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% set active = "jobs" %}
+{% block title %}Add job{% endblock %}
+{% block content %}
+<p><a href="{{ app_path(request, 'jobs') }}">← All jobs</a></p>
+<h1>Add a job</h1>
+{% if errors %}
+<div class="error-summary" role="alert">
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if keywords %}
+<form class="editor" method="post" action="{{ app_path(request, 'job_add') }}">
+  <fieldset>
+    <label for="keyword">Series</label>
+    <select id="keyword" name="keyword">
+      {% for item in keywords %}
+      <option value="{{ item }}"{% if item == keyword %} selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+    <label for="query">Search string</label>
+    <input id="query" name="query" value="{{ query }}" placeholder="e.g. the show 1080p s01e02" autocapitalize="none" spellcheck="false" required>
+    <p class="hint">Searched for on the indexer as is. Include the episode number, such as s01e02, so the converted file is named after the episode.</p>
+    <div class="form-actions">
+      <button type="submit">Add job</button>
+    </div>
+  </fieldset>
+</form>
+{% else %}
+<p class="muted">Jobs are for tracked series, and there are none. <a href="{{ app_path(request, 'series_add') }}">Add a series</a></p>
+{% endif %}
+{% endblock %}

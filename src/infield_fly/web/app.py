@@ -19,7 +19,7 @@ from infield_fly.concurrency import read_lock_holder
 from infield_fly.database import EpisodeDatabase
 from infield_fly.job_status import JobStatus
 from infield_fly.jobs import JobQueue
-from infield_fly.web import processing, series_editor, settings_editor
+from infield_fly.web import job_actions, processing, series_editor, settings_editor
 from infield_fly.web.templating import WEB_DIRECTORY, app_path, templates
 
 SESSION_COOKIE = "infield_fly_session"
@@ -189,17 +189,6 @@ async def list_jobs(request):
     })
 
 
-async def show_job(request):
-    """Shows the details of a job"""
-
-    config = request.app.state.load_config()
-    job = JobQueue(config).get_job_by_id(request.path_params["job_id"])
-    if job is None:
-        return PlainTextResponse(f"No existing job with ID '{request.path_params['job_id']}'",
-                                 404)
-    return templates.TemplateResponse(request, "job.html", {"job": job})
-
-
 def describe_tracked_series(config, today):
     """
     Gets the status of each tracked series from the cached episode database, without
@@ -255,13 +244,14 @@ async def list_series(request):
 
 
 def create_app(load_config, authenticator, secret_key, *, settings_file, https_only=True,
-               root_path=""):
+               root_path="", browse_roots=()):
     # pylint: disable=too-many-arguments
     """
     Creates the web interface application. The configuration is loaded with load_config
     on each request, so changes to the settings file apply without restarting the
     application, and the settings file is changed with settings_file. When https_only is
-    set, the session cookie is only sent over HTTPS.
+    set, the session cookie is only sent over HTTPS. Downloads for jobs can be chosen from
+    the directories in browse_roots.
     """
 
     app = Starlette(
@@ -270,7 +260,15 @@ def create_app(load_config, authenticator, secret_key, *, settings_file, https_o
             Route("/login", login, methods=["GET", "POST"], name="login"),
             Route("/logout", logout, methods=["POST"], name="logout"),
             Route("/jobs", list_jobs, name="jobs"),
-            Route("/jobs/{job_id}", show_job, name="job"),
+            Route("/jobs/add", job_actions.add_job, methods=["GET", "POST"], name="job_add"),
+            Route("/jobs/{job_id}", job_actions.show_job, name="job"),
+            Route("/jobs/{job_id}/update", job_actions.update_job, methods=["POST"],
+                  name="job_update"),
+            Route("/jobs/{job_id}/reset", job_actions.reset_job, methods=["POST"],
+                  name="job_reset"),
+            Route("/jobs/{job_id}/remove", job_actions.remove_job, methods=["GET", "POST"],
+                  name="job_remove"),
+            Route("/jobs/{job_id}/browse", job_actions.browse_downloads, name="job_browse"),
             Route("/processing", processing.show_processing, methods=["GET", "POST"],
                   name="processing"),
             WebSocketRoute("/processing/log", processing.follow_log, name="processing_log"),
@@ -294,4 +292,5 @@ def create_app(load_config, authenticator, secret_key, *, settings_file, https_o
     app.state.load_config = load_config
     app.state.authenticator = authenticator
     app.state.settings_file = settings_file
+    app.state.browse_roots = [os.path.realpath(x) for x in browse_roots]
     return app

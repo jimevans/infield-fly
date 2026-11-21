@@ -365,6 +365,14 @@ restarted. The page follows the log as it is written, whichever kind of run is i
 progress, using a WebSocket connection, which the reverse proxy must pass through (the
 Apache configuration in `deploy` does).
 
+Each job's page can change its status, as with `jobs update`, reset its rejected
+downloads, or remove it, and jobs can be added on the Jobs page. For the adding status,
+a magnet link, or the path or URL of an NZB file, can be given as the download; for the
+pending status, a finished download, file or folder, can be chosen from the folders
+named with the `--browse-root` option, or `BROWSE_ROOTS` in `deploy/deploy.env`, such
+as the folders of finished SABnzbd and Deluge downloads. Jobs can't be changed while job
+processing is running, because a run keeps its own copies of the jobs it processes.
+
 The web interface listens on `127.0.0.1:8642` by default, and is meant to be served
 over HTTPS by a reverse proxy, with `--root-path` naming the URL path under which the
 proxy serves it. It reads the settings file on each request, so changes to it apply
@@ -406,7 +414,8 @@ differs from the installed copy, shows the differences and asks before replacing
 
 The values filled in are the user running the script, the clone's directory, and the
 settings in `deploy/deploy.env`: the path of the `infield-fly` command, the settings
-file, the web interface's port, and the Apache file. Copy `deploy/deploy.env.example`
+file, the web interface's port, the folders from which downloads can be chosen for
+jobs, and the Apache file. Copy `deploy/deploy.env.example`
 to `deploy/deploy.env`, which git ignores, to set any that differ from their defaults;
 options such as `--command` and `--port` override them. Use `--dry-run` to see what
 would change without changing anything, and `--yes` to install changed files without

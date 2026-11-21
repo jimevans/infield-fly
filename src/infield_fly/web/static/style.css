@@ -335,3 +335,28 @@ select {
   overflow-wrap: anywhere;
 }
 .editor fieldset[disabled] { opacity: 0.6; }
+
+/* Job actions and the download picker */
+.job-actions { margin-top: 1rem; }
+.job-actions form { margin: 0; }
+button[disabled] { opacity: 0.5; cursor: default; }
+.path { overflow-wrap: anywhere; }
+.entries {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.entries li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.entries li:first-child { border-top: 0; }
+.entries li.episode a { font-weight: 600; }

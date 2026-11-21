@@ -24,4 +24,33 @@
   {% if job.converted_file_name is not none %}<dt>Converted file name</dt><dd>{{ job.converted_file_name }}.mp4</dd>{% endif %}
   {% if job.rejected %}<dt>Rejected NZB indexer IDs</dt><dd class="wrap">{{ job.rejected | join(", ") }}</dd>{% endif %}
 </dl>
+
+{% if is_busy %}
+<p class="notice">Job processing is running, so jobs can't be changed until it finishes. <a href="{{ app_path(request, 'processing') }}">Follow it</a></p>
+{% endif %}
+<form class="editor" method="post" action="{{ app_path(request, 'job_update', job_id=job.job_id) }}">
+  <input type="hidden" name="version" value="{{ version }}">
+  <fieldset{% if is_busy %} disabled{% endif %}>
+    <legend>Change status</legend>
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      {% for status in statuses %}
+      <option value="{{ status.value }}"{% if status == selected_status %} selected{% endif %}>{{ status.value }}</option>
+      {% endfor %}
+    </select>
+    <label for="download">Download</label>
+    <input id="download" name="download" value="{{ download }}" autocapitalize="none" spellcheck="false">
+    <p class="hint">Optional. For <b>adding</b>: a magnet link, or the URL or path of an NZB file, which is checked and added on the next run. For <b>pending</b>: a finished download, file or folder, to convert on the next run{% if can_browse %} — <a href="{{ app_path(request, 'job_browse', job_id=job.job_id) }}">choose one</a>{% endif %}. Leave it empty to only change the status, such as to retry a job stuck converting by setting it to pending.</p>
+    <div class="form-actions">
+      <button type="submit">Change status</button>
+    </div>
+  </fieldset>
+</form>
+
+<div class="form-actions job-actions">
+  <form method="post" action="{{ app_path(request, 'job_reset', job_id=job.job_id) }}">
+    <button type="submit" class="secondary"{% if is_busy or not job.rejected %} disabled{% endif %}>Reset rejected downloads</button>
+  </form>
+  <a class="danger-link" href="{{ app_path(request, 'job_remove', job_id=job.job_id) }}">Remove job…</a>
+</div>
 {% endblock %}
