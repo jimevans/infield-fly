@@ -58,7 +58,6 @@ async def edit_settings(request):
 
 
 def save_settings(request, form, settings, version, posted_version):
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
     """
     Saves the settings in the form, unless they are invalid, or the settings file was
     changed since the version on which the form is based
@@ -87,7 +86,6 @@ def save_settings(request, form, settings, version, posted_version):
 
 
 async def check_connection(request, form, settings, version, check_name):
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
     """Checks a connection using the values in the form, without saving them"""
 
     errors = form.validate()

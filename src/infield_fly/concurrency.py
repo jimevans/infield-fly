@@ -7,14 +7,14 @@ import contextlib
 import json
 import os
 import stat
+import sys
 import uuid
 from datetime import datetime
 
-try:
+# Files are locked with fcntl, except on Windows, which has msvcrt instead.
+if sys.platform != "win32":
     import fcntl
-    msvcrt = None  # pylint: disable=invalid-name
-except ImportError:  # pragma: no cover - Windows
-    fcntl = None  # pylint: disable=invalid-name
+else:  # pragma: no cover - Windows
     import msvcrt  # pylint: disable=import-error
 
 
@@ -85,7 +85,7 @@ def read_lock_holder(path):
 def _is_process_running(pid):
     if not isinstance(pid, int) or pid <= 0:
         return False
-    if fcntl is None:  # pragma: no cover - Windows
+    if sys.platform == "win32":  # pragma: no cover - Windows
         # On Windows, os.kill terminates the process instead of checking for it.
         return True
     try:
@@ -139,7 +139,7 @@ class ProcessLock:
 
 
 def _lock(lock_file):
-    if fcntl is not None:
+    if sys.platform != "win32":
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     else:  # pragma: no cover - Windows
         lock_file.seek(0)
@@ -147,7 +147,7 @@ def _lock(lock_file):
 
 
 def _unlock(lock_file):
-    if fcntl is not None:
+    if sys.platform != "win32":
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
     else:  # pragma: no cover - Windows
         lock_file.seek(0)

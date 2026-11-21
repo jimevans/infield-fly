@@ -351,7 +351,7 @@ class TestFollowLog:
 def test_follow_log_ends_when_connection_closes(app, config):
     """A closed connection is found by sending, as happens behind the real server"""
 
-    class ClosedSocket:  # pylint: disable=too-few-public-methods
+    class ClosedSocket:
         def __init__(self):
             self.app = app
             self.sent = []

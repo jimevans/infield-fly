@@ -12,7 +12,7 @@ LOG_LEVELS = ("debug", "info", "warning", "error", "critical")
 
 
 @dataclass(frozen=True)
-class SettingField:  # pylint: disable=too-many-instance-attributes
+class SettingField:
 
     """
     A setting edited with the settings form. The kind of a setting is "text", "path" (an

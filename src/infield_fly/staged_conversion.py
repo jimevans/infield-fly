@@ -54,9 +54,8 @@ def cancelled_by_termination():
         signal.signal(signal.SIGTERM, previous)
 
 
-def convert_staged(config, file_map, settings, overwrite=False, progress_file=None,
+def convert_staged(config, file_map, settings, *, overwrite=False, progress_file=None,
                    is_unattended_mode=False):
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
     """
     Converts each (source, destination) pair of a file map into the staging directory, then
     moves the converted files, with any subtitle files written beside them, into the

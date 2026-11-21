@@ -59,7 +59,7 @@ def is_same_origin(connection):
     return urlsplit(source).netloc == connection.headers.get("host")
 
 
-class AccessControlMiddleware:  # pylint: disable=too-few-public-methods
+class AccessControlMiddleware:
 
     """
     Requires a logged in session for every request other than for the login page and
@@ -246,7 +246,6 @@ async def list_series(request):
 
 def create_app(load_config, authenticator, secret_key, *, settings_file, https_only=True,
                root_path="", browse_roots=()):
-    # pylint: disable=too-many-arguments
     """
     Creates the web interface application. The configuration is loaded with load_config
     on each request, so changes to the settings file apply without restarting the

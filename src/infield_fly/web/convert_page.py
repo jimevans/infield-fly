@@ -25,7 +25,7 @@ CODEC_NAMES = {"subrip": "srt", "hdmv_pgs_subtitle": "pgs", "libx264": "h264, re
 
 
 @dataclass
-class ConvertForm:  # pylint: disable=too-many-instance-attributes
+class ConvertForm:
 
     """
     The choices of a conversion: the source file or folder, the name of a converted file,

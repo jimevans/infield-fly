@@ -28,9 +28,8 @@ class Authenticator:
     failures have aged out of the window.
     """
 
-    def __init__(self, allowed_user, pam_service="infield-fly", max_client_failures=5,
+    def __init__(self, allowed_user, pam_service="infield-fly", *, max_client_failures=5,
                  max_total_failures=20, failure_window_seconds=900, clock=time.monotonic):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
         self.allowed_user = allowed_user
         self.pam_service = pam_service
         self.max_client_failures = max_client_failures

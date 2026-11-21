@@ -206,7 +206,7 @@ class Converter:
         """
 
         return [self._extract_subtitle_stream(subtitle_stream, subs_file, description,
-                                              dry_run, overwrite)
+                                              dry_run=dry_run, overwrite=overwrite)
                 for subtitle_stream, subs_file, description in self.get_subtitle_files()]
 
     def get_subtitle_extraction_args(self, subtitle_stream, subs_file, overwrite=False):
@@ -228,9 +228,8 @@ class Converter:
         subs_args.append(subs_file)
         return subs_args
 
-    def _extract_subtitle_stream(self, subtitle_stream, subs_file, description, dry_run=False,
-                                 overwrite=False):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def _extract_subtitle_stream(self, subtitle_stream, subs_file, description, *,
+                                 dry_run=False, overwrite=False):
         subs_args = self.get_subtitle_extraction_args(subtitle_stream, subs_file, overwrite)
         if dry_run:
             logger.info("%s conversion arguments:\n%s", description, subs_args)

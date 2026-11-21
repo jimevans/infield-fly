@@ -313,7 +313,6 @@ class TestConvert:
     ])
     def test_stage_failures(self, config, episode_db, stage, notifier_factory, caplog,
                             error, message):
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
         stage.side_effect = error
 
         cli.convert(convert_args(stage=True, notify=True), config)

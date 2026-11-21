@@ -57,3 +57,17 @@ source = ["infield_fly"]
 
 [tool.coverage.report]
 show_missing = true
+
+# Pylint's design checks, with limits for this project. The tests have their own settings,
+# in tests/pylintrc.
+[tool.pylint.design]
+# Positional arguments are kept to pylint's default, since they are identified only by
+# their order at each call. Keyword-only arguments, after a *, are named at each call, so
+# more of them are allowed in all.
+max-positional-arguments = 5
+max-args = 10
+# Records, such as forms and the progress bar's settings, hold more values than pylint's
+# default of 7.
+max-attributes = 10
+# Classes such as ASGI middleware have a single public method, __call__.
+min-public-methods = 1
