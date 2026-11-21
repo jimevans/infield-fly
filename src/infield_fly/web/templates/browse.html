@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<p><a href="{{ back_url }}">← {{ back_label }}</a></p>
+<h1>{{ heading }}</h1>
+<p class="muted">{{ intro }}</p>
+{% if path is none %}
+  {% if roots %}
+  <ul class="cards">
+    {% for root in roots %}
+    <li><a class="card" href="{{ browse_url(root) }}"><span class="card-title">{{ root }}</span></a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No folders are set up for choosing downloads. Set BROWSE_ROOTS in deploy/deploy.env, and run deploy/deploy.sh.</p>
+  {% endif %}
+{% else %}
+<p class="path"><code>{{ path }}</code></p>
+<div class="form-actions">
+  {% if parent %}<a href="{{ browse_url(parent) }}">↑ Up</a>
+  {% else %}<a href="{{ browse_url(none) }}">↑ All folders</a>{% endif %}
+  <a class="button" href="{{ choose_url(path) }}">Choose this folder</a>
+</div>
+{% if entries %}
+<ul class="entries">
+  {% for entry in entries %}
+  <li{% if entry.is_episode %} class="episode"{% endif %}>
+    {% if entry.is_directory %}
+    <a href="{{ browse_url(entry.path) }}">📁 {{ entry.name }}</a>
+    <span class="muted">{{ entry.modified.strftime("%Y-%m-%d %H:%M") }}</span>
+    {% else %}
+    <a href="{{ choose_url(entry.path) }}">{{ entry.name }}</a>
+    <span class="muted">{{ entry.size | filesize }} · {{ entry.modified.strftime("%Y-%m-%d %H:%M") }}</span>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">This folder is empty.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

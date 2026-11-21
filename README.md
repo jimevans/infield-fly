@@ -228,6 +228,14 @@ Options:
   (for example, `2.40`) crops the center of the frame to that ratio
 * `-x`, `--dry-run`: print the `ffmpeg` arguments without converting
 * `-n`, `--notify`: send an SMS to the `receiving_number` when finished
+* `--stage`: convert in the `adhoc` folder of the staging directory, moving the
+  converted files to the destination when finished, so that a partly converted
+  file never appears there; only one staged conversion runs at a time, and the
+  files of a failed or cancelled conversion are deleted
+* `--overwrite`: replace existing converted files, rather than having `ffmpeg` ask,
+  or, with `--stage`, refusing to start
+* `--progress-file PATH`: with `--stage`, write the conversion's progress to `PATH`,
+  and `ffmpeg`'s progress to `PATH.ffmpeg`
 
 Examples:
 
@@ -380,6 +388,15 @@ pending status, a finished download, file or folder, can be chosen from the fold
 named with the `--browse-root` option, or `BROWSE_ROOTS` in `deploy/deploy.env`, such
 as the folders of finished SABnzbd and Deluge downloads. Jobs can't be changed while job
 processing is running, because a run keeps its own copies of the jobs it processes.
+
+Files can be converted on the Convert page, as with `convert`: a single file, such as a
+movie, or a folder of episodes, named from a tracked series. The source is chosen from
+the same folders as downloads for jobs, and the converted files are written to the final
+directory. Before converting a file, the page shows which tracks of the source become
+which tracks of the converted file, the tracks left out, and the `ffmpeg` commands
+used, which can be copied to convert the file differently by hand. The conversion runs
+with `convert --stage`, showing its progress and time left, and can be cancelled. It
+won't replace an existing converted file unless asked to.
 
 The web interface listens on `127.0.0.1:8642` by default, and is meant to be served
 over HTTPS by a reverse proxy, with `--root-path` naming the URL path under which the

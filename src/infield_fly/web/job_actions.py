@@ -252,27 +252,52 @@ async def add_job(request):
         status_code=400)
 
 
+def render_browser(request, path, *, browse_url, choose_url, **context):
+    """
+    Shows a browsable directory, or the list of browsable directories when path is None,
+    with links to browse folders and choose files or folders made by the browse_url and
+    choose_url functions of a path. The context names the page's back link, heading, and
+    introduction.
+    """
+
+    roots = request.app.state.browse_roots
+    if path is None:
+        return templates.TemplateResponse(request, "browse.html", {
+            **context, "path": None, "roots": roots, "entries": [], "parent": None,
+            "browse_url": browse_url, "choose_url": choose_url})
+
+    real_path = os.path.realpath(path)
+    root = find_browse_root(request, real_path)
+    if root is None or not os.path.isdir(real_path):
+        return PlainTextResponse("That folder can't be browsed.", 404)
+    return templates.TemplateResponse(request, "browse.html", {
+        **context, "path": real_path, "roots": roots, "entries": list_directory(real_path),
+        "parent": os.path.dirname(real_path) if real_path != root else None,
+        "browse_url": browse_url, "choose_url": choose_url})
+
+
+def with_query(base, **params):
+    """Gets a path with query parameters, leaving out those that are None"""
+
+    params = {name: value for name, value in params.items() if value is not None}
+    return f"{base}?{urlencode(params)}" if params else base
+
+
 async def browse_downloads(request):
     """Lists a browsable directory, from which a download is chosen for a job"""
 
     _, _, job = load_job(request)
     if job is None:
         return job_not_found(request)
-    roots = request.app.state.browse_roots
-    path = request.query_params.get("path")
-    if path is None:
-        return templates.TemplateResponse(request, "job_browse.html", {
-            "job": job, "path": None, "roots": roots, "entries": [], "parent": None})
-
-    real_path = os.path.realpath(path)
-    root = find_browse_root(request, real_path)
-    if root is None or not os.path.isdir(real_path):
-        return PlainTextResponse("That folder can't be browsed.", 404)
-    return templates.TemplateResponse(request, "job_browse.html", {
-        "job": job, "path": real_path, "roots": roots,
-        "entries": list_directory(real_path),
-        "parent": os.path.dirname(real_path) if real_path != root else None,
-    })
+    browse_path = app_path(request, "job_browse", job_id=job.job_id)
+    job_path = app_path(request, "job", job_id=job.job_id)
+    return render_browser(
+        request, request.query_params.get("path"),
+        browse_url=lambda path: with_query(browse_path, path=path),
+        choose_url=lambda path: with_query(job_path, download=path),
+        back_url=job_path, back_label="Job", heading="Choose the download",
+        intro=(f"For {job.query}. Choose an episode file, or a folder to convert the "
+               "largest episode file in it."))
 
 
 def list_directory(path):

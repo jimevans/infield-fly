@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set active = "convert" %}
+{% block title %}Convert{% endblock %}
+{% block content %}
+{% set busy = status.state != "idle" %}
+<h1>Convert</h1>
+<p class="muted">Converts a file, such as a movie, or a folder of episodes, into <code>{{ final_directory }}</code>, as <code>infield-fly convert</code> does. Files are converted in the staging directory, and moved there when finished.</p>
+
+{% if busy %}
+<form class="notice converting" method="post" action="{{ app_path(request, 'convert') }}">
+  <p role="status"><span class="status status-converting">{{ status.state }}</span>
+    <span id="convert-progress">{{ status.progress or "Starting the conversion." }}</span></p>
+  <button type="submit" class="danger" name="action" value="cancel">Cancel conversion</button>
+</form>
+{% elif last_errors %}
+<h2>Errors from the last conversion started here</h2>
+<pre class="log">{{ last_errors }}</pre>
+{% endif %}
+
+{% if errors %}
+<div class="error-summary" role="alert">
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form class="editor" method="post" action="{{ app_path(request, 'convert') }}">
+  <fieldset{% if busy %} disabled{% endif %}>
+    <legend>What to convert</legend>
+    <label for="source">Source file or folder</label>
+    <input id="source" name="source" value="{{ form.source }}" autocapitalize="none" spellcheck="false" required>
+    <p class="hint"><a href="{{ app_path(request, 'convert_browse') }}">Choose a file or folder</a> from the download folders.</p>
+
+    <label for="name">Converted file name</label>
+    <input id="name" name="name" value="{{ form.name }}" placeholder="e.g. Movie Title (1999)" autocapitalize="none" spellcheck="false">
+    <p class="hint">For a file. .mp4 is added if not included.</p>
+
+    <label for="keyword">Series</label>
+    <select id="keyword" name="keyword">
+      <option value=""{% if not form.keyword %} selected{% endif %}>Match series by file name</option>
+      {% for item, name in series %}
+      <option value="{{ item }}"{% if item == form.keyword %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">For a folder of episodes, which are named after their titles on TheTVDB.</p>
+  </fieldset>
+
+  <fieldset{% if busy %} disabled{% endif %}>
+    <legend>Options</legend>
+    <label class="checkbox"><input type="checkbox" name="convert_audio"{% if form.convert_audio %} checked{% endif %}> Convert audio to AAC stereo, with a Dolby Digital track</label>
+    <label class="checkbox"><input type="checkbox" name="convert_subtitles"{% if form.convert_subtitles %} checked{% endif %}> Convert English text subtitles</label>
+    <label class="checkbox"><input type="checkbox" name="convert_video"{% if form.convert_video %} checked{% endif %}> Re-encode video with libx264, scaling down to 1080p</label>
+    <label for="crf">Quality (CRF)</label>
+    <input id="crf" name="crf" value="{{ form.crf }}" inputmode="decimal" placeholder="Default: 17">
+    <label for="aspect_ratio">Crop to aspect ratio</label>
+    <input id="aspect_ratio" name="aspect_ratio" value="{{ form.aspect_ratio }}" inputmode="decimal" placeholder="e.g. 2.40">
+    <p class="hint">Quality and cropping apply only when re-encoding video.</p>
+    <div class="form-actions">
+      <button type="submit" name="action" value="review">Review</button>
+    </div>
+  </fieldset>
+</form>
+
+<div class="page-heading">
+  <h2>Log</h2>
+  <span id="connection" class="muted"></span>
+</div>
+<pre id="log" class="log" tabindex="0" data-socket="{{ app_path(request, 'processing_log') }}" data-busy-convert="{{ 'true' if busy else 'false' }}">
+{%- for line in lines %}{{ line }}
+{% endfor -%}
+</pre>
+<script src="{{ app_path(request, 'static', path='processing.js') }}"></script>
+{% endblock %}
