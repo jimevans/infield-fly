@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set active = "convert" %}
+{% block title %}Review conversion{% endblock %}
+{% block content %}
+<h1>Review the conversion</h1>
+{% if errors %}
+<div class="error-summary" role="alert">
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+<dl class="details">
+  <dt>Source</dt><dd>{{ form.source }}</dd>
+  <dt>Destination</dt><dd>{{ destination }}</dd>
+</dl>
+
+{% if form.is_folder %}
+<h2>Episodes</h2>
+{% if review.files %}
+<ul class="mapping">
+  {% for source, name in review.files %}
+  <li><span>{{ source }}</span> <span aria-hidden="true">→</span> <span>{{ name }}</span></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No files in the folder can be named from a tracked series.</p>
+{% endif %}
+{% if review.skipped %}
+<h3>Skipped</h3>
+<p class="hint">Not episode files of a tracked series, or episodes not in the episode database.</p>
+<ul class="mapping muted">{% for name in review.skipped %}<li>{{ name }}</li>{% endfor %}</ul>
+{% endif %}
+{% else %}
+<h2>Tracks</h2>
+<ul class="mapping">
+  {% for source, destination_track in review.tracks %}
+  <li><span>{{ source }}</span> <span aria-hidden="true">→</span> <span>{{ destination_track }}</span></li>
+  {% endfor %}
+</ul>
+{% if review.omitted %}
+<h3>Not used</h3>
+<ul class="mapping muted">{% for stream in review.omitted %}<li>{{ stream }}</li>{% endfor %}</ul>
+{% endif %}
+<h3>ffmpeg commands</h3>
+<p class="hint">The commands that write the converted files, with paths in the final directory. The conversion itself writes to the staging directory first.</p>
+{% for command in review.commands %}<pre class="log command">{{ command }}</pre>{% endfor %}
+{% endif %}
+
+<form class="editor" method="post" action="{{ app_path(request, 'convert') }}">
+  <input type="hidden" name="source" value="{{ form.source }}">
+  <input type="hidden" name="name" value="{{ form.name }}">
+  <input type="hidden" name="keyword" value="{{ form.keyword }}">
+  <input type="hidden" name="crf" value="{{ form.crf }}">
+  <input type="hidden" name="aspect_ratio" value="{{ form.aspect_ratio }}">
+  {% if form.convert_video %}<input type="hidden" name="convert_video" value="on">{% endif %}
+  {% if form.convert_audio %}<input type="hidden" name="convert_audio" value="on">{% endif %}
+  {% if form.convert_subtitles %}<input type="hidden" name="convert_subtitles" value="on">{% endif %}
+  {% if existing %}
+  <div class="notice">
+    <p>These converted files already exist:</p>
+    <ul>{% for path in existing %}<li>{{ path }}</li>{% endfor %}</ul>
+    <label class="checkbox"><input type="checkbox" name="overwrite"{% if form.overwrite %} checked{% endif %}> Replace them</label>
+  </div>
+  {% endif %}
+  <div class="form-actions">
+    <button type="submit" name="action" value="start">Start converting</button>
+    <button type="submit" class="secondary" name="action" value="change">Change</button>
+  </div>
+</form>
+{% endblock %}

@@ -368,3 +368,18 @@ button[disabled] { opacity: 0.5; cursor: default; }
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* Convert page */
+.converting { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.converting p { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.mapping { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.35rem; }
+.mapping li {
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+.mapping.muted li { background: none; }
+.log.command { max-height: none; user-select: all; }

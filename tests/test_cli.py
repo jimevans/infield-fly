@@ -1,9 +1,13 @@
 """Tests for the cli module"""
 
+# The tests of the commands share this module's fixtures, so they are kept together.
+# pylint: disable=too-many-lines
+
 import json
 import logging
 import os
 import runpy
+import subprocess
 import sys
 from argparse import Namespace
 from datetime import datetime
@@ -20,6 +24,7 @@ from infield_fly.concurrency import LockHeldError, ProcessLock
 from infield_fly.configuration import DEFAULT_CONFIG_DIRECTORY, EpisodeSearch
 from infield_fly.database import EpisodeInfo
 from infield_fly.jobs import Job, JobQueue, JobStatus
+from infield_fly.staged_conversion import ConversionCancelled
 
 MAGNET = "magnet:?xt=urn:btih:ABCDEF&dn=Show.S01E02"
 VALID_NZB = (b'<nzb><file subject=\'"Show.S01E02.mkv" yEnc (1/1)\'><segments>'
@@ -208,7 +213,8 @@ class TestUpdateDatabase:
 def convert_args(**overrides):
     values = {"source": "/media/in.mkv", "destination": "/media/out.mp4", "keyword": None,
               "convert_video": False, "convert_audio": True, "convert_subtitles": True,
-              "aspect_ratio": None, "crf": None, "dry_run": False, "notify": False}
+              "aspect_ratio": None, "crf": None, "dry_run": False, "notify": False,
+              "unattended": False, "stage": False, "overwrite": False, "progress_file": None}
     return Namespace(**{**values, **overrides})
 
 
@@ -242,11 +248,75 @@ class TestConvert:
     def test_converts_with_default_settings(self, config, episode_db, converter_class):
         cli.convert(convert_args(), config)
 
-        converter_class.assert_called_once_with("/media/in.mkv", "/media/out.mp4", "/ffmpeg")
+        converter_class.assert_called_once_with("/media/in.mkv", "/media/out.mp4", "/ffmpeg",
+                                                False)
         settings = converter_class.return_value.convert_file.call_args[0][0]
         assert (settings.convert_video, settings.convert_audio, settings.convert_subtitles,
                 settings.aspect_ratio, settings.crf) == (False, True, True, None, 17)
-        assert converter_class.return_value.convert_file.call_args.kwargs == {"dry_run": False}
+        assert converter_class.return_value.convert_file.call_args.kwargs == {
+            "dry_run": False, "overwrite": False}
+
+    def test_unattended_and_overwrite(self, config, episode_db, converter_class):
+        cli.convert(convert_args(unattended=True, overwrite=True), config)
+
+        assert converter_class.call_args[0][3] is True
+        assert converter_class.return_value.convert_file.call_args.kwargs["overwrite"] is True
+
+    def test_empty_directory(self, config, episode_db, converter_class, tmp_path, caplog):
+        cli.convert(convert_args(source=str(tmp_path), destination=str(tmp_path)), config)
+
+        converter_class.assert_not_called()
+        assert f"No files to convert in {tmp_path}" in caplog.text
+
+    @pytest.fixture
+    def stage(self):
+        with mock.patch("infield_fly.staged_conversion.convert_staged") as convert_staged:
+            yield convert_staged
+
+    def test_stage(self, config, episode_db, converter_class, stage, caplog):
+        caplog.set_level("INFO")
+
+        cli.convert(convert_args(stage=True, overwrite=True, progress_file="/p",
+                                 unattended=True), config)
+
+        converter_class.assert_not_called()
+        args, options = stage.call_args
+        assert args[0] is config
+        assert args[1] == [("/media/in.mkv", "/media/out.mp4")]
+        assert options == {"overwrite": True, "progress_file": "/p",
+                           "is_unattended_mode": True}
+        assert "Conversion of /media/in.mkv complete" in caplog.text
+
+    def test_dry_run_is_not_staged(self, config, episode_db, converter_class, stage):
+        cli.convert(convert_args(stage=True, dry_run=True), config)
+
+        stage.assert_not_called()
+        converter_class.assert_called_once()
+
+    @pytest.mark.parametrize("error, message", [
+        (LockHeldError({"pid": 5, "description": "convert", "started": "now"}),
+         "Not converting; a conversion by 'convert' (process 5, started now) is still in "
+         "progress"),
+        (FileExistsError("Converted files already exist: /x.mp4"),
+         "Not converting: Converted files already exist: /x.mp4; use --overwrite"),
+        (subprocess.CalledProcessError(1, ["ffmpeg"]), "Conversion of /media/in.mkv failed"),
+    ])
+    def test_stage_failures(self, config, episode_db, stage, notifier_factory, caplog,
+                            error, message):
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        stage.side_effect = error
+
+        cli.convert(convert_args(stage=True, notify=True), config)
+
+        assert message in caplog.text
+        notifier_factory.assert_not_called()
+
+    def test_stage_cancelled(self, config, episode_db, stage, caplog):
+        stage.side_effect = ConversionCancelled()
+
+        cli.convert(convert_args(stage=True), config)
+
+        assert "Conversion of /media/in.mkv cancelled" in caplog.text
 
     def test_converts_mapped_directory_with_video_settings(self, config, episode_db,
                                                            converter_class, tmp_path):
@@ -258,10 +328,10 @@ class TestConvert:
 
         converter_class.assert_called_once_with(
             str(tmp_path / "x.s01e02.mkv"), str(tmp_path / "The Show - s01e02 - Part - 2.mp4"),
-            "/ffmpeg")
+            "/ffmpeg", False)
         call = converter_class.return_value.convert_file.call_args
         assert (call[0][0].aspect_ratio, call[0][0].crf, call.kwargs) == (
-            2.4, 20.0, {"dry_run": True})
+            2.4, 20.0, {"dry_run": True, "overwrite": False})
 
     def test_notify_skipped_on_dry_run(self, config, episode_db, converter_class,
                                        notifier_factory, capsys):
@@ -868,6 +938,12 @@ class TestMain:
                 args.aspect_ratio, args.crf, args.convert_audio, args.convert_subtitles,
                 args.dry_run, args.notify, args.unattended, args.config) == (
             "src", "dest", None, False, None, None, True, True, False, False, False, None)
+
+    def test_convert_staging_options(self):
+        args = self.run_main("convert", "src", "dest", "--stage", "--overwrite",
+                             "--progress-file", "/p", command="convert")
+
+        assert (args.stage, args.overwrite, args.progress_file) == (True, True, "/p")
 
     def test_convert_options(self):
         args = self.run_main("-u", "-c", "conf.json", "convert", "src", "dest", "-k", "show",

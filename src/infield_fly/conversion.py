@@ -7,6 +7,7 @@ import platform
 import re
 import subprocess
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -19,6 +20,23 @@ class ConversionSettings:
     convert_subtitles: bool = True
     aspect_ratio: float = None
     crf: float = 17
+
+
+@dataclass
+class TrackMapping:
+
+    """
+    How a stream of the source file is written: to a track of the output file, numbered
+    from zero, or to a separate file. The codec is the one written, or "copy" when the
+    stream is copied unchanged, and the channel count is set when audio is written with a
+    specific number of channels.
+    """
+
+    source: "FileStreamInfo.StreamInfo"
+    codec: str
+    output_track: Optional[int] = None
+    output_file: Optional[str] = None
+    channels: Optional[int] = None
 
 
 class Converter:
@@ -43,14 +61,38 @@ class Converter:
             tool_location += ".exe"
         return tool_location
 
-    def convert_file(self, settings=None, dry_run=False):
-        """Converts a single file, returning the list of output files written"""
+    def convert_file(self, settings=None, dry_run=False, overwrite=False, progress_file=None):
+        """
+        Converts a single file, returning the list of output files written. When overwrite
+        is set, existing output files are replaced; otherwise ffmpeg asks whether to replace
+        them. When progress_file is set, ffmpeg writes its progress to that file.
+        """
 
         if settings is None:
             settings = ConversionSettings()
 
-        is_convert_subtitles = (settings.convert_subtitles
-                                and self.file_stream_info.has_subtitle_stream)
+        ffmpeg_args = self.get_conversion_args(settings, overwrite, progress_file)
+        self.logger.info("Convert %s -> %s", self.input_file, self.output_file)
+        if dry_run:
+            self.logger.info("Conversion arguments:\n%s", ffmpeg_args)
+        else:
+            subprocess.run(ffmpeg_args, check=True)
+
+        output_files = [self.output_file]
+        if self.is_converting_subtitles(settings):
+            output_files.extend(self.convert_forced_subtitles(dry_run, overwrite))
+        return output_files
+
+    def is_converting_subtitles(self, settings):
+        """Gets a value indicating whether subtitles are converted with the settings"""
+
+        return settings.convert_subtitles and self.file_stream_info.has_subtitle_stream
+
+    def get_conversion_args(self, settings=None, overwrite=False, progress_file=None):
+        """Gets the ffmpeg command line that converts the file with the settings"""
+
+        if settings is None:
+            settings = ConversionSettings()
         is_convert_audio = (settings.convert_audio
                            and self.file_stream_info.has_audio_stream)
 
@@ -61,6 +103,11 @@ class Converter:
             ffmpeg_args.append("-loglevel")
             ffmpeg_args.append("warning")
             ffmpeg_args.append("-nostats")
+        if overwrite:
+            ffmpeg_args.append("-y")
+        if progress_file is not None:
+            ffmpeg_args.append("-progress")
+            ffmpeg_args.append(progress_file)
         ffmpeg_args.append("-i")
         ffmpeg_args.append(self.input_file)
         ffmpeg_args.append("-map_metadata")
@@ -70,48 +117,100 @@ class Converter:
         ffmpeg_args.extend(self.get_video_conversion_args(
             settings.convert_video, settings.aspect_ratio, settings.crf))
         ffmpeg_args.extend(self.get_audio_conversion_args(is_convert_audio))
-        ffmpeg_args.extend(self.get_subtitle_conversion_args(is_convert_subtitles))
+        ffmpeg_args.extend(self.get_subtitle_conversion_args(
+            self.is_converting_subtitles(settings)))
 
         ffmpeg_args.append(self.output_file)
-        self.logger.info("Convert %s -> %s", self.input_file, self.output_file)
-        if dry_run:
-            self.logger.info("Conversion arguments:\n%s", ffmpeg_args)
-        else:
-            subprocess.run(ffmpeg_args, check=True)
+        return ffmpeg_args
 
-        output_files = [self.output_file]
-        if is_convert_subtitles:
-            output_files.extend(self.convert_forced_subtitles(dry_run))
-        return output_files
+    def get_track_mappings(self, settings=None):
+        """
+        Gets how each stream of the source file used with the settings is written, in the
+        order of the output tracks, followed by the streams written to separate files
+        """
 
-    def convert_forced_subtitles(self, dry_run=False):
+        if settings is None:
+            settings = ConversionSettings()
+        info = self.file_stream_info
+        tracks = []
+        if info.has_video_stream:
+            tracks.append(TrackMapping(info.video_stream,
+                                       "libx264" if settings.convert_video else "copy"))
+        if info.has_audio_stream:
+            if settings.convert_audio:
+                for codec, channels in (self.get_stereo_audio_output(),
+                                        self.get_surround_audio_output()):
+                    tracks.append(TrackMapping(info.audio_stream, codec, channels=channels))
+            else:
+                tracks.append(TrackMapping(info.audio_stream, "copy"))
+        if self.is_converting_subtitles(settings):
+            tracks.append(TrackMapping(info.subtitle_stream, self.get_subtitle_output()))
+        for track_index, track in enumerate(tracks):
+            track.output_track = track_index
+
+        if self.is_converting_subtitles(settings):
+            tracks.extend(TrackMapping(subtitle_stream, "srt", output_file=subs_file)
+                          for subtitle_stream, subs_file, _ in self.get_subtitle_files())
+        return tracks
+
+    def get_omitted_streams(self, settings=None):
+        """Gets the streams of the source file that are not used with the settings"""
+
+        used = {x.source.index for x in self.get_track_mappings(settings)}
+        return [x for x in self.file_stream_info.streams if x.index not in used]
+
+    def get_subtitle_files(self):
+        """
+        Gets the subtitle streams written to separate files, with their file names and
+        descriptions. A forced subtitle stream is written to its own file, since ffmpeg does
+        not always mux forced subtitles correctly, and the main subtitle stream is written
+        alongside it for later remuxing.
+        """
+
+        subs_files = []
+        if self.file_stream_info.has_forced_subtitle_stream:
+            base_name, _ = os.path.splitext(self.output_file)
+            subs_files.append((self.file_stream_info.forced_subtitle_stream,
+                               f"{base_name}.eng.forced.srt", "Forced subtitle"))
+            if self.file_stream_info.has_subtitle_stream:
+                subs_files.append((self.file_stream_info.subtitle_stream,
+                                   f"{base_name}.eng.srt", "Main subtitle"))
+        return subs_files
+
+    def convert_forced_subtitles(self, dry_run=False, overwrite=False):
         """
         Converts forced subtitle track, if any, to a separate file. The main subtitle
         track is also extracted alongside it for later remuxing, since ffmpeg does not
         always mux forced subtitles correctly. Returns the list of subtitle files written.
         """
 
-        subs_files = []
-        if self.file_stream_info.has_forced_subtitle_stream:
-            base_name, _ = os.path.splitext(self.output_file)
-            subs_files.append(self._extract_subtitle_stream(
-                self.file_stream_info.forced_subtitle_stream,
-                f"{base_name}.eng.forced.srt", "Forced subtitle", dry_run))
-            if self.file_stream_info.has_subtitle_stream:
-                subs_files.append(self._extract_subtitle_stream(
-                    self.file_stream_info.subtitle_stream,
-                    f"{base_name}.eng.srt", "Main subtitle", dry_run))
-        return subs_files
+        return [self._extract_subtitle_stream(subtitle_stream, subs_file, description,
+                                              dry_run, overwrite)
+                for subtitle_stream, subs_file, description in self.get_subtitle_files()]
 
-    def _extract_subtitle_stream(self, stream, subs_file, description, dry_run=False):
+    def get_subtitle_extraction_args(self, subtitle_stream, subs_file, overwrite=False):
+        """Gets the ffmpeg command line that writes a subtitle stream to a separate file"""
+
         subs_args = []
         subs_args.append(self._get_ffmpeg_tool_location("ffmpeg"))
         subs_args.append("-hide_banner")
+        if self.is_unattended_mode:
+            subs_args.append("-loglevel")
+            subs_args.append("warning")
+            subs_args.append("-nostats")
+        if overwrite:
+            subs_args.append("-y")
         subs_args.append("-i")
         subs_args.append(self.input_file)
         subs_args.append("-map")
-        subs_args.append(f"0:{stream.index}")
+        subs_args.append(f"0:{subtitle_stream.index}")
         subs_args.append(subs_file)
+        return subs_args
+
+    def _extract_subtitle_stream(self, subtitle_stream, subs_file, description, dry_run=False,
+                                 overwrite=False):
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        subs_args = self.get_subtitle_extraction_args(subtitle_stream, subs_file, overwrite)
         if dry_run:
             self.logger.info("%s conversion arguments:\n%s", description, subs_args)
         else:
@@ -174,15 +273,13 @@ class Converter:
         ffmpeg_args.append("default")
         ffmpeg_args.append("-c:a:0")
         if is_convert_audio:
-            if (self.file_stream_info.audio_stream.codec == "aac"
-                    and self.file_stream_info.audio_stream.channel_count <= 2):
-                ffmpeg_args.append("copy")
-            else:
-                ffmpeg_args.append("aac")
+            codec, channels = self.get_stereo_audio_output()
+            ffmpeg_args.append(codec)
+            if codec != "copy":
                 ffmpeg_args.append("-b:a:0")
                 ffmpeg_args.append("160k")
                 ffmpeg_args.append("-ac:a:0")
-                ffmpeg_args.append(f"{min(self.file_stream_info.audio_stream.channel_count, 2)}")
+                ffmpeg_args.append(f"{channels}")
             ffmpeg_args.append("-map")
             ffmpeg_args.append(f"0:{self.file_stream_info.audio_stream.index}")
             ffmpeg_args.append("-metadata:s:a:1")
@@ -190,18 +287,45 @@ class Converter:
             ffmpeg_args.append("-disposition:a:1")
             ffmpeg_args.append("0")
             ffmpeg_args.append("-c:a:1")
-            if self.file_stream_info.audio_stream.codec in ("ac3", "eac3"):
-                ffmpeg_args.append("copy")
-            else:
-                ffmpeg_args.append("ac3")
+            codec, channels = self.get_surround_audio_output()
+            ffmpeg_args.append(codec)
+            if codec != "copy":
                 ffmpeg_args.append("-b:a:1")
                 ffmpeg_args.append("640k")
                 ffmpeg_args.append("-ac:a:1")
-                ffmpeg_args.append(f"{min(self.file_stream_info.audio_stream.channel_count, 6)}")
+                ffmpeg_args.append(f"{channels}")
         else:
             ffmpeg_args.append("copy")
 
         return ffmpeg_args
+
+    def get_stereo_audio_output(self):
+        """
+        Gets the codec and channel count of the first audio track: the audio stream copied
+        if it is already stereo or mono AAC, or converted to AAC with at most two channels
+        """
+
+        audio_stream = self.file_stream_info.audio_stream
+        if audio_stream.codec == "aac" and audio_stream.channel_count <= 2:
+            return "copy", None
+        return "aac", min(audio_stream.channel_count, 2)
+
+    def get_surround_audio_output(self):
+        """
+        Gets the codec and channel count of the second audio track: the audio stream copied
+        if it is already Dolby Digital or Dolby Digital Plus, or converted to Dolby Digital
+        with at most six channels
+        """
+
+        audio_stream = self.file_stream_info.audio_stream
+        if audio_stream.codec in ("ac3", "eac3"):
+            return "copy", None
+        return "ac3", min(audio_stream.channel_count, 6)
+
+    def get_subtitle_output(self):
+        """Gets the codec of the subtitle track: copied if already mov_text, or converted"""
+
+        return "copy" if self.file_stream_info.subtitle_stream.codec == "mov_text" else "mov_text"
 
     def get_subtitle_conversion_args(self, is_convert_subtitles):
         """Gets ffmpeg command line arguments for subtitle streams in the file"""
@@ -215,10 +339,7 @@ class Converter:
             ffmpeg_args.append("-disposition:s:0")
             ffmpeg_args.append("default")
             ffmpeg_args.append("-c:s")
-            if self.file_stream_info.subtitle_stream.codec == "mov_text":
-                ffmpeg_args.append("copy")
-            else:
-                ffmpeg_args.append("mov_text")
+            ffmpeg_args.append(self.get_subtitle_output())
 
         return ffmpeg_args
 
@@ -227,12 +348,15 @@ class FileStreamInfo:
 
     """Represents the file stream information of a media file"""
 
-    def __init__(self, streams):
+    def __init__(self, streams, all_streams=None, duration=None):
         super().__init__()
         self.video_stream = streams["video"]
         self.audio_stream = streams["audio"]
         self.subtitle_stream = streams["subtitle"]
         self.forced_subtitle_stream = streams["forced_subtitle"]
+        # Every stream of the file, and its duration in seconds, if known.
+        self.streams = all_streams if all_streams is not None else []
+        self.duration = duration
 
     @staticmethod
     def _probe_file(input_file, ffprobe_location):
@@ -265,9 +389,11 @@ class FileStreamInfo:
             "forced_subtitle": None
         }
         audio_streams = []
+        all_streams = []
         metadata = FileStreamInfo._probe_file(input_file, ffprobe_location)
         for stream_metadata in metadata["streams"]:
             stream = FileStreamInfo.StreamInfo(stream_metadata)
+            all_streams.append(stream)
             if stream.is_video and streams["video"] is None:
                 streams["video"] = stream
 
@@ -284,7 +410,11 @@ class FileStreamInfo:
                     streams["subtitle"] = stream
 
         streams["audio"] = FileStreamInfo._select_audio_stream(audio_streams)
-        return cls(streams)
+        try:
+            duration = float(metadata.get("format", {}).get("duration"))
+        except (TypeError, ValueError):
+            duration = None
+        return cls(streams, all_streams, duration)
 
     @staticmethod
     def _select_audio_stream(audio_streams):
@@ -398,6 +528,12 @@ class FileStreamInfo:
             return (self.metadata["tags"]["language"]
                     if "tags" in self.metadata and "language" in self.metadata["tags"]
                     else "")
+
+        @property
+        def title(self):
+            """Gets the title tag of the stream, such as "Commentary", if defined"""
+
+            return self.metadata.get("tags", {}).get("title", "")
 
         @property
         def is_video(self):

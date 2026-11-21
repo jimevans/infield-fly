@@ -134,9 +134,9 @@ def warn_database_update_in_progress(error):
         describe_lock_holder(error.holder))
 
 def convert(args, config):
-    """Converts a file using the soecified conversion arguments"""
+    """Converts a file using the specified conversion arguments"""
 
-    from infield_fly import conversion, notification
+    from infield_fly import conversion
     from infield_fly.database import EpisodeDatabase
 
     episode_db = EpisodeDatabase.load_from_cache(config)
@@ -145,20 +145,9 @@ def convert(args, config):
         print(f"Keyword '{args.keyword}' was not found in the database")
         return
 
-    if args.aspect_ratio is not None and not args.convert_video:
-        print("Aspect ratio can only be specified when converting video (--convert-video)")
-        return
-
-    if args.aspect_ratio is not None and args.aspect_ratio <= 0:
-        print("Aspect ratio must be a positive number")
-        return
-
-    if args.crf is not None and not args.convert_video:
-        print("Constant rate factor can only be specified when converting video (--convert-video)")
-        return
-
-    if args.crf is not None and not 0 <= args.crf <= 51:
-        print("Constant rate factor must be between 0 and 51")
+    error = get_video_option_error(args)
+    if error is not None:
+        print(error)
         return
 
     mapper = conversion.FileMapper(
@@ -172,25 +161,85 @@ def convert(args, config):
         aspect_ratio=args.aspect_ratio,
         crf=(args.crf if args.crf is not None else conversion.ConversionSettings.crf))
 
-    for src_file, dest_file in file_map:
-        converter = conversion.Converter(src_file, dest_file, config.conversion.ffmpeg_location)
-        converter.convert_file(settings, dry_run=args.dry_run)
+    if len(file_map) == 0:
+        logging.getLogger().warning("No files to convert in %s", args.source)
+        return
+
+    if args.stage and not args.dry_run:
+        if not convert_staged(args, config, file_map, settings):
+            return
+    else:
+        for src_file, dest_file in file_map:
+            converter = conversion.Converter(src_file, dest_file,
+                                             config.conversion.ffmpeg_location, args.unattended)
+            converter.convert_file(settings, dry_run=args.dry_run, overwrite=args.overwrite)
 
     if args.notify:
-        if args.dry_run:
-            print("Operation complete. Not sending notification on dry run.")
-        else:
-            if config.notification is None:
-                print("No config notification settings in settings file. Not notifying.")
-            elif (config.notification.receiving_number is None
-                or config.notification.receiving_number == ""):
-                print("No recipient number specified in notification settings in settings "
-                    "file. Not notifying.")
-            else:
-                notifier = notification.Notifier.create_default_notifier(config)
-                if notifier is not None:
-                    notifier.notify(config.notification.receiving_number,
-                                    f"Conversion of {args.source} complete.")
+        notify_conversion_complete(args, config)
+
+def notify_conversion_complete(args, config):
+    """Sends an SMS notification that a conversion is complete, if notifications are set up"""
+
+    from infield_fly import notification
+
+    if args.dry_run:
+        print("Operation complete. Not sending notification on dry run.")
+    elif config.notification is None:
+        print("No config notification settings in settings file. Not notifying.")
+    elif (config.notification.receiving_number is None
+          or config.notification.receiving_number == ""):
+        print("No recipient number specified in notification settings in settings "
+              "file. Not notifying.")
+    else:
+        notifier = notification.Notifier.create_default_notifier(config)
+        if notifier is not None:
+            notifier.notify(config.notification.receiving_number,
+                            f"Conversion of {args.source} complete.")
+
+def get_video_option_error(args):
+    """Gets the error in the video conversion options of the convert command, if any"""
+
+    if args.aspect_ratio is not None and not args.convert_video:
+        return "Aspect ratio can only be specified when converting video (--convert-video)"
+    if args.aspect_ratio is not None and args.aspect_ratio <= 0:
+        return "Aspect ratio must be a positive number"
+    if args.crf is not None and not args.convert_video:
+        return ("Constant rate factor can only be specified when converting video "
+                "(--convert-video)")
+    if args.crf is not None and not 0 <= args.crf <= 51:
+        return "Constant rate factor must be between 0 and 51"
+    return None
+
+def convert_staged(args, config, file_map, settings):
+    """
+    Converts files in the staging directory, moving them to their destinations once
+    converted, returning whether the conversion succeeded
+    """
+
+    import subprocess
+
+    from infield_fly.concurrency import LockHeldError, describe_lock_holder
+    from infield_fly.staged_conversion import ConversionCancelled
+    from infield_fly.staged_conversion import convert_staged as convert_in_staging
+
+    logger = logging.getLogger()
+    try:
+        convert_in_staging(config, file_map, settings, overwrite=args.overwrite,
+                           progress_file=args.progress_file,
+                           is_unattended_mode=args.unattended)
+    except LockHeldError as ex:
+        logger.warning("Not converting; a conversion by %s is still in progress",
+                       describe_lock_holder(ex.holder))
+    except FileExistsError as ex:
+        logger.error("Not converting: %s; use --overwrite to replace them", ex)
+    except ConversionCancelled:
+        logger.warning("Conversion of %s cancelled", args.source)
+    except subprocess.CalledProcessError as ex:
+        logger.error("Conversion of %s failed: %s", args.source, ex)
+    else:
+        logger.info("Conversion of %s complete", args.source)
+        return True
+    return False
 
 def show_job(args, config):
     """Deletes a new queued job"""
@@ -490,6 +539,15 @@ def add_convert_subparser(subparsers):
                                    help="Perform a dry run, printing data, but do not convert")
     convert_subparser.add_argument("-n", "--notify", action="store_true",
                                    help="Notify via SMS when job is complete")
+    convert_subparser.add_argument("--stage", action="store_true",
+                                   help="Convert in the staging directory, moving converted " +
+                                   "files to the destination when done; only one staged " +
+                                   "conversion runs at a time")
+    convert_subparser.add_argument("--overwrite", action="store_true",
+                                   help="Replace existing converted files")
+    convert_subparser.add_argument("--progress-file", metavar="PATH",
+                                   help="With --stage, write the conversion's progress to " +
+                                   "this file")
 
     convert_subparser.set_defaults(convert_video=False,
                                    aspect_ratio=None,
@@ -498,6 +556,9 @@ def add_convert_subparser(subparsers):
                                    convert_subtitles=True,
                                    dry_run=False,
                                    notify=False,
+                                   stage=False,
+                                   overwrite=False,
+                                   progress_file=None,
                                    func=convert)
 
 def add_search_subparser(subparsers):

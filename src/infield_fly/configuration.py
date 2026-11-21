@@ -94,6 +94,15 @@ class ConversionSettings:
                                  os.path.join(self.infield_fly_directory, "staging"))
 
     @property
+    def convert_lock_file(self):
+        """
+        Gets the path of the lock file preventing more than one staged conversion, such as
+        one started from the web interface, from running at a time
+        """
+
+        return os.path.join(self.staging_directory, ".convert.lock")
+
+    @property
     def final_directory(self):
         """Gets the path of the directory where final, converted files will be written"""
 

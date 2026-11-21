@@ -13,6 +13,7 @@
     <nav>
       <a href="{{ app_path(request, 'jobs') }}"{% if active == "jobs" %} aria-current="page"{% endif %}>Jobs</a>
       <a href="{{ app_path(request, 'processing') }}"{% if active == "processing" %} aria-current="page"{% endif %}>Processing</a>
+      <a href="{{ app_path(request, 'convert') }}"{% if active == "convert" %} aria-current="page"{% endif %}>Convert</a>
       <a href="{{ app_path(request, 'series') }}"{% if active == "series" %} aria-current="page"{% endif %}>Series</a>
       <a href="{{ app_path(request, 'settings') }}"{% if active == "settings" %} aria-current="page"{% endif %}>Settings</a>
       <form method="post" action="{{ app_path(request, 'logout') }}">

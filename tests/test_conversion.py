@@ -7,7 +7,8 @@ from unittest import mock
 
 import pytest
 
-from infield_fly.conversion import ConversionSettings, Converter, FileMapper, FileStreamInfo
+from infield_fly.conversion import (ConversionSettings, Converter, FileMapper, FileStreamInfo,
+                                    TrackMapping)
 from infield_fly.database import EpisodeInfo, SeriesInfo
 
 
@@ -154,6 +155,132 @@ class TestConvertFile:
         converter.convert_file()
 
         mock_run.assert_called_once()
+
+
+class TestRunOptions:
+
+    def test_overwrite_and_progress_file(self, mock_run):
+        converter = make_converter(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE,
+                                   is_unattended_mode=True)
+
+        converter.convert_file(overwrite=True, progress_file="/tmp/progress")
+
+        args = mock_run.call_args_list[0][0][0]
+        assert args[2:9] == ["-loglevel", "warning", "-nostats", "-y", "-progress",
+                             "/tmp/progress", "-i"]
+        assert all(x[0][0][2:6] == ["-loglevel", "warning", "-nostats", "-y"]
+                   for x in mock_run.call_args_list[1:])
+
+    def test_conversion_args_match_conversion(self, mock_run):
+        converter = make_converter(VIDEO, AUDIO, SUBTITLE)
+        settings = ConversionSettings(convert_video=True, crf=20)
+
+        converter.convert_file(settings)
+
+        assert mock_run.call_args[0][0] == converter.get_conversion_args(settings)
+        assert converter.get_conversion_args() == make_converter(
+            VIDEO, AUDIO, SUBTITLE).get_conversion_args(ConversionSettings())
+
+    def test_unattended_subtitle_extraction_reduces_output(self):
+        converter = make_converter(VIDEO, SUBTITLE, is_unattended_mode=True)
+        subtitle = converter.file_stream_info.subtitle_stream
+
+        assert converter.get_subtitle_extraction_args(subtitle, "out.srt", True) == [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostats", "-y", "-i", "in.mkv",
+            "-map", "0:2", "out.srt"]
+
+    def test_subtitle_extraction_args(self):
+        converter = make_converter(VIDEO, SUBTITLE)
+        subtitle = converter.file_stream_info.subtitle_stream
+
+        assert converter.get_subtitle_extraction_args(subtitle, "out.srt") == [
+            "ffmpeg", "-hide_banner", "-i", "in.mkv", "-map", "0:2", "out.srt"]
+
+
+def describe(mappings):
+    return [(x.source.index, x.codec, x.output_track, x.output_file, x.channels)
+            for x in mappings]
+
+
+class TestTrackMappings:
+
+    def test_default_mapping(self):
+        converter = make_converter(VIDEO, stream(1, "audio", "dts", "eng", channels=6),
+                                   SUBTITLE)
+
+        assert describe(converter.get_track_mappings()) == [
+            (0, "copy", 0, None, None),
+            (1, "aac", 1, None, 2),
+            (1, "ac3", 2, None, 6),
+            (2, "mov_text", 3, None, None),
+        ]
+
+    def test_copies_matching_audio_and_subtitles(self):
+        converter = make_converter(VIDEO, stream(1, "audio", "eac3", "eng", channels=6),
+                                   stream(2, "subtitle", "mov_text", "eng"))
+
+        assert describe(converter.get_track_mappings()) == [
+            (0, "copy", 0, None, None),
+            (1, "aac", 1, None, 2),
+            (1, "copy", 2, None, None),
+            (2, "copy", 3, None, None),
+        ]
+
+    def test_mono_aac(self):
+        converter = make_converter(stream(0, "audio", "aac", "eng", channels=1))
+
+        assert describe(converter.get_track_mappings()) == [
+            (0, "copy", 0, None, None), (0, "ac3", 1, None, 1)]
+
+    def test_forced_subtitles_to_separate_files(self):
+        converter = make_converter(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE)
+
+        mappings = converter.get_track_mappings()
+
+        assert describe(mappings[-2:]) == [(3, "srt", None, "out.eng.forced.srt", None),
+                                           (2, "srt", None, "out.eng.srt", None)]
+
+    def test_settings(self):
+        converter = make_converter(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE)
+
+        mappings = converter.get_track_mappings(ConversionSettings(
+            convert_video=True, convert_audio=False, convert_subtitles=False))
+
+        assert describe(mappings) == [(0, "libx264", 0, None, None),
+                                      (1, "copy", 1, None, None)]
+
+    def test_mappings_match_conversion_args(self):
+        converter = make_converter(VIDEO, stream(1, "audio", "dts", "eng", channels=8),
+                                   SUBTITLE)
+
+        args = converter.get_conversion_args()
+        mappings = converter.get_track_mappings()
+
+        assert [args[i + 1] for i, x in enumerate(args) if x == "-map"] == [
+            f"0:{x.source.index}" for x in mappings]
+        assert [args[args.index(x) + 1] for x in ("-c:v", "-c:a:0", "-c:a:1", "-c:s")] == [
+            x.codec for x in mappings]
+        assert args[args.index("-ac:a:0") + 1] == str(mappings[1].channels)
+        assert args[args.index("-ac:a:1") + 1] == str(mappings[2].channels)
+
+    def test_omitted_streams(self):
+        converter = make_converter(
+            VIDEO, AUDIO, stream(2, "audio", "ac3", channels=6,
+                               tags={"language": "eng", "title": "Commentary"}),
+            stream(3, "subtitle", "subrip", "eng"),
+            stream(4, "subtitle", "hdmv_pgs_subtitle", "eng"))
+
+        assert [x.index for x in converter.get_omitted_streams()] == [2, 4]
+        assert converter.get_omitted_streams()[0].title == "Commentary"
+
+    def test_no_streams(self):
+        assert make_converter().get_track_mappings() == []
+
+    def test_mapping_defaults(self):
+        mapping = TrackMapping(None, "copy")
+
+        assert (mapping.output_track, mapping.output_file, mapping.channels) == (
+            None, None, None)
 
 
 class TestConvertForcedSubtitles:
@@ -328,6 +455,20 @@ class TestFileStreamInfo:
         assert info.audio_stream.index == 2
         assert info.subtitle_stream.index == 5
         assert info.forced_subtitle_stream.index == 7
+
+    def test_read_stream_info_keeps_all_streams_and_duration(self):
+        with mock.patch.object(FileStreamInfo, "_probe_file", return_value={
+                "streams": [VIDEO, AUDIO], "format": {"duration": "5400.250000"}}):
+            info = FileStreamInfo.read_stream_info("in.mkv")
+
+        assert [x.index for x in info.streams] == [0, 1]
+        assert info.duration == 5400.25
+
+    @pytest.mark.parametrize("probe_format", [{}, {"duration": "N/A"}])
+    def test_read_stream_info_without_duration(self, probe_format):
+        with mock.patch.object(FileStreamInfo, "_probe_file",
+                               return_value={"streams": [], "format": probe_format}):
+            assert FileStreamInfo.read_stream_info("in.mkv").duration is None
 
     def test_read_stream_info_with_no_streams(self):
         with mock.patch.object(FileStreamInfo, "_probe_file", return_value={"streams": []}):

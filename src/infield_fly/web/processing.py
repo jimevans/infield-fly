@@ -4,6 +4,7 @@ started and followed as they run, whether started from the web interface or else
 """
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -87,7 +88,11 @@ RUN_KINDS = {
     "jobs": RunKind("jobs", lambda config: config.conversion.job_lock_file, "process-now.err"),
     "database": RunKind("database", lambda config: config.conversion.database_lock_file,
                         "database-update.err"),
+    "convert": RunKind("convert", lambda config: config.conversion.convert_lock_file,
+                       "convert.err"),
 }
+# How much of the end of ffmpeg's progress file to read for its latest progress.
+FFMPEG_PROGRESS_TAIL_BYTES = 4096
 
 
 def get_started_run(app, kind):
@@ -98,21 +103,100 @@ def get_started_run(app, kind):
 
 def get_run_status(app, config, kind="jobs"):
     """
-    Gets the status of a kind of run, "jobs" or "database": "running" with the holder of its
-    lock while a run holds it, "starting" for a run started here that hasn't acquired it
-    yet, or "idle"
+    Gets the status of a kind of run, "jobs", "database", or "convert": "running" with the
+    holder of its lock while a run holds it, "starting" for a run started here that hasn't
+    acquired it yet, or "idle". A running conversion also has a description of its progress.
     """
 
     holder = read_lock_holder(RUN_KINDS[kind].get_lock_file(config))
     started = get_started_run(app, kind)
     is_started_here_running = started is not None and started["process"].poll() is None
     if holder is not None:
-        return {"state": "running", "pid": holder.get("pid"),
-                "started": holder.get("started"),
-                "from_web": is_started_here_running and holder.get("pid") == started["pid"]}
+        status = {"state": "running", "pid": holder.get("pid"),
+                  "started": holder.get("started"),
+                  "from_web": is_started_here_running and holder.get("pid") == started["pid"]}
+        if kind == "convert":
+            status["progress"] = describe_conversion_progress(config)
+        return status
     if is_started_here_running and time.monotonic() - started["time"] < STARTING_SECONDS:
         return {"state": "starting"}
     return {"state": "idle"}
+
+
+def get_conversion_progress_file(config):
+    """
+    Gets the path of the file to which conversions started here write their progress; ffmpeg
+    writes its own progress to the same path with an .ffmpeg extension
+    """
+
+    return os.path.join(config.conversion.log_directory, "convert-progress.json")
+
+
+def read_ffmpeg_progress(path):
+    """
+    Reads the latest time converted, in seconds, and conversion speed, as a multiple of real
+    time, from ffmpeg's progress file, either of which is None if not reported yet
+    """
+
+    try:
+        with open(path, "rb") as progress_file:
+            progress_file.seek(0, os.SEEK_END)
+            progress_file.seek(max(0, progress_file.tell() - FFMPEG_PROGRESS_TAIL_BYTES))
+            text = progress_file.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None, None
+
+    values = {}
+    for line in text.splitlines():
+        name, _, value = line.partition("=")
+        values[name.strip()] = value.strip()
+    try:
+        out_time = int(values["out_time_us"]) / 1000000
+    except (KeyError, ValueError):
+        out_time = None
+    try:
+        speed = float(values.get("speed", "").rstrip("x"))
+    except ValueError:
+        speed = None
+    return out_time, speed
+
+
+def format_time_left(seconds):
+    """Formats a number of seconds left roughly, such as "about 1 h 10 min left"."""
+
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "less than a minute left"
+    if minutes < 60:
+        return f"about {minutes} min left"
+    return f"about {minutes // 60} h {minutes % 60} min left"
+
+
+def describe_conversion_progress(config):
+    """
+    Describes the progress of the running conversion started here, such as "Movie.mkv:
+    42% · about 1 h 10 min left", or None if it hasn't reported any progress
+    """
+
+    progress_path = get_conversion_progress_file(config)
+    try:
+        with open(progress_path, encoding="utf-8") as progress_file:
+            progress = json.load(progress_file)
+    except (OSError, ValueError):
+        return None
+
+    parts = []
+    if progress.get("files", 1) > 1:
+        parts.append(f"file {progress.get('file')} of {progress.get('files')}")
+    out_time, speed = read_ffmpeg_progress(f"{progress_path}.ffmpeg")
+    duration = progress.get("duration")
+    if out_time is not None and duration:
+        parts.append(f"{min(100, int(out_time * 100 / duration))}%")
+        if speed:
+            parts.append(format_time_left(max(0, duration - out_time) / speed))
+    else:
+        parts.append("starting")
+    return f"{os.path.basename(progress.get('source', ''))}: {' · '.join(parts)}"
 
 
 def get_statuses(app, config):

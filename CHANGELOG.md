@@ -6,6 +6,21 @@ README.md for how to make one.
 
 ## [Unreleased]
 
+### Added
+* A Convert page in the web interface converts a file, such as a movie, or a folder of
+  episodes, into the final directory, as the convert command does. For a file, it shows
+  which source tracks become which tracks of the converted file, the tracks left out,
+  and the ffmpeg commands used, before converting. A conversion shows its progress and
+  time left, can be cancelled, and doesn't replace existing files unless asked to.
+* The convert command's `--stage` option converts in the staging directory, moving the
+  converted files to the destination when done, and deleting them if the conversion
+  fails or is cancelled; `--overwrite` replaces existing converted files; and
+  `--progress-file` writes a staged conversion's progress to a file.
+
+### Changed
+* In unattended mode, writing subtitles to separate files no longer prints ffmpeg's
+  output.
+
 ## [1.0.1] - 2026-11-21
 
 ### Fixed

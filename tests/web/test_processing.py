@@ -321,7 +321,8 @@ class TestFollowLog:
             assert websocket.receive_json() == {"type": "lines", "reset": True,
                                                 "lines": ["earlier"]}
             assert websocket.receive_json() == {"type": "status", "jobs": {"state": "idle"},
-                                                "database": {"state": "idle"}}
+                                                "database": {"state": "idle"},
+                                                "convert": {"state": "idle"}}
 
             write_log(config, "later")
             assert websocket.receive_json() == {"type": "lines", "reset": False,
