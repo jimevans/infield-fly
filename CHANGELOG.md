@@ -7,6 +7,8 @@ README.md for how to make one.
 ## [Unreleased]
 
 ### Added
+* The web interface has an icon, a baseball, for browser tabs, bookmarks, and phone home
+  screens.
 * The Convert page can choose the video, audio, forced subtitle, and dialogue subtitle
   tracks used, in place of those chosen automatically, such as an English dub of a
   foreign language film. The `convert` command chooses them with `--video-stream`,
