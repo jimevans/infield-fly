@@ -207,11 +207,22 @@ infield-fly convert [options] source destination
 
 Converts a file to the mp4 container. By default, the video stream is copied;
 the audio stream is copied or converted to stereo AAC as the default track,
-with an AC-3 track added alongside it; and an English text subtitle stream is
-converted to `mov_text`. A forced English subtitle stream, if present, is
-written next to the output file as `<name>.eng.forced.srt`. In that case, the
-main English text subtitle stream is also written as `<name>.eng.srt`,
-for remuxing later if ffmpeg has trouble muxing the forced subtitles.
+with an AC-3 track added alongside it; and an English text subtitle stream of
+dialogue is converted to `mov_text` as the default subtitle track.
+
+The audio stream used is the default English stream, then the first English stream,
+then the default stream, then the first stream. The dialogue subtitles used are the
+first English text subtitle stream that isn't for the deaf and hard of hearing (SDH),
+then the first SDH stream; a stream counts as SDH when it is flagged as hearing
+impaired, or its title includes "SDH", "CC", or "hearing impaired". The forced
+subtitles used are the first English text subtitle stream flagged as forced. Streams
+with no language are treated as English. Image subtitles, such as PGS, are never used.
+
+A forced subtitle stream isn't added to the output file, since `ffmpeg` can mux forced
+subtitles with the wrong timing, showing them at the start of playback. Instead, it is
+written next to the output file as `<name>.eng.forced.srt`, where players such as Plex
+find it, and the dialogue subtitle stream as `<name>.eng.srt`, for remuxing both
+later.
 
 * If `source` is a file, it is converted to `destination`. If `destination` is
   a directory, the output keeps the source file's base name.
@@ -229,6 +240,14 @@ Options:
 * `--convert-video`: re-encode the video with libx264, scaling down to 1080p if
   larger; `--crf` (0–51, default 17) sets the quality, and `-a`/`--aspect-ratio`
   (for example, `2.40`) crops the center of the frame to that ratio
+* `--video-stream INDEX`, `--audio-stream INDEX`: use the source stream with this
+  index, as `ffprobe` reports it, in place of the one chosen automatically; the
+  stereo and surround audio tracks are both written from the audio stream, tagged
+  with its language. For a foreign language film, choose its English dub this way.
+* `--forced-subtitle-stream INDEX`, `--subtitle-stream INDEX`: use the text subtitle
+  stream with this index as the forced subtitles, written to `<name>.eng.forced.srt`, or
+  the dialogue subtitles, or `none` to leave them out. The chosen dialogue stream's
+  language is kept.
 * `-x`, `--dry-run`: print the `ffmpeg` arguments without converting
 * `-n`, `--notify`: send an SMS to the `receiving_number` when finished
 * `--stage`: convert in the `adhoc` folder of the staging directory, moving the
@@ -245,6 +264,7 @@ Examples:
 ```
 infield-fly convert movie.mkv /media/movies
 infield-fly convert --convert-video -a 2.40 --crf 18 movie.mkv movie.mp4
+infield-fly convert --audio-stream 2 --forced-subtitle-stream none movie.mkv movie.mp4
 infield-fly convert -k "the show" ~/Downloads/The.Show.S01 /media/tv/The\ Show
 ```
 
@@ -408,7 +428,9 @@ movie, or a folder of episodes, named from a tracked series. The source is chose
 the same folders as downloads for jobs, and the converted files are written to the final
 directory. Before converting a file, the page shows which tracks of the source become
 which tracks of the converted file, the tracks left out, and the `ffmpeg` commands
-used, which can be copied to convert the file differently by hand. The conversion runs
+used, which can be copied to convert the file differently by hand. The video, audio,
+forced subtitle, and dialogue subtitle tracks used can be chosen there, in place of
+those chosen automatically, as with the `convert` stream options. The conversion runs
 with `convert --stage`, showing its progress and time left, and can be cancelled. It
 won't replace an existing converted file unless asked to.
 

@@ -55,7 +55,7 @@ def cancelled_by_termination():
 
 
 def convert_staged(config, file_map, settings, *, overwrite=False, progress_file=None,
-                   is_unattended_mode=False):
+                   is_unattended_mode=False, stream_choice=None):
     """
     Converts each (source, destination) pair of a file map into the staging directory, then
     moves the converted files, with any subtitle files written beside them, into the
@@ -64,7 +64,8 @@ def convert_staged(config, file_map, settings, *, overwrite=False, progress_file
     if a destination exists, unless overwrite is set. If a conversion fails or is cancelled,
     its partly written files are deleted. When progress_file is set, the conversion's
     progress is written to it as JSON, and ffmpeg's progress to the same path with an
-    .ffmpeg extension.
+    .ffmpeg extension. The streams of each file converted are those of the stream choice,
+    if any, in place of those chosen automatically.
     """
 
     with ProcessLock(config.conversion.convert_lock_file, "convert"):
@@ -78,7 +79,8 @@ def convert_staged(config, file_map, settings, *, overwrite=False, progress_file
                 converter = Converter(
                     source,
                     os.path.join(get_staging_directory(config), os.path.basename(destination)),
-                    config.conversion.ffmpeg_location, is_unattended_mode)
+                    config.conversion.ffmpeg_location, is_unattended_mode,
+                    stream_choice=stream_choice)
                 write_progress(progress_file, {
                     "file": index + 1, "files": len(file_map), "source": source,
                     "destination": destination,

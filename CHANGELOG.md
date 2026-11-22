@@ -6,7 +6,15 @@ README.md for how to make one.
 
 ## [Unreleased]
 
+### Added
+* The Convert page can choose the video, audio, forced subtitle, and dialogue subtitle
+  tracks used, in place of those chosen automatically, such as an English dub of a
+  foreign language film. The `convert` command chooses them with `--video-stream`,
+  `--audio-stream`, `--forced-subtitle-stream`, and `--subtitle-stream`.
+
 ### Changed
+* English subtitles that aren't for the deaf and hard of hearing (SDH) are preferred to
+  SDH subtitles, in job processing as well as `convert`.
 * The command line and the web interface change jobs by the same rules:
   * Commands that change jobs refuse to while job processing is running, as the web
     interface does, since a run could overwrite the change.
@@ -23,6 +31,9 @@ README.md for how to make one.
   Values missing from a job's file are read as empty, as before.
 
 ### Fixed
+* A file with forced English subtitles, but no other English text subtitles, had no
+  subtitles converted at all; its forced subtitles are now written to the
+  `.eng.forced.srt` file.
 * Converting a folder of episodes applied the character substitutions to the `.mp4`
   extension, as well as the episode's title, and didn't remove spaces from the end of
   the name, as job processing does.

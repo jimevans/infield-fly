@@ -9,7 +9,7 @@ from unittest import mock
 import pytest
 
 from infield_fly.concurrency import LockHeldError, ProcessLock
-from infield_fly.conversion import ConversionSettings, TrackMapping
+from infield_fly.conversion import ConversionSettings, StreamChoice, TrackMapping
 from infield_fly.staged_conversion import (ConversionCancelled, convert_staged,
                                            get_staging_directory, write_progress)
 
@@ -22,10 +22,11 @@ class FakeConverter:
     failure = None
     writes_subtitles = False
 
-    def __init__(self, input_file, output_file, ffmpeg_location, is_unattended_mode):
+    def __init__(self, input_file, output_file, ffmpeg_location, is_unattended_mode, *,
+                 stream_choice):
         self.input_file = input_file
         self.output_file = output_file
-        self.options = (ffmpeg_location, is_unattended_mode)
+        self.options = (ffmpeg_location, is_unattended_mode, stream_choice)
         self.file_stream_info = mock.Mock(duration=60.0)
         self.convert_options = None
         FakeConverter.instances.append(self)
@@ -76,12 +77,12 @@ def test_converts_in_staging_and_moves_to_destination(config, final, tmp_path):
     settings = ConversionSettings(convert_video=True)
 
     convert_staged(config, [("/in/Movie.mkv", str(final / "Movie.mp4"))], settings,
-                   is_unattended_mode=True)
+                   is_unattended_mode=True, stream_choice=StreamChoice(audio=3))
 
     converter = FakeConverter.instances[0]
     assert converter.output_file == os.path.join(get_staging_directory(config), "Movie.mp4")
     assert converter.output_file.startswith(str(tmp_path / "staging" / "adhoc"))
-    assert converter.options == ("/ffmpeg", True)
+    assert converter.options == ("/ffmpeg", True, StreamChoice(audio=3))
     assert converter.convert_options == (settings, True, None)
     assert (final / "Movie.mp4").read_text(encoding="utf-8") == "converted /in/Movie.mkv"
     assert (final / "Movie.eng.srt").exists()

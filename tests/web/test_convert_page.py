@@ -201,6 +201,47 @@ class TestReviewFile:
         assert response.status_code == 400
         assert f"Couldn&#39;t read &#39;{movie}&#39;" in response.text
 
+    def test_track_choices(self, logged_in, movie, probe):
+        text = html.unescape(post(logged_in, form(movie)).text)
+
+        # A file with one video stream has no video stream to choose.
+        assert 'name="video_stream"' not in text
+        for field, selected in (("audio_stream", "1"), ("forced_subtitle_stream", "4"),
+                                ("subtitle_stream", "3")):
+            assert f'<select id="{field}" name="{field}" form="convert-review">' in text
+            assert f'<option value="{selected}" selected>' in text.split(f'id="{field}"')[1]
+        assert ('<option value="2">Source track 2: audio (ac3, stereo, eng, “Commentary”)'
+                '</option>') in text
+        assert '<option value="none">None</option>' in text
+
+    def test_chosen_tracks(self, logged_in, movie, probe):
+        text = html.unescape(post(logged_in, form(
+            movie, audio_stream="2", forced_subtitle_stream="none",
+            subtitle_stream="4")).text)
+
+        assert "Destination track 1 (ac3 -> aac, stereo)" in text
+        assert "Destination track 2 (copy)" in text
+        assert ("<span>Source track 4: subtitle (srt, eng, forced)</span> "
+                "<span aria-hidden=\"true\">→</span> "
+                "<span>Destination track 3 (srt -> mov_text)</span>") in text
+        assert "<li>Source track 1: audio (dts, 5.1, eng)</li>" in text
+        assert "<li>Source track 3: subtitle (srt, eng)</li>" in text
+        assert 'value="none" selected' in text
+
+    def test_no_subtitle_choices_without_subtitles(self, logged_in, movie, probe):
+        text = post(logged_in, form(movie, convert_subtitles=None)).text
+
+        assert 'name="audio_stream"' in text
+        assert 'name="subtitle_stream"' not in text
+        assert 'name="forced_subtitle_stream"' not in text
+
+    def test_unusable_track_choice(self, logged_in, movie, probe):
+        response = post(logged_in, form(movie, audio_stream="3"))
+
+        assert response.status_code == 400
+        assert (f"Couldn&#39;t use the chosen tracks of &#39;{movie}&#39;: Stream 3 is not an "
+                "audio stream.") in response.text
+
     def test_change_returns_to_form(self, logged_in, movie):
         text = post(logged_in, form(movie, action="change", convert_video="on",
                                     crf="20")).text
@@ -252,6 +293,9 @@ class TestValidation:
          "The constant rate factor (CRF) must be between 0 and 51."),
         ({"convert_video": "on", "aspect_ratio": "wide"}, "The aspect ratio must be a number"),
         ({"convert_video": "on", "aspect_ratio": "-1"}, "must be a positive number"),
+        ({"audio_stream": "none"}, "Choose the tracks to use from the lists."),
+        ({"subtitle_stream": "-1"}, "Choose the tracks to use from the lists."),
+        ({"video_stream": "x"}, "Choose the tracks to use from the lists."),
     ])
     def test_invalid(self, logged_in, downloads, movie, values, message):
         if values.get("source") == "MISSING":
@@ -306,6 +350,15 @@ class TestStart:
                                  "--no-convert-audio", "--no-convert-subtitles", movie,
                                  final_path(config, "Movie.MP4")]
 
+    def test_chosen_tracks(self, logged_in, config, movie, probe, start_run):
+        post(logged_in, form(movie, action="start", video_stream="0", audio_stream="2",
+                             forced_subtitle_stream="none", subtitle_stream="4"))
+
+        arguments = start_run.call_args[0][4]
+        assert arguments[4:] == ["--video-stream", "0", "--audio-stream", "2",
+                                 "--forced-subtitle-stream", "none", "--subtitle-stream", "4",
+                                 movie, final_path(config, "Movie (1999).mp4")]
+
     def test_re_encoding_with_default_quality(self, logged_in, movie, probe, start_run):
         post(logged_in, form(movie, action="start", convert_video="on"))
 
@@ -321,7 +374,8 @@ class TestStart:
         database.save_to_cache()
         folder = os.path.realpath(downloads / "Show.S01")
 
-        post(logged_in, form(folder, action="start", keyword="show"))
+        # Tracks are only chosen for a file, so choices for a folder are not used.
+        post(logged_in, form(folder, action="start", keyword="show", audio_stream="2"))
 
         assert start_run.call_args[0][4][4:] == ["-k", "show", folder,
                                                  config.conversion.final_directory]

@@ -184,22 +184,53 @@ def convert(args, config):
         convert_subtitles=args.convert_subtitles,
         aspect_ratio=args.aspect_ratio,
         crf=(args.crf if args.crf is not None else conversion.ConversionSettings.crf))
+    stream_choice = get_stream_choice(args)
 
     if not file_map:
         logger.warning("No files to convert in %s", args.source)
         return
 
     if args.stage and not args.dry_run:
-        if not convert_staged(args, config, file_map, settings):
+        if not convert_staged(args, config, file_map, settings, stream_choice):
             return
     else:
-        for src_file, dest_file in file_map:
-            converter = conversion.Converter(src_file, dest_file,
-                                             config.conversion.ffmpeg_location, args.unattended)
-            converter.convert_file(settings, dry_run=args.dry_run, overwrite=args.overwrite)
+        try:
+            for src_file, dest_file in file_map:
+                converter = conversion.Converter(src_file, dest_file,
+                                                 config.conversion.ffmpeg_location,
+                                                 args.unattended, stream_choice=stream_choice)
+                converter.convert_file(settings, dry_run=args.dry_run,
+                                       overwrite=args.overwrite)
+        except conversion.StreamChoiceError as ex:
+            logger.error("Not converting %s: %s", args.source, ex)
+            return
 
     if args.notify:
         notify_conversion_complete(args, config)
+
+def get_stream_choice(args):
+    """Gets the streams chosen to be converted with the convert command's options"""
+
+    from infield_fly.conversion import NO_STREAM, StreamChoice
+
+    def chosen(index):
+        return NO_STREAM if index == "none" else index
+
+    return StreamChoice(video=args.video_stream, audio=args.audio_stream,
+                        subtitle=chosen(args.subtitle_stream),
+                        forced_subtitle=chosen(args.forced_subtitle_stream))
+
+def stream_index(value):
+    """Parses the index of a stream of a source file, given as an option"""
+
+    if not value.isdigit():
+        raise argparse.ArgumentTypeError(f"'{value}' is not a stream index")
+    return int(value)
+
+def subtitle_stream_index(value):
+    """Parses the index of a subtitle stream, or 'none' to leave subtitles of its kind out"""
+
+    return "none" if value.lower() == "none" else stream_index(value)
 
 def notify_conversion_complete(args, config):
     """Sends an SMS notification that a conversion is complete, if notifications are set up"""
@@ -220,7 +251,7 @@ def notify_conversion_complete(args, config):
             notifier.notify(config.notification.receiving_number,
                             f"Conversion of {args.source} complete.")
 
-def convert_staged(args, config, file_map, settings):
+def convert_staged(args, config, file_map, settings, stream_choice=None):
     """
     Converts files in the staging directory, moving them to their destinations once
     converted, returning whether the conversion succeeded
@@ -229,18 +260,21 @@ def convert_staged(args, config, file_map, settings):
     import subprocess
 
     from infield_fly.concurrency import LockHeldError, describe_lock_holder
+    from infield_fly.conversion import StreamChoiceError
     from infield_fly.staged_conversion import ConversionCancelled
     from infield_fly.staged_conversion import convert_staged as convert_in_staging
 
     try:
         convert_in_staging(config, file_map, settings, overwrite=args.overwrite,
                            progress_file=args.progress_file,
-                           is_unattended_mode=args.unattended)
+                           is_unattended_mode=args.unattended, stream_choice=stream_choice)
     except LockHeldError as ex:
         logger.warning("Not converting; a conversion by %s is still in progress",
                        describe_lock_holder(ex.holder))
     except FileExistsError as ex:
         logger.error("Not converting: %s; use --overwrite to replace them", ex)
+    except StreamChoiceError as ex:
+        logger.error("Not converting %s: %s", args.source, ex)
     except ConversionCancelled:
         logger.warning("Conversion of %s cancelled", args.source)
     except subprocess.CalledProcessError as ex:
@@ -530,6 +564,21 @@ def add_convert_subparser(subparsers):
     subtitle_parser.add_argument("--no-convert-subtitles", dest="convert_subtitles",
                                  action="store_false")
 
+    # Streams of the source file to use in place of those chosen automatically, by the
+    # indexes ffprobe reports.
+    convert_subparser.add_argument("--video-stream", type=stream_index, metavar="INDEX",
+                                   help="Index of the video stream to use")
+    convert_subparser.add_argument("--audio-stream", type=stream_index, metavar="INDEX",
+                                   help="Index of the audio stream from which to write the " +
+                                   "stereo and surround audio tracks")
+    convert_subparser.add_argument("--subtitle-stream", type=subtitle_stream_index,
+                                   metavar="INDEX", help="Index of the text subtitle stream " +
+                                   "of dialogue to use, or 'none' to leave it out")
+    convert_subparser.add_argument("--forced-subtitle-stream", type=subtitle_stream_index,
+                                   metavar="INDEX", help="Index of the text subtitle stream " +
+                                   "of forced subtitles, such as for foreign language " +
+                                   "dialogue, to use, or 'none' to leave it out")
+
     convert_subparser.add_argument("-x", "--dry-run", action="store_true",
                                    help="Perform a dry run, printing data, but do not convert")
     convert_subparser.add_argument("-n", "--notify", action="store_true",
@@ -549,6 +598,10 @@ def add_convert_subparser(subparsers):
                                    crf=None,
                                    convert_audio=True,
                                    convert_subtitles=True,
+                                   video_stream=None,
+                                   audio_stream=None,
+                                   subtitle_stream=None,
+                                   forced_subtitle_stream=None,
                                    dry_run=False,
                                    notify=False,
                                    stage=False,
