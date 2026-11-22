@@ -42,6 +42,16 @@ class TestAccessControl:
         assert client.get("/static/style.css").status_code == 200
         assert client.get("/login").status_code == 200
 
+    def test_icons(self, client):
+        text = client.get("/login").text
+
+        for name, content_type in (("favicon.svg", "image/svg+xml"),
+                                   ("apple-touch-icon.png", "image/png")):
+            assert f'href="{ROOT}/static/{name}"' in text
+            response = client.get(f"/static/{name}")
+            assert response.status_code == 200
+            assert response.headers["content-type"] == content_type
+
     def test_version_in_footer(self, client):
         with mock.patch.dict("infield_fly.web.templating.templates.env.globals",
                              {"version": "1.2.3"}):
