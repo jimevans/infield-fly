@@ -21,6 +21,7 @@ import pytest
 from conftest import TRACKED_SERIES, make_episode_db
 from infield_fly import cli
 from infield_fly.concurrency import LockHeldError, ProcessLock, read_lock_holder
+from infield_fly.conversion import NO_STREAM, StreamChoice, StreamChoiceError
 from infield_fly.configuration import (DEFAULT_CONFIG_DIRECTORY, ConversionSettings,
                                        EpisodeSearch)
 from infield_fly.database import EpisodeInfo
@@ -222,7 +223,9 @@ def convert_args(**overrides):
     values = {"source": "/media/in.mkv", "destination": "/media/out.mp4", "keyword": None,
               "convert_video": False, "convert_audio": True, "convert_subtitles": True,
               "aspect_ratio": None, "crf": None, "dry_run": False, "notify": False,
-              "unattended": False, "stage": False, "overwrite": False, "progress_file": None}
+              "unattended": False, "stage": False, "overwrite": False, "progress_file": None,
+              "video_stream": None, "audio_stream": None, "subtitle_stream": None,
+              "forced_subtitle_stream": None}
     return Namespace(**{**values, **overrides})
 
 
@@ -260,7 +263,7 @@ class TestConvert:
         cli.convert(convert_args(), config)
 
         converter_class.assert_called_once_with("/media/in.mkv", "/media/out.mp4", "/ffmpeg",
-                                                False)
+                                                False, stream_choice=StreamChoice())
         settings = converter_class.return_value.convert_file.call_args[0][0]
         assert (settings.convert_video, settings.convert_audio, settings.convert_subtitles,
                 settings.aspect_ratio, settings.crf) == (False, True, True, None, 17)
@@ -272,6 +275,20 @@ class TestConvert:
 
         assert converter_class.call_args[0][3] is True
         assert converter_class.return_value.convert_file.call_args.kwargs["overwrite"] is True
+
+    def test_chosen_streams(self, config, episode_db, converter_class):
+        cli.convert(convert_args(video_stream=0, audio_stream=3, subtitle_stream="none",
+                                 forced_subtitle_stream=5), config)
+
+        assert converter_class.call_args.kwargs["stream_choice"] == StreamChoice(
+            video=0, audio=3, subtitle=NO_STREAM, forced_subtitle=5)
+
+    def test_unusable_stream_choice(self, config, episode_db, converter_class, caplog):
+        converter_class.side_effect = StreamChoiceError("The file has no stream 9.")
+
+        cli.convert(convert_args(audio_stream=9), config)
+
+        assert "Not converting /media/in.mkv: The file has no stream 9." in caplog.text
 
     def test_empty_directory(self, config, episode_db, converter_class, tmp_path, caplog):
         cli.convert(convert_args(source=str(tmp_path), destination=str(tmp_path)), config)
@@ -295,7 +312,7 @@ class TestConvert:
         assert args[0] is config
         assert args[1] == [("/media/in.mkv", "/media/out.mp4")]
         assert options == {"overwrite": True, "progress_file": "/p",
-                           "is_unattended_mode": True}
+                           "is_unattended_mode": True, "stream_choice": StreamChoice()}
         assert "Conversion of /media/in.mkv complete" in caplog.text
 
     def test_dry_run_is_not_staged(self, config, episode_db, converter_class, stage):
@@ -311,6 +328,8 @@ class TestConvert:
         (FileExistsError("Converted files already exist: /x.mp4"),
          "Not converting: Converted files already exist: /x.mp4; use --overwrite"),
         (subprocess.CalledProcessError(1, ["ffmpeg"]), "Conversion of /media/in.mkv failed"),
+        (StreamChoiceError("Stream 1 is not an audio stream."),
+         "Not converting /media/in.mkv: Stream 1 is not an audio stream."),
     ])
     def test_stage_failures(self, config, episode_db, stage, notifier_factory, caplog,
                             error, message):
@@ -338,7 +357,7 @@ class TestConvert:
 
         converter_class.assert_called_once_with(
             str(tmp_path / "x.s01e02.mkv"), str(tmp_path / "The Show - s01e02 - Part - 2.mp4"),
-            "/ffmpeg", False)
+            "/ffmpeg", False, stream_choice=StreamChoice())
         call = converter_class.return_value.convert_file.call_args
         assert (call[0][0].aspect_ratio, call[0][0].crf, call.kwargs) == (
             2.4, 20.0, {"dry_run": True, "overwrite": False})
@@ -1026,6 +1045,26 @@ class TestMain:
                 args.aspect_ratio, args.crf, args.convert_audio, args.convert_subtitles,
                 args.dry_run, args.notify, args.unattended, args.config) == (
             "src", "dest", None, False, None, None, True, True, False, False, False, None)
+        assert (args.video_stream, args.audio_stream, args.subtitle_stream,
+                args.forced_subtitle_stream) == (None, None, None, None)
+
+    def test_convert_stream_options(self):
+        args = self.run_main("convert", "src", "dest", "--video-stream", "0",
+                             "--audio-stream", "3", "--subtitle-stream", "None",
+                             "--forced-subtitle-stream", "7", command="convert")
+
+        assert (args.video_stream, args.audio_stream, args.subtitle_stream,
+                args.forced_subtitle_stream) == (0, 3, "none", 7)
+
+    @pytest.mark.parametrize("option, value", [
+        ("--audio-stream", "none"), ("--video-stream", "-1"), ("--subtitle-stream", "x")])
+    def test_convert_rejects_invalid_stream_options(self, capsys, option, value):
+        with mock.patch.object(sys, "argv", ["infield-fly", "convert", "src", "dest",
+                                             option, value]):
+            with pytest.raises(SystemExit):
+                cli.main()
+
+        assert f"'{value}' is not a stream index" in capsys.readouterr().err
 
     def test_convert_staging_options(self):
         args = self.run_main("convert", "src", "dest", "--stage", "--overwrite",

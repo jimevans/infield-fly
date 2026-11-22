@@ -7,16 +7,19 @@ from unittest import mock
 
 import pytest
 
-from infield_fly.conversion import (ConversionSettings, Converter, FileMapper, FileStreamInfo,
+from infield_fly.conversion import (NO_STREAM, ConversionSettings, Converter, FileMapper,
+                                    FileStreamInfo, StreamChoice, StreamChoiceError,
                                     TrackMapping)
 from infield_fly.database import EpisodeInfo, SeriesInfo
 
 
-def stream(index, codec_type, codec, language=None, default=False, forced=False, **extra):
+def stream(index, codec_type, codec, language=None, default=False, forced=False,
+           hearing_impaired=False, **extra):
     """Creates ffprobe-style metadata for a single stream"""
 
     metadata = {"index": index, "codec_type": codec_type, "codec_name": codec,
-                "disposition": {"default": int(default), "forced": int(forced)}, **extra}
+                "disposition": {"default": int(default), "forced": int(forced),
+                                "hearing_impaired": int(hearing_impaired)}, **extra}
     if language is not None:
         metadata["tags"] = {"language": language}
     return metadata
@@ -38,11 +41,13 @@ def mock_run():
         yield run
 
 
-def make_converter(*streams, ffmpeg_location=None, is_unattended_mode=False):
+def make_converter(*streams, ffmpeg_location=None, is_unattended_mode=False,
+                   stream_choice=None):
     """Creates a converter for a file with the specified streams, without running ffprobe"""
 
     with mock.patch.object(FileStreamInfo, "_probe_file", return_value={"streams": streams}):
-        return Converter("in.mkv", "out.mp4", ffmpeg_location, is_unattended_mode)
+        return Converter("in.mkv", "out.mp4", ffmpeg_location, is_unattended_mode,
+                         stream_choice=stream_choice)
 
 
 class TestConverterToolLocation:
@@ -149,12 +154,13 @@ class TestConvertFile:
         assert output_files == ["out.mp4"]
         mock_run.assert_called_once()
 
-    def test_skips_forced_subtitles_without_subtitle_stream(self, mock_run):
+    def test_converts_forced_subtitles_without_subtitle_stream(self, mock_run):
         converter = make_converter(VIDEO, AUDIO, FORCED_SUBTITLE)
 
-        converter.convert_file()
+        output_files = converter.convert_file()
 
-        mock_run.assert_called_once()
+        assert output_files == ["out.mp4", "out.eng.forced.srt"]
+        assert "-c:s" not in mock_run.call_args_list[0][0][0]
 
 
 class TestRunOptions:
@@ -202,6 +208,7 @@ def describe(mappings):
             for x in mappings]
 
 
+
 class TestTrackMappings:
 
     def test_default_mapping(self):
@@ -239,6 +246,26 @@ class TestTrackMappings:
 
         assert describe(mappings[-2:]) == [(3, "srt", None, "out.eng.forced.srt", None),
                                            (2, "srt", None, "out.eng.srt", None)]
+
+    def test_forced_subtitles_only_to_separate_file(self):
+        converter = make_converter(VIDEO, AUDIO, FORCED_SUBTITLE)
+
+        assert describe(converter.get_track_mappings()[2:]) == [
+            (1, "ac3", 2, None, 2), (3, "srt", None, "out.eng.forced.srt", None)]
+
+    def test_chosen_streams(self):
+        converter = make_converter(
+            VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE,
+            stream(4, "audio", "eac3", "eng", channels=6, tags={"title": "English Dub"}),
+            stream(5, "subtitle", "subrip", "eng"),
+            stream_choice=StreamChoice(audio=4, subtitle=5, forced_subtitle=NO_STREAM))
+
+        assert describe(converter.get_track_mappings()) == [
+            (0, "copy", 0, None, None),
+            (4, "aac", 1, None, 2),
+            (4, "copy", 2, None, None),
+            (5, "mov_text", 3, None, None),
+        ]
 
     def test_settings(self):
         converter = make_converter(VIDEO, AUDIO, SUBTITLE, FORCED_SUBTITLE)
@@ -420,6 +447,23 @@ class TestSubtitleConversionArgs:
 
         assert args[-2:] == ["-c:s", "copy"]
 
+    def test_forced_subtitles_are_not_muxed(self):
+        args = make_converter(SUBTITLE, FORCED_SUBTITLE).get_subtitle_conversion_args(True)
+
+        assert args == ["-map", "0:2", "-metadata:s:s:0", "language=eng",
+                        "-disposition:s:0", "default", "-c:s", "mov_text"]
+
+    def test_only_forced_subtitles(self):
+        assert make_converter(FORCED_SUBTITLE).get_subtitle_conversion_args(True) == []
+
+    def test_chosen_stream_keeps_its_language(self):
+        spanish = stream(2, "subtitle", "subrip", "spa")
+
+        args = make_converter(spanish, stream_choice=StreamChoice(
+            subtitle=2)).get_subtitle_conversion_args(True)
+
+        assert "language=spa" in args
+
 
 class TestFileStreamInfo:
 
@@ -500,6 +544,63 @@ class TestFileStreamInfo:
     def test_select_audio_stream_with_no_streams(self):
         assert FileStreamInfo._select_audio_stream([]) is None
 
+    @pytest.mark.parametrize("streams, expected_index", [
+        # A stream flagged for the hearing impaired is passed over.
+        ([stream(0, "subtitle", "subrip", "eng", hearing_impaired=True),
+          stream(1, "subtitle", "subrip", "eng")], 1),
+        # So is a stream with SDH in its title.
+        ([stream(0, "subtitle", "subrip", tags={"language": "eng", "title": "English SDH"}),
+          stream(1, "subtitle", "subrip", tags={"language": "eng", "title": "English"})], 1),
+        # An SDH stream is used when there is no other.
+        ([stream(0, "subtitle", "subrip", tags={"language": "eng", "title": "SDH"})], 0),
+        # Otherwise the first stream is used.
+        ([stream(0, "subtitle", "subrip", "eng"), stream(1, "subtitle", "subrip", "eng")], 0),
+    ])
+    def test_select_subtitle_stream(self, streams, expected_index):
+        selected = FileStreamInfo._select_subtitle_stream(stream_info(*streams))
+
+        assert selected.index == expected_index
+
+    def test_select_subtitle_stream_with_no_streams(self):
+        assert FileStreamInfo._select_subtitle_stream([]) is None
+
+    def test_read_stream_info_prefers_non_sdh_subtitles(self):
+        streams = [stream(0, "subtitle", "subrip", "eng", hearing_impaired=True),
+                   stream(1, "subtitle", "subrip", "eng")]
+        with mock.patch.object(FileStreamInfo, "_probe_file",
+                               return_value={"streams": streams}):
+            assert FileStreamInfo.read_stream_info("in.mkv").subtitle_stream.index == 1
+
+    def test_read_stream_info_uses_chosen_streams(self):
+        streams = [VIDEO, stream(1, "video", "h264"), AUDIO,
+                   stream(3, "audio", "ac3", "jpn", channels=6),
+                   SUBTITLE, stream(5, "subtitle", "ass", "jpn", forced=True)]
+        with mock.patch.object(FileStreamInfo, "_probe_file",
+                               return_value={"streams": streams}) as probe:
+            info = FileStreamInfo.read_stream_info(
+                "in.mkv", "/bin/ffprobe", StreamChoice(video=1, audio=3, subtitle=NO_STREAM,
+                                                       forced_subtitle=5))
+
+        probe.assert_called_once_with("in.mkv", "/bin/ffprobe")
+        assert info.video_stream.index == 1
+        assert info.audio_stream.index == 3
+        assert not info.has_subtitle_stream
+        assert info.forced_subtitle_stream.index == 5
+
+    @pytest.mark.parametrize("choice, message", [
+        (StreamChoice(audio=9), "The file has no stream 9."),
+        (StreamChoice(video=1), "Stream 1 is not a video stream."),
+        (StreamChoice(audio=0), "Stream 0 is not an audio stream."),
+        (StreamChoice(subtitle=3), "Stream 3 is not a text subtitle stream."),
+        (StreamChoice(forced_subtitle=1), "Stream 1 is not a text subtitle stream."),
+    ])
+    def test_read_stream_info_rejects_unusable_choices(self, choice, message):
+        streams = [VIDEO, AUDIO, SUBTITLE, stream(3, "subtitle", "hdmv_pgs_subtitle", "eng")]
+        with mock.patch.object(FileStreamInfo, "_probe_file",
+                               return_value={"streams": streams}):
+            with pytest.raises(StreamChoiceError, match=message):
+                FileStreamInfo.read_stream_info("in.mkv", stream_choice=choice)
+
 
 class TestStreamInfo:
 
@@ -519,6 +620,19 @@ class TestStreamInfo:
         assert info.is_video
         assert not info.is_audio
         assert not info.is_subtitle
+        assert not info.is_text_subtitle
+        assert not info.is_hearing_impaired
+
+    @pytest.mark.parametrize("title, expected", [
+        ("English SDH", True), ("English (CC)", True), ("Hearing Impaired", True),
+        ("hearing-impaired", True), ("English", False), ("Forced", False),
+        ("SDHX", False)])
+    def test_hearing_impaired_title(self, title, expected):
+        info = FileStreamInfo.StreamInfo(
+            stream(2, "subtitle", "subrip", tags={"language": "eng", "title": title}))
+
+        assert info.is_text_subtitle
+        assert info.is_hearing_impaired == expected
 
     def test_missing_optional_metadata(self):
         info = FileStreamInfo.StreamInfo({"index": 0, "codec_type": "audio", "codec_name": "aac"})

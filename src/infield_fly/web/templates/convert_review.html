@@ -31,6 +31,21 @@
 {% endif %}
 {% else %}
 <h2>Tracks</h2>
+{% if review.choices %}
+<fieldset class="track-choices">
+  <legend>Tracks to use</legend>
+  <p class="hint">Chosen automatically: English audio, and English subtitles that aren't for the deaf and hard of hearing (SDH). Choose others, such as an English dub, then update the conversion below.</p>
+  {% for choice in review.choices %}
+  <label for="{{ choice.field }}">{{ choice.label }}</label>
+  <select id="{{ choice.field }}" name="{{ choice.field }}" form="convert-review">
+    {% for value, label in choice.options %}<option value="{{ value }}"{% if value == choice.selected %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  {% endfor %}
+  <div class="form-actions">
+    <button type="submit" class="secondary" name="action" value="review" form="convert-review">Update</button>
+  </div>
+</fieldset>
+{% endif %}
 <ul class="mapping">
   {% for source, destination_track in review.tracks %}
   <li><span>{{ source }}</span> <span aria-hidden="true">→</span> <span>{{ destination_track }}</span></li>
@@ -45,7 +60,7 @@
 {% for command in review.commands %}<pre class="log command">{{ command }}</pre>{% endfor %}
 {% endif %}
 
-<form class="editor" method="post" action="{{ app_path(request, 'convert') }}">
+<form id="convert-review" class="editor" method="post" action="{{ app_path(request, 'convert') }}">
   <input type="hidden" name="source" value="{{ form.source }}">
   <input type="hidden" name="name" value="{{ form.name }}">
   <input type="hidden" name="keyword" value="{{ form.keyword }}">

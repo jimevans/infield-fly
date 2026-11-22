@@ -7,13 +7,13 @@ import os
 import shlex
 import signal
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse
 
-from infield_fly.conversion import (ConversionSettings, Converter, FileMapper,
-                                    validate_video_options)
+from infield_fly.conversion import (NO_STREAM, ConversionSettings, Converter, FileMapper,
+                                    StreamChoice, StreamChoiceError, validate_video_options)
 from infield_fly.database import EpisodeDatabase
 from infield_fly.web import processing
 from infield_fly.web.job_actions import (find_browse_root, get_series_choices, render_browser,
@@ -23,14 +23,23 @@ from infield_fly.web.templating import add_flash, app_path, templates
 CHANNEL_NAMES = {1: "mono", 2: "stereo", 6: "5.1", 8: "7.1"}
 CODEC_NAMES = {"subrip": "srt", "hdmv_pgs_subtitle": "pgs", "libx264": "h264, re-encoded"}
 
+# The streams of a source file that can be chosen in place of those chosen automatically:
+# the form field, the option of the convert command, and whether it can be left out.
+STREAM_CHOICES = (("video_stream", "--video-stream", False),
+                  ("audio_stream", "--audio-stream", False),
+                  ("forced_subtitle_stream", "--forced-subtitle-stream", True),
+                  ("subtitle_stream", "--subtitle-stream", True))
+
 
 @dataclass
 class ConvertForm:
 
     """
     The choices of a conversion: the source file or folder, the name of a converted file,
-    the series whose episode titles name the files converted from a folder, and the
-    conversion options
+    the series whose episode titles name the files converted from a folder, the conversion
+    options, and the streams of a source file chosen in place of those chosen
+    automatically, by the form fields of STREAM_CHOICES, each an index, "none" to leave out
+    subtitles, or empty to choose automatically
     """
 
     source: str = ""
@@ -42,6 +51,7 @@ class ConvertForm:
     convert_audio: bool = True
     convert_subtitles: bool = True
     overwrite: bool = False
+    streams: dict = field(default_factory=dict)
 
     @classmethod
     def for_source(cls, source):
@@ -63,7 +73,8 @@ class ConvertForm:
             aspect_ratio=form_data.get("aspect_ratio", "").strip(),
             convert_audio=form_data.get("convert_audio") is not None,
             convert_subtitles=form_data.get("convert_subtitles") is not None,
-            overwrite=form_data.get("overwrite") is not None)
+            overwrite=form_data.get("overwrite") is not None,
+            streams={name: form_data.get(name, "").strip() for name, _, _ in STREAM_CHOICES})
 
     @property
     def is_folder(self):
@@ -96,7 +107,29 @@ class ConvertForm:
 
         if self.convert_video:
             errors.extend(self.validate_video_options())
+        if any(not (value == "" or value.isdigit() or (value == "none" and can_leave_out))
+               for value, can_leave_out in self.get_stream_values()):
+            errors.append("Choose the tracks to use from the lists.")
         return errors
+
+    def get_stream_values(self):
+        """Gets the value of each stream choice, and whether its stream can be left out"""
+
+        return [(self.streams.get(name, ""), can_leave_out)
+                for name, _, can_leave_out in STREAM_CHOICES]
+
+    def get_stream_choice(self):
+        """Gets the streams of the source file chosen in place of those chosen automatically"""
+
+        def chosen(value):
+            if value == "none":
+                return NO_STREAM
+            return int(value) if value else None
+
+        streams = {name: chosen(self.streams.get(name, "")) for name, _, _ in STREAM_CHOICES}
+        return StreamChoice(video=streams["video_stream"], audio=streams["audio_stream"],
+                            subtitle=streams["subtitle_stream"],
+                            forced_subtitle=streams["forced_subtitle_stream"])
 
     def validate_video_options(self):
         """
@@ -154,6 +187,10 @@ class ConvertForm:
             arguments.append("--no-convert-subtitles")
         if self.is_folder and self.keyword:
             arguments.extend(["-k", self.keyword])
+        if not self.is_folder:
+            for name, option, _ in STREAM_CHOICES:
+                if self.streams.get(name):
+                    arguments.extend([option, self.streams[name]])
         return arguments + [self.source, self.get_destination(config)]
 
 
@@ -196,7 +233,8 @@ def review_file(config, form):
     """
 
     destination = form.get_destination(config)
-    converter = Converter(form.source, destination, config.conversion.ffmpeg_location)
+    converter = Converter(form.source, destination, config.conversion.ffmpeg_location,
+                          stream_choice=form.get_stream_choice())
     settings = form.get_settings()
     mappings = converter.get_track_mappings(settings)
     commands = [converter.get_conversion_args(settings)]
@@ -209,7 +247,40 @@ def review_file(config, form):
                     for x in converter.get_omitted_streams(settings)],
         "outputs": [destination] + [x.output_file for x in mappings if x.output_file],
         "commands": [shlex.join(x) for x in commands],
+        "choices": get_stream_choices(converter, settings),
     }
+
+
+def get_stream_choices(converter, settings):
+    """
+    Gets the lists from which the streams of a source file are chosen, for those with a
+    choice to make: the form field, its label, its options as (value, label) pairs, and the
+    value of the stream used
+    """
+
+    info = converter.file_stream_info
+    text_subtitles = [x for x in info.streams if x.is_text_subtitle]
+    lists = [("video_stream", "Video", [x for x in info.streams if x.is_video],
+              info.video_stream, False),
+             ("audio_stream", "Audio", [x for x in info.streams if x.is_audio],
+              info.audio_stream, False)]
+    if settings.convert_subtitles:
+        lists.extend([
+            ("forced_subtitle_stream", "Forced subtitles", text_subtitles,
+             info.forced_subtitle_stream, True),
+            ("subtitle_stream", "Dialogue subtitles", text_subtitles, info.subtitle_stream,
+             True)])
+
+    choices = []
+    for name, label, streams, used, can_leave_out in lists:
+        options = [(str(x.index), f"Source track {x.index}: {describe_stream(x)}")
+                   for x in streams]
+        if can_leave_out:
+            options.append(("none", "None"))
+        if len(options) > 1:
+            choices.append({"field": name, "label": label, "options": options,
+                            "selected": "none" if used is None else str(used.index)})
+    return choices
 
 
 def review_folder(config, form):
@@ -264,6 +335,9 @@ async def render_review(request, config, form, errors=None, status_code=200):
             review = await run_in_threadpool(review_folder, config, form)
         else:
             review = await run_in_threadpool(review_file, config, form)
+    except StreamChoiceError as ex:
+        return render_form(request, form,
+                           [f"Couldn't use the chosen tracks of '{form.source}': {ex}"], 400)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as ex:
         return render_form(request, form, [f"Couldn't read '{form.source}': {ex}"], 400)
     return templates.TemplateResponse(request, "convert_review.html", {

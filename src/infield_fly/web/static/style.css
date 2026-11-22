@@ -382,4 +382,18 @@ button[disabled] { opacity: 0.5; cursor: default; }
   font-size: 0.9rem;
 }
 .mapping.muted li { background: none; }
+.track-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+}
+.track-choices legend { font-weight: 700; padding: 0 0.35rem; }
+.track-choices label { font-weight: 600; margin-top: 0.5rem; }
+.track-choices .form-actions { margin-top: 0.5rem; }
 .log.command { max-height: none; user-select: all; }

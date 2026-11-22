@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import platform
+import re
 import subprocess
 from dataclasses import dataclass
 from typing import Optional
@@ -11,6 +12,16 @@ from typing import Optional
 from infield_fly.episodes import find_episode_number, get_converted_file_name
 
 logger = logging.getLogger(__name__)
+
+# Subtitle codecs that are text, which can be written as MP4 text tracks and .srt files.
+TEXT_SUBTITLE_CODECS = ("subrip", "ass", "mov_text")
+
+# Titles of subtitle streams for the deaf and hard of hearing (SDH), which describe sounds
+# as well as dialogue.
+HEARING_IMPAIRED_TITLE_PATTERN = re.compile(r"\bSDH\b|\bCC\b|hearing.impaired", re.IGNORECASE)
+
+# A stream choice leaving out a stream that would otherwise be used.
+NO_STREAM = -1
 
 
 @dataclass
@@ -46,6 +57,26 @@ def validate_video_options(convert_video, aspect_ratio=None, crf=None):
     return errors
 
 
+@dataclass(frozen=True)
+class StreamChoice:
+
+    """
+    The streams of a source file chosen to be converted, by their stream indexes, in place
+    of those chosen automatically. Each is None to choose automatically, and either
+    subtitle stream is NO_STREAM to leave it out.
+    """
+
+    video: Optional[int] = None
+    audio: Optional[int] = None
+    subtitle: Optional[int] = None
+    forced_subtitle: Optional[int] = None
+
+
+class StreamChoiceError(ValueError):
+
+    """Raised when a chosen stream is not in a file, or is not of the kind chosen"""
+
+
 @dataclass
 class TrackMapping:
 
@@ -67,12 +98,13 @@ class Converter:
 
     """Converts files into the correct format"""
 
-    def __init__(self, input_file, output_file, ffmpeg_location=None, is_unattended_mode=False):
+    def __init__(self, input_file, output_file, ffmpeg_location=None, is_unattended_mode=False,
+                 *, stream_choice=None):
         self.ffmpeg_location = ffmpeg_location
         self.input_file = input_file
         self.output_file = output_file
         self.file_stream_info = FileStreamInfo.read_stream_info(
-            input_file, self._get_ffmpeg_tool_location("ffprobe"))
+            input_file, self._get_ffmpeg_tool_location("ffprobe"), stream_choice)
         self.is_unattended_mode = is_unattended_mode
 
     def _get_ffmpeg_tool_location(self, tool_name="ffmpeg"):
@@ -108,7 +140,8 @@ class Converter:
     def is_converting_subtitles(self, settings):
         """Gets a value indicating whether subtitles are converted with the settings"""
 
-        return settings.convert_subtitles and self.file_stream_info.has_subtitle_stream
+        return settings.convert_subtitles and (self.file_stream_info.has_subtitle_stream or
+                                               self.file_stream_info.has_forced_subtitle_stream)
 
     def get_conversion_args(self, settings=None, overwrite=False, progress_file=None):
         """Gets the ffmpeg command line that converts the file with the settings"""
@@ -165,8 +198,9 @@ class Converter:
                     tracks.append(TrackMapping(info.audio_stream, codec, channels=channels))
             else:
                 tracks.append(TrackMapping(info.audio_stream, "copy"))
-        if self.is_converting_subtitles(settings):
-            tracks.append(TrackMapping(info.subtitle_stream, self.get_subtitle_output()))
+        if self.is_converting_subtitles(settings) and info.has_subtitle_stream:
+            tracks.append(TrackMapping(info.subtitle_stream,
+                                       self.get_subtitle_output(info.subtitle_stream)))
         for track_index, track in enumerate(tracks):
             track.output_track = track_index
 
@@ -343,24 +377,29 @@ class Converter:
             return "copy", None
         return "ac3", min(audio_stream.channel_count, 6)
 
-    def get_subtitle_output(self):
-        """Gets the codec of the subtitle track: copied if already mov_text, or converted"""
+    @staticmethod
+    def get_subtitle_output(subtitle_stream):
+        """Gets the codec of a subtitle track: copied if already mov_text, or converted"""
 
-        return "copy" if self.file_stream_info.subtitle_stream.codec == "mov_text" else "mov_text"
+        return "copy" if subtitle_stream.codec == "mov_text" else "mov_text"
 
     def get_subtitle_conversion_args(self, is_convert_subtitles):
         """Gets ffmpeg command line arguments for subtitle streams in the file"""
 
+        # Forced subtitles are only written to a separate file, by convert_forced_subtitles,
+        # since ffmpeg can mux them with the wrong timing, showing them at the start of
+        # playback.
         ffmpeg_args = []
-        if is_convert_subtitles:
+        subtitle_stream = self.file_stream_info.subtitle_stream
+        if is_convert_subtitles and subtitle_stream is not None:
             ffmpeg_args.append("-map")
-            ffmpeg_args.append(f"0:{self.file_stream_info.subtitle_stream.index}")
+            ffmpeg_args.append(f"0:{subtitle_stream.index}")
             ffmpeg_args.append("-metadata:s:s:0")
-            ffmpeg_args.append("language=eng")
+            ffmpeg_args.append(f"language={subtitle_stream.language or 'eng'}")
             ffmpeg_args.append("-disposition:s:0")
             ffmpeg_args.append("default")
             ffmpeg_args.append("-c:s")
-            ffmpeg_args.append(self.get_subtitle_output())
+            ffmpeg_args.append(self.get_subtitle_output(subtitle_stream))
 
         return ffmpeg_args
 
@@ -399,42 +438,50 @@ class FileStreamInfo:
         return json.loads(json_output)
 
     @classmethod
-    def read_stream_info(cls, input_file, ffprobe_location = "ffprobe"):
-        """Reads the stream information from a file and creates a FileStreamInfo object"""
+    def read_stream_info(cls, input_file, ffprobe_location="ffprobe", stream_choice=None):
+        """
+        Reads the stream information from a file and creates a FileStreamInfo object, using
+        the streams chosen, if any, in place of those chosen automatically. Raises
+        StreamChoiceError if a chosen stream is not in the file or is not of its kind.
+        """
 
-        streams = {
-            "video": None,
-            "audio": None,
-            "subtitle": None,
-            "forced_subtitle": None
-        }
-        audio_streams = []
-        all_streams = []
         metadata = FileStreamInfo._probe_file(input_file, ffprobe_location)
-        for stream_metadata in metadata["streams"]:
-            stream = FileStreamInfo.StreamInfo(stream_metadata)
-            all_streams.append(stream)
-            if stream.is_video and streams["video"] is None:
-                streams["video"] = stream
-
-            if stream.is_audio:
-                audio_streams.append(stream)
-
-            if (stream.is_subtitle
-                    and (stream.codec in ("subrip", "ass", "mov_text"))
-                    and stream.language in ("", "eng")):
-                if stream.is_forced:
-                    if streams["forced_subtitle"] is None:
-                        streams["forced_subtitle"] = stream
-                elif streams["subtitle"] is None:
-                    streams["subtitle"] = stream
-
-        streams["audio"] = FileStreamInfo._select_audio_stream(audio_streams)
+        all_streams = [FileStreamInfo.StreamInfo(x) for x in metadata["streams"]]
+        choice = stream_choice or StreamChoice()
+        video_streams = [x for x in all_streams if x.is_video]
+        audio_streams = [x for x in all_streams if x.is_audio]
+        english_subtitle_streams = [x for x in all_streams
+                                    if x.is_text_subtitle and x.language in ("", "eng")]
+        streams = {
+            "video": _choose_stream(all_streams, choice.video, "a video", lambda x: x.is_video,
+                                    video_streams[0] if video_streams else None),
+            "audio": _choose_stream(all_streams, choice.audio, "an audio", lambda x: x.is_audio,
+                                    FileStreamInfo._select_audio_stream(audio_streams)),
+            "subtitle": _choose_stream(
+                all_streams, choice.subtitle, "a text subtitle", lambda x: x.is_text_subtitle,
+                FileStreamInfo._select_subtitle_stream(
+                    [x for x in english_subtitle_streams if not x.is_forced])),
+            "forced_subtitle": _choose_stream(
+                all_streams, choice.forced_subtitle, "a text subtitle",
+                lambda x: x.is_text_subtitle,
+                next((x for x in english_subtitle_streams if x.is_forced), None)),
+        }
         try:
             duration = float(metadata.get("format", {}).get("duration"))
         except (TypeError, ValueError):
             duration = None
         return cls(streams, all_streams, duration)
+
+    @staticmethod
+    def _select_subtitle_stream(subtitle_streams):
+        """
+        Selects the dialogue subtitle stream to use, preferring the first stream that is not
+        for the deaf and hard of hearing (SDH), then the first SDH stream
+        """
+
+        preferred = [x for x in subtitle_streams if not x.is_hearing_impaired]
+        candidates = preferred or subtitle_streams
+        return candidates[0] if candidates else None
 
     @staticmethod
     def _select_audio_stream(audio_streams):
@@ -565,6 +612,44 @@ class FileStreamInfo:
             """Gets a value indicating whether this stream is a subtitle stream"""
 
             return self.codec_type == "subtitle"
+
+        @property
+        def is_text_subtitle(self):
+            """
+            Gets a value indicating whether this stream is a text subtitle stream, which can
+            be written as an MP4 text track and an .srt file, unlike image subtitles
+            """
+
+            return self.is_subtitle and self.codec in TEXT_SUBTITLE_CODECS
+
+        @property
+        def is_hearing_impaired(self):
+            """
+            Gets a value indicating whether this stream is for the deaf and hard of hearing
+            (SDH), as flagged in its disposition or named in its title
+            """
+
+            return (self.metadata.get("disposition", {}).get("hearing_impaired") == 1
+                    or HEARING_IMPAIRED_TITLE_PATTERN.search(self.title) is not None)
+
+
+def _choose_stream(streams, index, kind, is_kind, automatic):
+    """
+    Gets the stream with an index chosen from the streams of a file, checking that it is of
+    the kind chosen; the stream chosen automatically if the index is None; or None if the
+    index is NO_STREAM
+    """
+
+    if index is None:
+        return automatic
+    if index == NO_STREAM:
+        return None
+    stream = next((x for x in streams if x.index == index), None)
+    if stream is None:
+        raise StreamChoiceError(f"The file has no stream {index}.")
+    if not is_kind(stream):
+        raise StreamChoiceError(f"Stream {index} is not {kind} stream.")
+    return stream
 
 
 class FileMapper:
