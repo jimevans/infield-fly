@@ -6,6 +6,8 @@ README.md for how to make one.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-21
+
 ### Added
 * The web interface has an icon, a baseball, for browser tabs, bookmarks, and phone home
   screens.
@@ -134,7 +136,8 @@ The first versioned release, describing everything Infield Fly does as of this v
 * Tests, coverage, and linting run on GitHub Actions with Python 3.9 and 3.10, failing
   the build if any code isn't covered by tests or pylint reports anything.
 
-[Unreleased]: https://github.com/jimevans/infield-fly/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jimevans/infield-fly/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jimevans/infield-fly/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jimevans/infield-fly/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jimevans/infield-fly/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jimevans/infield-fly/releases/tag/v1.0.0
